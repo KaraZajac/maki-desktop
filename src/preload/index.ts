@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { BrowserStatus } from '../shared/bridge-types'
 
 const api = {
   relay: (host: string, port: number, packet: Uint8Array): Promise<Uint8Array> =>
@@ -24,9 +25,9 @@ const api = {
     return () => ipcRenderer.removeListener('browser:request', listener)
   },
   browsers: {
-    status: (): Promise<{ name: string; registered: boolean }[]> => ipcRenderer.invoke('browsers:status'),
-    register: (): Promise<{ name: string; registered: boolean }[]> => ipcRenderer.invoke('browsers:register'),
-    unregister: (): Promise<{ name: string; registered: boolean }[]> => ipcRenderer.invoke('browsers:unregister')
+    status: (): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:status'),
+    register: (name: string): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:register', name),
+    unregister: (name: string): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:unregister', name)
   },
   settings: {
     startAtLogin: (): Promise<boolean> => ipcRenderer.invoke('settings:startAtLogin'),

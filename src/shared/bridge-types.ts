@@ -44,3 +44,11 @@ export function parseRequest(value: unknown): BridgeRequest | null {
       return null
   }
 }
+
+/** A browser the extension can be connected through, as the settings list it. */
+export interface BrowserStatus {
+  name: string
+  registered: boolean
+  /** setting it up asks for an admin password */
+  system: boolean
+}

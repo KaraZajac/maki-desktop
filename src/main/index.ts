@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, session, Tray } from 'e
 import { connect, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { BridgeRequest, BridgeResult } from '../shared/bridge-types'
-import { browserStatus, registerBrowsers, unregisterBrowsers } from './browsers'
+import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
 import { serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
 import { launchTrayApp, runNativeHost } from './native-host'
@@ -30,6 +30,9 @@ const startHidden = process.argv.includes('--hidden')
 const offscreen = process.env['MAKI_OFFSCREEN'] === '1'
 
 const resource = (name: string): string => join(app.getAppPath(), 'resources', name)
+
+/** How to start this app again: an AppImage runs from a temporary mount, so use the file itself. */
+const launch = (): Launch => ({ exe: process.env['APPIMAGE'] ?? process.execPath, appPath: app.isPackaged ? null : app.getAppPath() })
 
 /** Browser requests waiting on the window, which owns the link. */
 const fromBrowser = new Map<number, (r: { ok: true; result: BridgeResult } | { ok: false; error: string }) => void>()
@@ -141,8 +144,8 @@ function ipc(): void {
     fromBrowser.delete(key)
   })
   ipcMain.handle('browsers:status', () => browserStatus())
-  ipcMain.handle('browsers:register', () => registerBrowsers())
-  ipcMain.handle('browsers:unregister', () => unregisterBrowsers())
+  ipcMain.handle('browsers:register', (_e, name: string) => registerBrowser(name, launch()))
+  ipcMain.handle('browsers:unregister', (_e, name: string) => unregisterBrowser(name))
   ipcMain.handle('settings:startAtLogin', () => getStartAtLogin())
   ipcMain.handle('settings:setStartAtLogin', async (_e, on: boolean) => {
     await setStartAtLogin(on)
@@ -177,13 +180,15 @@ function ipc(): void {
 
 if (process.argv.includes('--native-host')) {
   // started by a browser for the maki extension: relay to the tray app, starting it if needed.
-  // Before the single-instance lock, which the tray app holds.
+  // Before the single-instance lock, which the tray app holds. stdout carries only framed
+  // messages to the browser, so anything logged goes to stderr.
+  console.log = console.info = console.debug = console.error
   app.dock?.hide()
   void runNativeHost({
     socketPath: socketPath(),
     input: process.stdin,
     output: process.stdout,
-    launchApp: () => launchTrayApp(process.env['APPIMAGE'] ?? process.execPath, app.isPackaged ? null : app.getAppPath())
+    launchApp: () => launchTrayApp(launch())
   }).finally(() => app.exit(0))
 } else if (!app.requestSingleInstanceLock()) {
   // one maki app per login: a second launch just brings the window forward

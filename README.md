@@ -1,11 +1,13 @@
 # maki desktop
 
 The computer's end of [maki](https://github.com/KaraZajac/BAOKEY): a small app that lives in the
-tray, keeps a link to maki over USB, and keeps maki's clock right. The app store and the browser
-extensions will come through here too.
+tray, keeps a link to maki over USB, keeps maki's clock right, and connects the maki browser
+extension to maki. The app store will come through here too.
 
 > **Status: early.** Links over USB (Web Serial) or to a fake maki for development, syncs verified
-> time, runs from the tray. Not yet packaged or signed.
+> time, runs from the tray, and relays logins and TOTP codes between the browser extension and
+> maki. Tested end to end against the fake maki, including in real Chromium and Firefox; the
+> firmware's vault doesn't answer the browser yet. Linux AppImage builds; nothing is signed.
 
 ## What it does today
 
@@ -19,6 +21,46 @@ extensions will come through here too.
   which maki marks as unverified and never uses to overwrite a verified time.
 - **Stays out of the way.** Closing the window keeps the link in the tray. `--hidden` starts in the
   tray; "Start at login" (window or tray menu) sets that up per OS.
+- **Connects the browser to maki.** Click into a login field and the extension asks maki, through
+  this app; maki shows the site and you approve on maki; the login fills. The same for TOTP code
+  fields. Submit a login maki doesn't have and maki offers to keep it. See [Browsers](#browsers).
+
+## Browsers
+
+```
+page ── content script ── background ══ native messaging ══ maki desktop --native-host
+                                                                 │ local socket (user only)
+                                                          maki desktop (tray) ══ USB ══ maki
+```
+
+- The **extension** (`extension/`, Manifest V3, one source for Chrome and Firefox) finds login and
+  code fields, asks when you focus one, and fills what maki approves. The site it asks about is
+  the hostname the browser reports for the asking frame, never something the page says; https
+  only (and localhost). The page's own notices only say what's going on: the decision is made on
+  maki's screen.
+- The browser starts this app with `--native-host` (headless, no window) as a relay to the
+  running tray app, starting that if needed. The extension hangs up after 30 s idle.
+- **Set up** (Browsers, in the window) registers the relay with each installed browser. Firefox
+  with its profile in `~/.config/mozilla` (new installs since Firefox 147) only reads these
+  registrations from `~/.mozilla`, and creating `~/.mozilla` would switch it back to the old
+  layout and an empty profile, so for that Firefox the registration goes in the system folder
+  (`/usr/lib64/mozilla` or `/usr/lib/mozilla`) and asks for an admin password once.
+- Not yet: Windows (it registers through the registry), usernames asked on a page of their own
+  (they're typed; the password page fills), logins sent without a form submit, a published
+  extension.
+
+Load the extension by hand for now:
+
+```sh
+npm run build:extension     # extension/dist/chrome and extension/dist/firefox
+```
+
+- Chrome, Chromium, Brave, Edge, Vivaldi: `chrome://extensions`, Developer mode, Load unpacked,
+  `extension/dist/chrome`. Its ID is pinned (`mjopengkegeglmalfedmanmplofncmdh`) by the key in
+  the manifest, which is what the registration allows.
+- Firefox: `about:debugging`, This Firefox, Load Temporary Add-on, `extension/dist/firefox/manifest.json`.
+  It lasts until Firefox restarts; keeping it needs Mozilla to sign it (an unlisted AMO
+  submission), or Firefox Developer Edition with `xpinstall.signatures.required` off.
 
 ## Develop
 
@@ -28,7 +70,13 @@ npm run dev          # the app, with hot reload
 npm run typecheck
 npm test             # unit tests, plus integration tests against the fake maki if it's built
 MAKI_LIVE=1 npm test # also a real sync through the real Roughtime servers
+MAKI_BROWSERS=1 npx vitest run extension/src/real-browsers.test.ts
+                     # the extension in headless Chromium and Firefox, in throwaway profiles
 ```
+
+The real-browser test uses Playwright's Chromium from `~/.cache/ms-playwright` (or
+`$MAKI_CHROMIUM`) and `firefox` from the PATH (or `$MAKI_FIREFOX`). It gives Firefox a throwaway
+HOME, so your own profile and `~/.mozilla` are never touched.
 
 The fake maki is the firmware's real protocol logic on a TCP socket. Build it in the firmware repo
 (`KaraZajac/baokey-firmware`):
@@ -49,9 +97,14 @@ out.png [--fake]`.
 ```
 src/shared/protocol.ts   framing and message encoding, mirroring libs/maki-proto (PROTOCOL.md)
 src/shared/client.ts     one request at a time over any transport; the time-sync dance
-src/shared/link.ts       the link: probe, heartbeat, auto sync, drop
+src/shared/link.ts       the link: probe, heartbeat, auto sync, drop; browser requests
+src/shared/bridge-types.ts  what the extension may ask, checked field by field
 src/main/                tray, window, Roughtime UDP relay, start-at-login, dev TCP transport
+src/main/bridge.ts       the local socket the native host connects to
+src/main/native-host.ts  --native-host: native messaging on stdio, relayed to the socket
+src/main/browsers.ts     registering the native host with installed browsers
 src/renderer/            Web Serial discovery (usb.ts) and the window
+extension/               the browser extension: background, content script, field finding
 scripts/icons.py         draws the icons in resources/
 ```
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import type { BrowserStatus } from '@shared/bridge-types'
 import { Link } from '@shared/link'
 import { TimeState } from '@shared/protocol'
 import { DevTransport } from './transports'
@@ -30,7 +31,7 @@ export default function App(): React.JSX.Element {
   useEffect(() => watchUsb(link), [link])
   useEffect(() => window.maki.onTraySync(() => void link.syncNow()), [link])
   useEffect(() => window.maki.onBrowserRequest((request) => link.fromBrowser(request)), [link])
-  const [browsers, setBrowsers] = useState<{ name: string; registered: boolean }[] | null>(null)
+  const [browsers, setBrowsers] = useState<BrowserStatus[] | null>(null)
   useEffect(() => {
     void window.maki.browsers.status().then(setBrowsers)
   }, [])
@@ -176,31 +177,31 @@ export default function App(): React.JSX.Element {
           {browsers === null ? null : browsers.length === 0 ? (
             <p className="text-sm text-zinc-400">No supported browser found.</p>
           ) : (
-            <>
-              <ul className="mb-3 space-y-1 text-sm">
-                {browsers.map((b) => (
-                  <li key={b.name} className="flex justify-between">
-                    <span className="text-zinc-300">{b.name}</span>
-                    <span className={b.registered ? 'text-emerald-400' : 'text-zinc-500'}>
-                      {b.registered ? 'connected' : 'not set up'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <button
-                onClick={async () => {
-                  try {
-                    setBrowsers(await window.maki.browsers.register())
-                    link.note('browser integration set up: add the maki extension to finish')
-                  } catch (e) {
-                    link.note(`browser integration failed: ${(e as Error).message}`)
-                  }
-                }}
-                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500"
-              >
-                {browsers.every((b) => b.registered) ? 'Set up again' : 'Set up browsers'}
-              </button>
-            </>
+            <ul className="space-y-2 text-sm">
+              {browsers.map((b) => (
+                <li key={b.name} className="flex items-center justify-between gap-3">
+                  <span className="text-zinc-300">{b.name}</span>
+                  {b.registered ? (
+                    <span className="text-emerald-400">connected</span>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        try {
+                          setBrowsers(await window.maki.browsers.register(b.name))
+                          link.note(`${b.name} can reach maki desktop: add the maki extension to finish`)
+                        } catch (e) {
+                          link.note(`${b.name} setup failed: ${(e as Error).message}`)
+                        }
+                      }}
+                      title={b.system ? `${b.name} only looks for browser helpers in a system folder` : undefined}
+                      className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:border-zinc-500"
+                    >
+                      {b.system ? 'Set up (asks for admin password)' : 'Set up'}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 

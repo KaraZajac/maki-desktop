@@ -119,7 +119,7 @@ export async function runNativeHost({ socketPath, input, output, launchApp, retr
 }
 
 /** How the host starts the tray app: the same executable, hidden. */
-export function launchTrayApp(execPath: string, appPath: string | null): void {
+export function launchTrayApp({ exe, appPath }: { exe: string; appPath: string | null }): void {
   const args = appPath ? [appPath, '--hidden'] : ['--hidden']
-  spawn(execPath, args, { detached: true, stdio: 'ignore' }).unref()
+  spawn(exe, args, { detached: true, stdio: 'ignore' }).unref()
 }
