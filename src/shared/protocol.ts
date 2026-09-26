@@ -5,7 +5,7 @@
  * No Node or DOM imports here: this module runs in the renderer, in the main process and in tests.
  */
 
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 export const MAX_FRAME = 8192
 
 export const Kind = {
@@ -14,6 +14,10 @@ export const Kind = {
   TIME_CHALLENGE: 0x03,
   TIME_PROOF: 0x04,
   TIME_UNVERIFIED: 0x05,
+  /** answered only after the owner approves on maki */
+  GET_LOGIN: 0x10,
+  GET_TOTP: 0x11,
+  SAVE_LOGIN: 0x12,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const
@@ -24,9 +28,13 @@ export type TimeStateValue = (typeof TimeState)[keyof typeof TimeState]
 export const ProofStatus = { SET: 0, TOO_FEW_VERIFIED: 1, DISAGREE: 2 } as const
 export const AnswerStatus = ['verified', 'unknown server', 'duplicate', 'invalid', 'too imprecise'] as const
 export const ErrorCode = ['', 'malformed', 'unknown kind', 'no challenge', 'challenge expired', 'bad argument'] as const
+export const Approval = ['approved', 'denied', 'no match', 'timed out', 'unavailable'] as const
+export type ApprovalValue = (typeof Approval)[number]
 
 export interface Packet {
   kind: number
+  /** chosen by the host, echoed in the reply */
+  id: number
   body: Uint8Array
 }
 
@@ -84,11 +92,13 @@ export function cobsDecode(data: Uint8Array): Uint8Array | null {
 }
 
 /** One packet on the wire, delimiter included. */
-export function encodeFrame(kind: number, body: Uint8Array): Uint8Array {
-  const raw = new Uint8Array(body.length + 6)
+export function encodeFrame(kind: number, id: number, body: Uint8Array): Uint8Array {
+  const raw = new Uint8Array(body.length + 8)
   raw[0] = PROTOCOL_VERSION
   raw[1] = kind
-  raw.set(body, 2)
+  raw[2] = id & 0xff
+  raw[3] = (id >> 8) & 0xff
+  raw.set(body, 4)
   new DataView(raw.buffer).setUint32(raw.length - 4, crc32(raw.subarray(0, raw.length - 4)), true)
   const encoded = cobsEncode(raw)
   const out = new Uint8Array(encoded.length + 1)
@@ -102,14 +112,14 @@ export class FrameError extends Error {}
 export function decodeFrame(frame: Uint8Array): Packet {
   const raw = cobsDecode(frame)
   if (!raw) throw new FrameError('bad COBS encoding')
-  if (raw.length < 6) throw new FrameError('frame too short')
+  if (raw.length < 8) throw new FrameError('frame too short')
   if (raw.length > MAX_FRAME) throw new FrameError('frame too long')
   const data = raw.subarray(0, raw.length - 4)
   if (new DataView(raw.buffer, raw.byteOffset).getUint32(raw.length - 4, true) !== crc32(data)) {
     throw new FrameError('CRC mismatch')
   }
   if (data[0] !== PROTOCOL_VERSION) throw new FrameError(`protocol version ${data[0]}`)
-  return { kind: data[1], body: data.slice(2) }
+  return { kind: data[1], id: data[2] | (data[3] << 8), body: data.slice(4) }
 }
 
 /** Splits a byte stream into packets at zero delimiters, however the bytes arrive. */

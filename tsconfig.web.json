@@ -16,5 +16,5 @@
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
   "include": ["src/renderer/**/*", "src/preload/*.d.ts", "src/shared/**/*"],
-  "exclude": ["src/shared/**/*.test.ts"]
+  "exclude": ["src/shared/**/*.test.ts", "src/shared/test-support.ts"]
 }

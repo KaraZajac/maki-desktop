@@ -9,9 +9,9 @@ describe('framing', () => {
   it('round-trips whatever the payload', () => {
     const bodies = [new Uint8Array(), new Uint8Array(1), new Uint8Array(1024), Uint8Array.from({ length: 700 }, (_, i) => i % 256)]
     for (const body of bodies) {
-      const wire = encodeFrame(0x42, body)
+      const wire = encodeFrame(0x42, 0xbeef, body)
       expect(wire.filter((b) => b === 0).length).toBe(1)
-      expect(decodeFrame(wire.subarray(0, -1))).toEqual({ kind: 0x42, body })
+      expect(decodeFrame(wire.subarray(0, -1))).toEqual({ kind: 0x42, id: 0xbeef, body })
     }
   })
 
@@ -22,7 +22,7 @@ describe('framing', () => {
 
   it('copes with dribbles and garbage', () => {
     const d = new Deframer()
-    const stream = [...new TextEncoder().encode('\x07junk'), 0, ...encodeFrame(1, new TextEncoder().encode('first')), ...encodeFrame(2, new Uint8Array(300))]
+    const stream = [...new TextEncoder().encode('\x07junk'), 0, ...encodeFrame(1, 1, new TextEncoder().encode('first')), ...encodeFrame(2, 2, new Uint8Array(300))]
     const got = stream.flatMap((b) => d.push(Uint8Array.of(b)))
     expect(got).toHaveLength(3)
     expect(got[0]).toBeInstanceOf(FrameError)
@@ -30,7 +30,7 @@ describe('framing', () => {
   })
 
   it('rejects a corrupted frame', () => {
-    const wire = encodeFrame(1, new TextEncoder().encode('hello'))
+    const wire = encodeFrame(1, 1, new TextEncoder().encode('hello'))
     wire[3] ^= 0x10
     expect(() => decodeFrame(wire.subarray(0, -1))).toThrow('CRC')
   })

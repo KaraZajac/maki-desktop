@@ -1,13 +1,9 @@
-import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { connect, type Socket } from 'node:net'
-import { resolve } from 'node:path'
+import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Transport } from './client'
+import { FAKE_BUILT, startFake, TcpTransport as Tcp } from './test-support'
 import { Link, PROBE_TIMEOUT_MS } from './link'
 import { TimeState } from './protocol'
-
-const FAKE = process.env.MAKI_FAKE ?? resolve(__dirname, '../../../xous-core/target/debug/examples/fake_maki')
 
 /** A device that never answers: what a stock DC34 badge looks like to the probe. */
 class Silent implements Transport {
@@ -24,28 +20,6 @@ class Silent implements Transport {
   async close(): Promise<void> {
     this.closed = true
     this.closeListeners.forEach((l) => l())
-  }
-}
-
-class Tcp implements Transport {
-  private constructor(readonly socket: Socket) {}
-  static open(port: number): Promise<Tcp> {
-    return new Promise((ok, fail) => {
-      const s = connect(port, '127.0.0.1', () => ok(new Tcp(s)))
-      s.once('error', fail)
-    })
-  }
-  send(b: Uint8Array): Promise<void> {
-    return new Promise((ok, fail) => this.socket.write(b, (e) => (e ? fail(e) : ok())))
-  }
-  onData(l: (b: Uint8Array) => void): void {
-    this.socket.on('data', (d) => l(new Uint8Array(d)))
-  }
-  onClose(l: () => void): void {
-    this.socket.on('close', l)
-  }
-  async close(): Promise<void> {
-    this.socket.destroy()
   }
 }
 
@@ -67,21 +41,15 @@ describe('probing', () => {
   })
 })
 
-describe.skipIf(!existsSync(FAKE))('linking to the fake maki', () => {
-  let fake: ChildProcess
+describe.skipIf(!FAKE_BUILT)('linking to the fake maki', () => {
+  let fake: { port: number; proc: ChildProcess }
   let port = 0
 
   beforeAll(async () => {
-    fake = spawn(FAKE, ['127.0.0.1:0'])
-    port = await new Promise<number>((ok, fail) => {
-      fake.stdout!.on('data', (d: Buffer) => {
-        const m = /listening on 127\.0\.0\.1:(\d+)/.exec(d.toString())
-        if (m) ok(Number(m[1]))
-      })
-      fake.once('exit', () => fail(new Error('fake maki exited')))
-    })
+    fake = await startFake()
+    port = fake.port
   })
-  afterAll(() => fake?.kill())
+  afterAll(() => fake?.proc.kill())
 
   it('links, syncs the clock, and notices an unplug', async () => {
     const link = new Link(noRelay) // Roughtime "offline": falls back to this computer's clock
@@ -97,7 +65,7 @@ describe.skipIf(!existsSync(FAKE))('linking to the fake maki', () => {
     expect(other.closed && other.sent === 0).toBe(true)
 
     const dropped = new Promise<void>((ok) => link.subscribe(() => !link.state.linked && ok()))
-    t.socket.destroy() // unplug
+    await t.close() // unplug
     await dropped
     expect(link.log[0]).toMatch(/disconnected/)
   })

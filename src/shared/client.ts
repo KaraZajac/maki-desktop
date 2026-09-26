@@ -3,6 +3,8 @@
  */
 
 import {
+  Approval,
+  type ApprovalValue,
   AnswerStatus,
   Deframer,
   encodeFrame,
@@ -65,54 +67,49 @@ export interface ProofResult {
 
 export class MakiClient {
   private deframer = new Deframer()
-  private waiting: { resolve: (p: Packet) => void; reject: (e: Error) => void } | null = null
-  private queue: Promise<unknown> = Promise.resolve()
+  private waiting = new Map<number, { resolve: (p: Packet) => void; reject: (e: Error) => void }>()
+  private nextId = 1
 
   constructor(private transport: Transport) {
     transport.onData((bytes) => {
       for (const item of this.deframer.push(bytes)) {
-        const waiter = this.waiting
-        this.waiting = null
-        if (!waiter) continue // nothing asked for this; the badge only ever replies
-        if (item instanceof FrameError) waiter.reject(item)
-        else waiter.resolve(item)
+        if (item instanceof FrameError) continue // unattributable; its request will time out
+        const waiter = this.waiting.get(item.id)
+        if (!waiter) continue // a reply to a request we gave up on
+        this.waiting.delete(item.id)
+        waiter.resolve(item)
       }
     })
     transport.onClose(() => {
-      this.waiting?.reject(new Error('maki disconnected'))
-      this.waiting = null
+      for (const w of this.waiting.values()) w.reject(new Error('maki disconnected'))
+      this.waiting.clear()
     })
   }
 
-  /** Send one request and wait for its reply; calls queue behind each other. */
-  request(kind: number, body: Uint8Array = new Uint8Array(), timeoutMs = 5000): Promise<Packet> {
-    const run = async (): Promise<Packet> => {
-      const reply = new Promise<Packet>((resolve, reject) => {
-        const waiter = {
-          resolve: (p: Packet) => (clearTimeout(timer), resolve(p)),
-          reject: (e: Error) => (clearTimeout(timer), reject(e))
-        }
-        const timer = setTimeout(() => {
-          // a timer may only fail the request it was set for
-          if (this.waiting === waiter) this.waiting = null
-          reject(new Error(`no reply to 0x${kind.toString(16)} within ${timeoutMs} ms`))
-        }, timeoutMs)
-        this.waiting = waiter
+  /** Send one request and wait for its reply. Requests may overlap; replies find them by id. */
+  async request(kind: number, body: Uint8Array = new Uint8Array(), timeoutMs = 5000): Promise<Packet> {
+    const id = this.nextId
+    this.nextId = this.nextId === 0xffff ? 1 : this.nextId + 1
+    const reply = new Promise<Packet>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiting.delete(id)
+        reject(new Error(`no reply to 0x${kind.toString(16)} within ${timeoutMs} ms`))
+      }, timeoutMs)
+      this.waiting.set(id, {
+        resolve: (p) => (clearTimeout(timer), resolve(p)),
+        reject: (e) => (clearTimeout(timer), reject(e))
       })
-      await this.transport.send(encodeFrame(kind, body))
-      const packet = await reply
-      if (packet.kind === Kind.ERROR) {
-        const r = new Reader(packet.body)
-        throw new MakiError(r.u8(), r.str8())
-      }
-      if (packet.kind !== (kind | Kind.REPLY)) {
-        throw new Error(`expected reply 0x${(kind | Kind.REPLY).toString(16)}, got 0x${packet.kind.toString(16)}`)
-      }
-      return packet
+    })
+    await this.transport.send(encodeFrame(kind, id, body))
+    const packet = await reply
+    if (packet.kind === Kind.ERROR) {
+      const r = new Reader(packet.body)
+      throw new MakiError(r.u8(), r.str8())
     }
-    const result = this.queue.then(run, run)
-    this.queue = result.catch(() => undefined)
-    return result
+    if (packet.kind !== (kind | Kind.REPLY)) {
+      throw new Error(`expected reply 0x${(kind | Kind.REPLY).toString(16)}, got 0x${packet.kind.toString(16)}`)
+    }
+    return packet
   }
 
   close(): Promise<void> {
@@ -157,6 +154,34 @@ export class MakiClient {
     }
     r.end()
     return result
+  }
+
+  /** How long a request waits for the owner to press a button on maki. */
+  static readonly APPROVAL_TIMEOUT_MS = 90_000
+
+  /** Ask maki for the login saved for `site`; the owner approves on maki's screen. */
+  async getLogin(site: string): Promise<{ approval: ApprovalValue; username: string; password: string }> {
+    const r = new Reader((await this.request(Kind.GET_LOGIN, new Writer().str8(site).finish(), MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const out = { approval: Approval[r.u8()] ?? 'unavailable', username: r.str8(), password: r.str8() }
+    r.end()
+    return out
+  }
+
+  /** Ask maki for the current code for `site`. */
+  async getTotp(site: string): Promise<{ approval: ApprovalValue; code: string; validForS: number }> {
+    const r = new Reader((await this.request(Kind.GET_TOTP, new Writer().str8(site).finish(), MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const out = { approval: Approval[r.u8()] ?? 'unavailable', code: r.str8(), validForS: r.u8() }
+    r.end()
+    return out
+  }
+
+  /** Offer maki a login to keep; the owner approves on maki's screen. */
+  async saveLogin(site: string, username: string, password: string): Promise<ApprovalValue> {
+    const body = new Writer().str8(site).str8(username).str8(password).finish()
+    const r = new Reader((await this.request(Kind.SAVE_LOGIN, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const approval = Approval[r.u8()] ?? 'unavailable'
+    r.end()
+    return approval
   }
 
   /** The host's own clock. Refused (false) once the badge holds a verified time. */
