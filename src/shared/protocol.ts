@@ -22,6 +22,14 @@ export const Kind = {
   BACKUP_GET: 0x20,
   /** a piece of a backup to restore; the last is answered once the owner decides */
   BACKUP_PUT: 0x21,
+  /** the Bitcoin account for wallet software, once the owner agrees */
+  BTC_ACCOUNT: 0x30,
+  /** an address, put on maki's screen for the owner to compare */
+  BTC_ADDRESS: 0x31,
+  /** a piece of a PSBT to sign; the last is answered once the owner decides */
+  BTC_SIGN: 0x32,
+  /** a piece of the PSBT maki signed */
+  BTC_SIGNED: 0x33,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const
@@ -41,10 +49,18 @@ export const Approval = [
   'clock not verified',
   'locked',
   'not yours',
-  'no phrase'
+  'no phrase',
+  'refused'
 ] as const
 /** Pieces of a backup are at most this big. */
 export const BACKUP_PIECE = 4096
+/** Pieces of a PSBT, either way. */
+export const PSBT_PIECE = 4096
+/** The biggest PSBT maki takes in. */
+export const MAX_PSBT = 512 * 1024
+/** Bitcoin itself, or the test networks (testnet and signet share keys and addresses). */
+export const Network = { BITCOIN: 0, TESTNET: 1 } as const
+export type NetworkValue = (typeof Network)[keyof typeof Network]
 export type ApprovalValue = (typeof Approval)[number]
 
 export interface Packet {

@@ -5,9 +5,11 @@ tray, keeps a link to maki over USB, keeps maki's clock right, and connects the 
 extension to maki. The app store will come through here too.
 
 > **Status: early.** Links over USB (Web Serial) or to a fake maki for development, syncs verified
-> time, runs from the tray, and relays logins and TOTP codes between the browser extension and
-> maki. Tested end to end against the fake maki, including in real Chromium and Firefox; the
-> firmware's vault doesn't answer the browser yet. Linux AppImage builds; nothing is signed.
+> time, runs from the tray, relays logins and TOTP codes between the browser extension and maki,
+> keeps maki's encrypted backups, and has maki sign Bitcoin transactions. Tested end to end against
+> the fake maki (the firmware's own protocol and wallet code on a socket), including in real
+> Chromium and Firefox. The firmware runs in the emulator, which has no USB; nothing has run on a
+> badge yet. Linux AppImage builds; nothing is signed.
 
 ## What it does today
 
@@ -24,6 +26,14 @@ extension to maki. The app store will come through here too.
 - **Connects the browser to maki.** Click into a login field and the extension asks maki, through
   this app; maki shows the site and you approve on maki; the login fills. The same for TOTP code
   fields. Submit a login maki doesn't have and maki offers to keep it. See [Browsers](#browsers).
+- **Keeps backups.** On link, hourly, and soon after a login is saved, maki hands over its logins
+  and codes encrypted with a key from its recovery phrase, and they're kept in the app's folder.
+  "Restore to maki" sends the latest back; maki asks before adding anything.
+- **Works with Bitcoin wallet software.** Get maki's account, an output descriptor, for Sparrow or
+  Bitcoin Core as a watch-only wallet; check an address on maki's screen before giving it out; and
+  have maki sign a transaction (a PSBT file, or pasted base64 or hex). maki refuses anything that
+  isn't its own wallet's, goes through every payment, the change and the fee with you, and signs
+  only when you say so. The signed PSBT goes back to the wallet software to broadcast.
 
 ## Browsers
 
@@ -91,7 +101,8 @@ Tests look for it at `../xous-core/target/debug/examples/fake_maki` (the BAOKEY 
 at `$MAKI_FAKE`.
 
 To look at the UI without a window appearing: `npm run build && npx electron scripts/screenshot.cjs
-out.png [--fake]`.
+out.png [--fake] [--click TEXT]... [--scroll TEXT]`, e.g. `--fake --click "Get the account"
+--scroll Bitcoin`.
 
 ## Layout
 
@@ -100,11 +111,12 @@ src/shared/protocol.ts   framing and message encoding, mirroring libs/maki-proto
 src/shared/client.ts     one request at a time over any transport; the time-sync dance
 src/shared/link.ts       the link: probe, heartbeat, auto sync, drop; browser requests
 src/shared/bridge-types.ts  what the extension may ask, checked field by field
+src/shared/psbt.ts       PSBTs as wallet software hands them over: binary, base64, hex
 src/main/                tray, window, Roughtime UDP relay, start-at-login, dev TCP transport
 src/main/bridge.ts       the local socket the native host connects to
 src/main/native-host.ts  --native-host: native messaging on stdio, relayed to the socket
 src/main/browsers.ts     registering the native host with installed browsers
-src/renderer/            Web Serial discovery (usb.ts) and the window
+src/renderer/            Web Serial discovery (usb.ts) and the window (Bitcoin.tsx: the wallet)
 extension/               the browser extension: background, content script, field finding
 scripts/icons.py         draws the icons in resources/
 ```

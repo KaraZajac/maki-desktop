@@ -6,6 +6,7 @@
 
 import type { BridgeRequest, BridgeResult } from './bridge-types'
 import { MakiClient, syncTime, type Hello, type Relay, type Status, type SyncReport, type Transport } from './client'
+import type { ApprovalValue, NetworkValue } from './protocol'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
 export const HEARTBEAT_MS = 10_000
@@ -202,6 +203,56 @@ export class Link {
       this.syncing = false
       this.emit()
     }
+  }
+
+  /** The Bitcoin account for wallet software, once the owner agrees on maki. */
+  async btcAccount(network: NetworkValue): Promise<{ zpub: string; descriptor: string } | null> {
+    const client = this.linkedClient()
+    this.note('sharing the Bitcoin account: approve on maki')
+    const r = await client.btcAccount(network)
+    this.note(r.approval === 'approved' ? 'Bitcoin account shared' : `Bitcoin account: ${r.approval}`)
+    return r.approval === 'approved' ? { zpub: r.zpub, descriptor: r.descriptor } : null
+  }
+
+  /** Put an address on maki's screen; the owner says whether it matches this computer's. */
+  async btcAddress(network: NetworkValue, change: boolean, index: number): Promise<{ approval: ApprovalValue; address: string }> {
+    const client = this.linkedClient()
+    const which = `${change ? 'change' : 'receive'} address #${index}`
+    this.note(`${which} is on maki's screen: compare it`)
+    const r = await client.btcAddress(network, change, index)
+    this.note(
+      r.approval === 'approved'
+        ? `${which} matches maki's`
+        : r.approval === 'denied'
+          ? `${which} doesn't match maki's: don't use this computer's copy`
+          : `${which}: ${r.approval}`
+    )
+    return r
+  }
+
+  /** Have maki sign a PSBT, once the owner has gone through it on maki's screen. */
+  async btcSign(
+    network: NetworkValue,
+    psbt: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
+    const client = this.linkedClient()
+    this.note('transaction sent: go through it on maki')
+    const r = await client.btcSign(network, psbt)
+    this.note(
+      r.approval === 'approved'
+        ? 'transaction signed'
+        : r.approval === 'refused'
+          ? `maki won't sign it: ${r.reason}`
+          : r.approval === 'denied'
+            ? 'transaction rejected on maki'
+            : `transaction: ${r.approval}`
+    )
+    return r
+  }
+
+  private linkedClient(): MakiClient {
+    if (!this.client || !this.state.linked) throw new Error('maki is not linked')
+    return this.client
   }
 
   /**

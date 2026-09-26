@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { BrowserStatus } from '@shared/bridge-types'
 import { Link } from '@shared/link'
 import { TimeState } from '@shared/protocol'
+import { Bitcoin } from './Bitcoin'
 import { DevTransport } from './transports'
 import { chooseUsb, watchUsb } from './usb'
 
@@ -218,6 +219,8 @@ export default function App(): React.JSX.Element {
             </ul>
           )}
         </section>
+
+        <Bitcoin link={link} />
 
         <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Backups</h2>

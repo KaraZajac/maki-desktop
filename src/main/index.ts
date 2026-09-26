@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, session, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, Tray } from 'electron'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -154,6 +155,32 @@ function ipc(): void {
   ipcMain.handle('browsers:status', () => browserStatus())
   ipcMain.handle('browsers:register', (_e, name: string) => registerBrowser(name, launch()))
   ipcMain.handle('browsers:unregister', (_e, name: string) => unregisterBrowser(name))
+  ipcMain.handle('wallet:open', async () => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: 'Open a transaction to sign (PSBT)',
+      filters: [
+        { name: 'PSBT', extensions: ['psbt', 'txt'] },
+        { name: 'All files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    const path = r.filePaths[0]
+    // base64 of maki's largest PSBT (512 KiB) is under 700 KiB
+    if ((await stat(path)).size > 1024 * 1024) throw new Error('that file is too big to be a PSBT maki takes')
+    return { path, data: new Uint8Array(await readFile(path)) }
+  })
+  ipcMain.handle('wallet:save', async (_e, defaultPath: string, data: Uint8Array) => {
+    const r = await dialog.showSaveDialog(win!, {
+      title: 'Save the signed transaction',
+      defaultPath,
+      filters: [{ name: 'PSBT', extensions: ['psbt'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, data)
+    return r.filePath
+  })
+  ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
   ipcMain.handle('settings:startAtLogin', () => getStartAtLogin())
   ipcMain.handle('settings:setStartAtLogin', async (_e, on: boolean) => {
     await setStartAtLogin(on)

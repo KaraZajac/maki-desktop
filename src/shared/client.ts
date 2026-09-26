@@ -15,6 +15,9 @@ import {
   Reader,
   TimeStateValue,
   BACKUP_PIECE,
+  MAX_PSBT,
+  type NetworkValue,
+  PSBT_PIECE,
   Writer,
   type Packet
 } from './protocol'
@@ -232,6 +235,75 @@ export class MakiClient {
       if (blob.length === 0) break
     }
     return { approval: 'unavailable', logins: 0, codes: 0 }
+  }
+
+  /** How long signing waits: maki gives the owner five minutes to go through a transaction. */
+  static readonly SIGN_TIMEOUT_MS = 330_000
+
+  /** The Bitcoin account (zpub and output descriptor), once the owner agrees on maki. */
+  async btcAccount(network: NetworkValue): Promise<{ approval: ApprovalValue; zpub: string; descriptor: string }> {
+    const body = new Writer().u8(network).finish()
+    const r = new Reader((await this.request(Kind.BTC_ACCOUNT, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const out = { approval: Approval[r.u8()] ?? 'unavailable', zpub: r.str8(), descriptor: r.str8() }
+    r.end()
+    return out
+  }
+
+  /**
+   * Put an address on maki's screen for the owner to compare with this computer's: 'approved'
+   * if they said it matches, 'denied' if it doesn't. `address` is maki's, either way.
+   */
+  async btcAddress(network: NetworkValue, change: boolean, index: number): Promise<{ approval: ApprovalValue; address: string }> {
+    const body = new Writer().u8(network).u8(change ? 1 : 0).u32(index).finish()
+    const r = new Reader((await this.request(Kind.BTC_ADDRESS, body, MakiClient.APPROVAL_TIMEOUT_MS * 2)).body)
+    const out = { approval: Approval[r.u8()] ?? 'unavailable', address: r.str8() }
+    r.end()
+    return out
+  }
+
+  /**
+   * Sign a PSBT: maki checks it, the owner goes through it on maki's screen, and it comes back
+   * with a signature for each input. Refused ones come back with maki's reason.
+   */
+  async btcSign(
+    network: NetworkValue,
+    psbt: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
+    if (psbt.length === 0 || psbt.length > MAX_PSBT) {
+      return { approval: 'refused', reason: `a PSBT maki takes is 1 byte to ${MAX_PSBT / 1024} KiB`, signed: null }
+    }
+    let total = 0
+    for (let offset = 0; offset < psbt.length; ) {
+      const piece = psbt.subarray(offset, offset + PSBT_PIECE)
+      const last = offset + piece.length >= psbt.length
+      const body = new Writer().u8(network).u32(psbt.length).u32(offset).bytes16(piece).finish()
+      const r = new Reader((await this.request(Kind.BTC_SIGN, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
+      const done = r.u8() === 1
+      const approval = Approval[r.u8()] ?? 'unavailable'
+      total = r.u32()
+      const reason = r.str8()
+      r.end()
+      if (done && approval !== 'approved') return { approval, reason, signed: null }
+      if (done) break
+      if (last) return { approval: 'unavailable', reason: '', signed: null }
+      offset += piece.length
+    }
+    // the signed PSBT, piece by piece
+    const signed = new Uint8Array(total)
+    for (let offset = 0; offset < total; ) {
+      const r = new Reader((await this.request(Kind.BTC_SIGNED, new Writer().u32(offset).finish())).body)
+      const status = Approval[r.u8()] ?? 'unavailable'
+      const size = r.u32()
+      const at = r.u32()
+      const piece = r.bytes16()
+      r.end()
+      if (status !== 'approved' || size !== total || at !== offset || piece.length === 0 || offset + piece.length > total) {
+        return { approval: 'unavailable', reason: '', signed: null }
+      }
+      signed.set(piece, offset)
+      offset += piece.length
+    }
+    return { approval: 'approved', reason: '', signed }
   }
 
   /** The host's own clock. Refused (false) once the badge holds a verified time. */

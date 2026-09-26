@@ -35,6 +35,13 @@ const api = {
     register: (name: string): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:register', name),
     unregister: (name: string): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:unregister', name)
   },
+  wallet: {
+    /** A file dialog for a PSBT; its path and bytes, or null if cancelled. */
+    open: (): Promise<{ path: string; data: Uint8Array } | null> => ipcRenderer.invoke('wallet:open'),
+    /** A save dialog starting at `defaultPath`; where it went, or null if cancelled. */
+    save: (defaultPath: string, data: Uint8Array): Promise<string | null> => ipcRenderer.invoke('wallet:save', defaultPath, data)
+  },
+  copy: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:write', text),
   settings: {
     startAtLogin: (): Promise<boolean> => ipcRenderer.invoke('settings:startAtLogin'),
     setStartAtLogin: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setStartAtLogin', on)
