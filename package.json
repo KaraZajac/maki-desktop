@@ -6,6 +6,7 @@
   "author": ".leviathan.",
   "license": "BSD-3-Clause",
   "private": true,
+  "desktopName": "maki.desktop",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",

@@ -11,6 +11,7 @@ mac:
   category: public.app-category.utilities
 linux:
   files: [out/**/*, resources/**/*, package.json]
+  syncDesktopName: true
   target: [AppImage]
   category: Utility
 win:
