@@ -27,7 +27,7 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
   const fromHost = new PassThrough()
 
   beforeAll(async () => {
-    fake = await startFake(['--totp', `github.com=${SECRET_B32}`])
+    fake = await startFake(['--clock-verified', '--totp', `github.com=${SECRET_B32}`])
     link = new Link(async () => {
       throw new Error('offline')
     })

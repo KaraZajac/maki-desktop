@@ -84,7 +84,7 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
   beforeAll(async () => {
     execFileSync('npm', ['run', '-s', 'build'], { cwd: DESKTOP, stdio: 'ignore' })
     execFileSync('npm', ['run', '-s', 'build:extension'], { cwd: DESKTOP, stdio: 'ignore' })
-    fake = await startFake(['--totp', `localhost=${SECRET_B32}`])
+    fake = await startFake(['--clock-verified', '--totp', `localhost=${SECRET_B32}`])
     link = new Link(async () => {
       throw new Error('offline')
     })

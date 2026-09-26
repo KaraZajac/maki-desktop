@@ -70,7 +70,7 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
   const sock = join(mkdtempSync(join(tmpdir(), 'maki-test-')), 'bridge.sock')
 
   beforeAll(async () => {
-    fake = await startFake(['--totp', `example.com=${SECRET_B32}`])
+    fake = await startFake(['--clock-verified', '--totp', `example.com=${SECRET_B32}`])
     link = new Link(async () => {
       throw new Error('offline')
     })

@@ -82,8 +82,9 @@ The fake maki is the firmware's real protocol logic on a TCP socket. Build it in
 (`KaraZajac/baokey-firmware`):
 
 ```sh
-cargo build -p maki-proto --example fake_maki
+cargo build -p maki-proto --features fake --example fake_maki
 target/debug/examples/fake_maki             # 127.0.0.1:7878; the app's "Use fake maki" button
+target/debug/examples/fake_maki --clock-verified   # codes without syncing through Roughtime first
 ```
 
 Tests look for it at `../xous-core/target/debug/examples/fake_maki` (the BAOKEY checkout layout), or

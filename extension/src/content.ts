@@ -59,6 +59,8 @@ function trouble(r: Reply): string | null {
       return 'Nobody approved on maki in time'
     case 'unavailable':
       return 'maki can’t reach its vault right now'
+    case 'clock not verified':
+      return 'maki’s clock isn’t verified yet, so it can’t make a code'
     default:
       return null
   }

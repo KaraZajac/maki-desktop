@@ -55,15 +55,10 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
     await t.close()
   })
 
-  it('gives the right TOTP code', async () => {
+  it('gives no code on this computer’s word for the time', async () => {
     const [c, t] = await client()
-    const before = Math.floor(Date.now() / 1000)
-    const { approval, code, validForS } = await c.getTotp('example.com')
-    const after = Math.floor(Date.now() / 1000)
-    expect(approval).toBe('approved')
-    expect([expectedTotp(SECRET_B32, before), expectedTotp(SECRET_B32, after)]).toContain(code)
-    expect(validForS).toBeGreaterThan(0)
-    expect(validForS).toBeLessThanOrEqual(30)
+    expect((await c.status()).timeState).toBe(TimeState.UNVERIFIED)
+    expect(await c.getTotp('example.com')).toEqual({ approval: 'clock not verified', code: '', validForS: 0 })
     await t.close()
   })
 
@@ -87,6 +82,28 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
     expect(Math.abs(report.utcMs - Date.now())).toBeLessThan(10_000)
     expect((await c.status()).timeState).toBe(TimeState.VERIFIED)
     expect(await c.timeUnverified(Date.now() + 3_600_000, 0)).toBe(false)
+    expect((await c.getTotp('example.com')).approval).toBe('approved')
+    await t.close()
+  })
+})
+
+describe.skipIf(!FAKE_BUILT)('with a verified clock', () => {
+  let fake: { port: number; proc: ChildProcess }
+  beforeAll(async () => {
+    fake = await startFake(['--clock-verified', '--totp', `example.com=${SECRET_B32}`])
+  })
+  afterAll(() => fake?.proc.kill())
+
+  it('gives the right TOTP code', async () => {
+    const t = await TcpTransport.open(fake.port)
+    const c = new MakiClient(t)
+    const before = Math.floor(Date.now() / 1000)
+    const { approval, code, validForS } = await c.getTotp('example.com')
+    const after = Math.floor(Date.now() / 1000)
+    expect(approval).toBe('approved')
+    expect([expectedTotp(SECRET_B32, before), expectedTotp(SECRET_B32, after)]).toContain(code)
+    expect(validForS).toBeGreaterThan(0)
+    expect(validForS).toBeLessThanOrEqual(30)
     await t.close()
   })
 })
@@ -94,7 +111,7 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
 describe.skipIf(!FAKE_BUILT)('when the owner says no', () => {
   let fake: { port: number; proc: ChildProcess }
   beforeAll(async () => {
-    fake = await startFake(['--deny', '--totp', `example.com=${SECRET_B32}`])
+    fake = await startFake(['--deny', '--clock-verified', '--totp', `example.com=${SECRET_B32}`])
   })
   afterAll(() => fake?.proc.kill())
 
