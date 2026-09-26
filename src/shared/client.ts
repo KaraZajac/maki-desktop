@@ -14,6 +14,7 @@ import {
   ProofStatus,
   Reader,
   TimeStateValue,
+  BACKUP_PIECE,
   Writer,
   type Packet
 } from './protocol'
@@ -182,6 +183,55 @@ export class MakiClient {
     const approval = Approval[r.u8()] ?? 'unavailable'
     r.end()
     return approval
+  }
+
+  /**
+   * maki's backup, piece by piece: its logins and codes, encrypted with a key only its recovery
+   * phrase gives. Anything but 'approved' (locked, no phrase yet) comes back with no data.
+   */
+  async backup(): Promise<{ status: ApprovalValue; data: Uint8Array }> {
+    const parts: Uint8Array[] = []
+    let offset = 0
+    let total = 0
+    do {
+      // the first piece seals a fresh backup, which takes maki a moment
+      const r = new Reader((await this.request(Kind.BACKUP_GET, new Writer().u32(offset).finish(), 20_000)).body)
+      const status = Approval[r.u8()] ?? 'unavailable'
+      total = r.u32()
+      const at = r.u32()
+      const piece = r.bytes16()
+      r.end()
+      if (status !== 'approved') return { status, data: new Uint8Array() }
+      if (at !== offset || (piece.length === 0 && offset < total)) return { status: 'unavailable', data: new Uint8Array() }
+      parts.push(piece)
+      offset += piece.length
+    } while (offset < total)
+    const data = new Uint8Array(total)
+    let at = 0
+    for (const p of parts) {
+      data.set(p, at)
+      at += p.length
+    }
+    return { status: 'approved', data }
+  }
+
+  /** Send a backup back to maki; the owner approves the restore on maki's screen. */
+  async restore(blob: Uint8Array): Promise<{ approval: ApprovalValue; logins: number; codes: number }> {
+    for (let offset = 0; offset < blob.length || offset === 0; ) {
+      const piece = blob.subarray(offset, offset + BACKUP_PIECE)
+      const last = offset + piece.length >= blob.length
+      const body = new Writer().u32(blob.length).u32(offset).bytes16(piece).finish()
+      const r = new Reader((await this.request(Kind.BACKUP_PUT, body, last ? MakiClient.APPROVAL_TIMEOUT_MS : 10_000)).body)
+      const done = r.u8() === 1
+      const approval = Approval[r.u8()] ?? 'unavailable'
+      const logins = r.u16()
+      const codes = r.u16()
+      r.end()
+      if (done) return { approval, logins, codes }
+      offset += piece.length
+      if (blob.length === 0) break
+    }
+    return { approval: 'unavailable', logins: 0, codes: 0 }
   }
 
   /** The host's own clock. Refused (false) once the badge holds a verified time. */

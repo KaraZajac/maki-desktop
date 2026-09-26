@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, session, Tray } from 'electron'
 import { connect, type Socket } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BridgeRequest, BridgeResult } from '../shared/bridge-types'
+import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
 import { serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
@@ -28,6 +30,8 @@ let link: LinkReport = { linked: false, via: null, timeState: null }
 const startHidden = process.argv.includes('--hidden')
 // MAKI_OFFSCREEN=1 renders without ever showing a window: scripts/screenshot.cjs, UI tests
 const offscreen = process.env['MAKI_OFFSCREEN'] === '1'
+// screenshots and UI tests keep their settings and backups out of the real app data
+if (offscreen) app.setPath('userData', join(tmpdir(), `maki-offscreen-${process.pid}`))
 
 const resource = (name: string): string => join(app.getAppPath(), 'resources', name)
 
@@ -143,6 +147,10 @@ function ipc(): void {
     fromBrowser.get(key)?.(response)
     fromBrowser.delete(key)
   })
+  ipcMain.handle('backups:save', (_e, data: Uint8Array) => saveBackup(data))
+  ipcMain.handle('backups:latest', () => latestBackup())
+  ipcMain.handle('backups:info', () => backupInfo())
+  ipcMain.handle('backups:show', () => showBackups())
   ipcMain.handle('browsers:status', () => browserStatus())
   ipcMain.handle('browsers:register', (_e, name: string) => registerBrowser(name, launch()))
   ipcMain.handle('browsers:unregister', (_e, name: string) => unregisterBrowser(name))

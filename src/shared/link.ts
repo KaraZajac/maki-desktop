@@ -13,6 +13,18 @@ export const HEARTBEAT_MS = 10_000
 export const PROBE_TIMEOUT_MS = 2_000
 /** The RTC drifts; resync this often while linked. */
 export const RESYNC_MS = 6 * 60 * 60 * 1000
+/** Back up this often while linked, and soon after a login is saved. */
+export const BACKUP_EVERY_MS = 60 * 60 * 1000
+export const BACKUP_AFTER_SAVE_MS = 5_000
+
+/**
+ * Where backups go: files in the app's folder, in the app; memory, in tests. They're encrypted
+ * with a key only maki's recovery phrase gives, so this side never sees what's in them.
+ */
+export interface BackupStore {
+  save(data: Uint8Array): Promise<void>
+  latest(): Promise<Uint8Array | null>
+}
 
 export type Via = 'USB' | 'fake maki'
 
@@ -30,11 +42,15 @@ export class Link {
   private client: MakiClient | null = null
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private resync: ReturnType<typeof setInterval> | null = null
+  private backups_: ReturnType<typeof setInterval> | null = null
+  private backupSoon: ReturnType<typeof setTimeout> | null = null
   private listeners = new Set<() => void>()
+  backingUp = false
 
   constructor(
     private relay: Relay,
-    private now: () => Date = () => new Date()
+    private now: () => Date = () => new Date(),
+    private backups: BackupStore | null = null
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -89,7 +105,63 @@ export class Link {
     this.heartbeat = setInterval(() => void this.beat(), HEARTBEAT_MS)
     this.resync = setInterval(() => void this.syncNow(), RESYNC_MS)
     if (this.autoSync) await this.syncNow()
+    if (this.backups) {
+      this.backups_ = setInterval(() => void this.backupNow({ quiet: true }), BACKUP_EVERY_MS)
+      if (this.autoSync) void this.backupNow({ quiet: true })
+    }
     return true
+  }
+
+  /**
+   * Fetch maki's backup and keep it. Quiet: a maki that's locked, or has no recovery phrase
+   * yet, isn't worth a line in the log every hour.
+   */
+  async backupNow({ quiet = false } = {}): Promise<boolean> {
+    const client = this.client
+    if (!client || !this.backups || this.backingUp || !this.state.linked) return false
+    this.backingUp = true
+    this.emit()
+    try {
+      const { status, data } = await client.backup()
+      if (status === 'approved') {
+        await this.backups.save(data)
+        this.note(`backed up (${Math.max(1, Math.round(data.length / 1024))} KB, encrypted)`)
+        return true
+      }
+      if (!quiet || !(status === 'locked' || status === 'no phrase')) {
+        this.note(status === 'locked' ? 'no backup: maki is locked' : status === 'no phrase' ? 'no backup: maki has no recovery phrase yet' : `no backup: ${status}`)
+      }
+      return false
+    } catch (e) {
+      this.note(`backup failed: ${(e as Error).message}`)
+      return false
+    } finally {
+      this.backingUp = false
+      this.emit()
+    }
+  }
+
+  /** Send the latest backup to maki; the owner approves on maki's screen. */
+  async restoreLatest(): Promise<void> {
+    const client = this.client
+    if (!client || !this.backups || !this.state.linked) return
+    const blob = await this.backups.latest()
+    if (!blob) return this.note('no backup on this computer to restore')
+    this.note('restoring a backup: approve on maki')
+    try {
+      const r = await client.restore(blob)
+      this.note(
+        r.approval === 'approved'
+          ? r.logins + r.codes === 0
+            ? 'maki already has everything in the backup'
+            : `restored ${r.logins} logins and ${r.codes} codes`
+          : r.approval === 'not yours'
+            ? 'that backup is from another recovery phrase'
+            : `restore: ${r.approval}`
+      )
+    } catch (e) {
+      this.note(`restore failed: ${(e as Error).message}`)
+    }
   }
 
   private async beat(): Promise<void> {
@@ -159,6 +231,10 @@ export class Link {
         this.note(`${request.site} offered a login to keep: approve on maki`)
         const approval = await client.saveLogin(request.site, request.username, request.password)
         this.note(`${request.site}: save ${approval}`)
+        if (approval === 'approved' && this.backups) {
+          if (this.backupSoon) clearTimeout(this.backupSoon)
+          this.backupSoon = setTimeout(() => void this.backupNow({ quiet: true }), BACKUP_AFTER_SAVE_MS)
+        }
         return { type: 'saveLogin', approval }
       }
     }
@@ -170,7 +246,9 @@ export class Link {
     this.client = null
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.resync) clearInterval(this.resync)
-    this.heartbeat = this.resync = null
+    if (this.backups_) clearInterval(this.backups_)
+    if (this.backupSoon) clearTimeout(this.backupSoon)
+    this.heartbeat = this.resync = this.backups_ = this.backupSoon = null
     const wasLinked = this.state.linked
     this.state = { linked: false }
     void client?.close().catch(() => {})

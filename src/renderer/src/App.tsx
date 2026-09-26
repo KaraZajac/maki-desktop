@@ -24,7 +24,21 @@ function useLink(link: Link): Link {
 }
 
 export default function App(): React.JSX.Element {
-  const link = useLink(useMemo(() => new Link(window.maki.relay), []))
+  const link = useLink(
+    useMemo(
+      () =>
+        new Link(window.maki.relay, undefined, {
+          save: (data) => window.maki.backups.save(data),
+          latest: () => window.maki.backups.latest()
+        }),
+      []
+    )
+  )
+  const [backup, setBackup] = useState<{ at: number; bytes: number } | null>(null)
+  // the latest backup's age: refresh when the link has news (a backup is a line in its log)
+  useEffect(() => {
+    void window.maki.backups.info().then(setBackup)
+  }, [link.log.length])
   const [startAtLogin, setStartAtLogin] = useState<boolean | null>(null)
   const [, tick] = useState(0)
 
@@ -203,6 +217,38 @@ export default function App(): React.JSX.Element {
               ))}
             </ul>
           )}
+        </section>
+
+        <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Backups</h2>
+          <p className="mb-3 text-sm text-zinc-400">
+            {backup
+              ? `Last backup ${new Date(backup.at).toLocaleString()}, ${Math.max(1, Math.round(backup.bytes / 1024))} KB.`
+              : 'No backup yet.'}{' '}
+            maki's logins and codes, encrypted with a key only its recovery phrase gives: safe to keep anywhere.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              disabled={!s.linked || link.backingUp}
+              onClick={() => void link.backupNow()}
+              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-40"
+            >
+              {link.backingUp ? 'Backing up…' : 'Back up now'}
+            </button>
+            <button
+              disabled={!s.linked || !backup}
+              onClick={() => void link.restoreLatest()}
+              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-40"
+            >
+              Restore to maki
+            </button>
+            <button
+              onClick={() => void window.maki.backups.show()}
+              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500"
+            >
+              Show folder
+            </button>
+          </div>
         </section>
 
         <section className="rounded-xl border border-dashed border-zinc-800 p-4 text-sm text-zinc-500">

@@ -18,6 +18,10 @@ export const Kind = {
   GET_LOGIN: 0x10,
   GET_TOTP: 0x11,
   SAVE_LOGIN: 0x12,
+  /** a piece of maki's backup, encrypted with a key from the recovery phrase */
+  BACKUP_GET: 0x20,
+  /** a piece of a backup to restore; the last is answered once the owner decides */
+  BACKUP_PUT: 0x21,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const
@@ -28,7 +32,19 @@ export type TimeStateValue = (typeof TimeState)[keyof typeof TimeState]
 export const ProofStatus = { SET: 0, TOO_FEW_VERIFIED: 1, DISAGREE: 2 } as const
 export const AnswerStatus = ['verified', 'unknown server', 'duplicate', 'invalid', 'too imprecise'] as const
 export const ErrorCode = ['', 'malformed', 'unknown kind', 'no challenge', 'challenge expired', 'bad argument'] as const
-export const Approval = ['approved', 'denied', 'no match', 'timed out', 'unavailable', 'clock not verified', 'locked'] as const
+export const Approval = [
+  'approved',
+  'denied',
+  'no match',
+  'timed out',
+  'unavailable',
+  'clock not verified',
+  'locked',
+  'not yours',
+  'no phrase'
+] as const
+/** Pieces of a backup are at most this big. */
+export const BACKUP_PIECE = 4096
 export type ApprovalValue = (typeof Approval)[number]
 
 export interface Packet {
@@ -171,6 +187,9 @@ export class Writer {
   u16(v: number): this {
     return this.raw(2, (d) => d.setUint16(0, v, true))
   }
+  u32(v: number): this {
+    return this.raw(4, (d) => d.setUint32(0, v, true))
+  }
   i32(v: number): this {
     return this.raw(4, (d) => d.setInt32(0, v, true))
   }
@@ -214,6 +233,9 @@ export class Reader {
   }
   u16(): number {
     return this.view.getUint16(this.need(2), true)
+  }
+  u32(): number {
+    return this.view.getUint32(this.need(4), true)
   }
   i32(): number {
     return this.view.getInt32(this.need(4), true)

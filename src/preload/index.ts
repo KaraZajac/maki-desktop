@@ -24,6 +24,12 @@ const api = {
     ipcRenderer.on('browser:request', listener)
     return () => ipcRenderer.removeListener('browser:request', listener)
   },
+  backups: {
+    save: (data: Uint8Array): Promise<void> => ipcRenderer.invoke('backups:save', data),
+    latest: (): Promise<Uint8Array | null> => ipcRenderer.invoke('backups:latest'),
+    info: (): Promise<{ at: number; bytes: number } | null> => ipcRenderer.invoke('backups:info'),
+    show: (): Promise<void> => ipcRenderer.invoke('backups:show')
+  },
   browsers: {
     status: (): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:status'),
     register: (name: string): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:register', name),
