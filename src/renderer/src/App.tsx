@@ -29,6 +29,11 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => watchUsb(link), [link])
   useEffect(() => window.maki.onTraySync(() => void link.syncNow()), [link])
+  useEffect(() => window.maki.onBrowserRequest((request) => link.fromBrowser(request)), [link])
+  const [browsers, setBrowsers] = useState<{ name: string; registered: boolean }[] | null>(null)
+  useEffect(() => {
+    void window.maki.browsers.status().then(setBrowsers)
+  }, [])
   useEffect(() => {
     void window.maki.settings.startAtLogin().then(setStartAtLogin)
   }, [])
@@ -164,6 +169,39 @@ export default function App(): React.JSX.Element {
             />
           </label>
           <p className="mt-2 text-xs text-zinc-500">Closing this window keeps maki linked from the tray.</p>
+        </section>
+
+        <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Browsers</h2>
+          {browsers === null ? null : browsers.length === 0 ? (
+            <p className="text-sm text-zinc-400">No supported browser found.</p>
+          ) : (
+            <>
+              <ul className="mb-3 space-y-1 text-sm">
+                {browsers.map((b) => (
+                  <li key={b.name} className="flex justify-between">
+                    <span className="text-zinc-300">{b.name}</span>
+                    <span className={b.registered ? 'text-emerald-400' : 'text-zinc-500'}>
+                      {b.registered ? 'connected' : 'not set up'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={async () => {
+                  try {
+                    setBrowsers(await window.maki.browsers.register())
+                    link.note('browser integration set up: add the maki extension to finish')
+                  } catch (e) {
+                    link.note(`browser integration failed: ${(e as Error).message}`)
+                  }
+                }}
+                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500"
+              >
+                {browsers.every((b) => b.registered) ? 'Set up again' : 'Set up browsers'}
+              </button>
+            </>
+          )}
         </section>
 
         <section className="rounded-xl border border-dashed border-zinc-800 p-4 text-sm text-zinc-500">

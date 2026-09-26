@@ -4,6 +4,7 @@
  * renderer (usb.ts) and hands transports in through `attach`.
  */
 
+import type { BridgeRequest, BridgeResult } from './bridge-types'
 import { MakiClient, syncTime, type Hello, type Relay, type Status, type SyncReport, type Transport } from './client'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
@@ -128,6 +129,38 @@ export class Link {
     } finally {
       this.syncing = false
       this.emit()
+    }
+  }
+
+  /**
+   * A request from the browser extension. Logs the site and the outcome, never a secret.
+   * Anything that needs maki fails fast when maki isn't linked.
+   */
+  async fromBrowser(request: BridgeRequest): Promise<BridgeResult> {
+    if (request.type === 'status') {
+      return { type: 'status', linked: this.state.linked, timeState: this.state.linked ? this.state.status.timeState : null }
+    }
+    const client = this.client
+    if (!client || !this.state.linked) throw new Error('maki is not linked')
+    switch (request.type) {
+      case 'getLogin': {
+        this.note(`${request.site} asked for its login: approve on maki`)
+        const r = await client.getLogin(request.site)
+        this.note(`${request.site}: login ${r.approval}`)
+        return { type: 'getLogin', ...r }
+      }
+      case 'getTotp': {
+        this.note(`${request.site} asked for a code: approve on maki`)
+        const r = await client.getTotp(request.site)
+        this.note(`${request.site}: code ${r.approval}`)
+        return { type: 'getTotp', ...r }
+      }
+      case 'saveLogin': {
+        this.note(`${request.site} offered a login to keep: approve on maki`)
+        const approval = await client.saveLogin(request.site, request.username, request.password)
+        this.note(`${request.site}: save ${approval}`)
+        return { type: 'saveLogin', approval }
+      }
     }
   }
 

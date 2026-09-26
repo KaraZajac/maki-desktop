@@ -1,8 +1,12 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, session, Tray } from 'electron'
 import { connect, type Socket } from 'node:net'
 import { join } from 'node:path'
-import { relay } from './roughtime'
+import type { BridgeRequest, BridgeResult } from '../shared/bridge-types'
+import { browserStatus, registerBrowsers, unregisterBrowsers } from './browsers'
+import { serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
+import { launchTrayApp, runNativeHost } from './native-host'
+import { relay } from './roughtime'
 
 /**
  * maki's desktop app lives in the tray: the window can close, the link stays. The renderer owns
@@ -26,6 +30,19 @@ const startHidden = process.argv.includes('--hidden')
 const offscreen = process.env['MAKI_OFFSCREEN'] === '1'
 
 const resource = (name: string): string => join(app.getAppPath(), 'resources', name)
+
+/** Browser requests waiting on the window, which owns the link. */
+const fromBrowser = new Map<number, (r: { ok: true; result: BridgeResult } | { ok: false; error: string }) => void>()
+let nextBrowserRequest = 1
+
+function askWindow(request: BridgeRequest): Promise<BridgeResult> {
+  if (!win) return Promise.reject(new Error('maki desktop is starting'))
+  const key = nextBrowserRequest++
+  return new Promise((resolve, reject) => {
+    fromBrowser.set(key, (r) => (r.ok ? resolve(r.result) : reject(new Error(r.error))))
+    win!.webContents.send('browser:request', key, request)
+  })
+}
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -119,6 +136,13 @@ function ipc(): void {
     link = report
     void refreshTray()
   })
+  ipcMain.on('browser:response', (_e, key: number, response: { ok: true; result: BridgeResult } | { ok: false; error: string }) => {
+    fromBrowser.get(key)?.(response)
+    fromBrowser.delete(key)
+  })
+  ipcMain.handle('browsers:status', () => browserStatus())
+  ipcMain.handle('browsers:register', () => registerBrowsers())
+  ipcMain.handle('browsers:unregister', () => unregisterBrowsers())
   ipcMain.handle('settings:startAtLogin', () => getStartAtLogin())
   ipcMain.handle('settings:setStartAtLogin', async (_e, on: boolean) => {
     await setStartAtLogin(on)
@@ -151,8 +175,18 @@ function ipc(): void {
   ipcMain.handle('dev:close', () => devSocket?.destroy())
 }
 
-// one maki app per login: a second launch just brings the window forward
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes('--native-host')) {
+  // started by a browser for the maki extension: relay to the tray app, starting it if needed.
+  // Before the single-instance lock, which the tray app holds.
+  app.dock?.hide()
+  void runNativeHost({
+    socketPath: socketPath(),
+    input: process.stdin,
+    output: process.stdout,
+    launchApp: () => launchTrayApp(process.env['APPIMAGE'] ?? process.execPath, app.isPackaged ? null : app.getAppPath())
+  }).finally(() => app.exit(0))
+} else if (!app.requestSingleInstanceLock()) {
+  // one maki app per login: a second launch just brings the window forward
   app.quit()
 } else {
   app.on('second-instance', () => showWindow())
@@ -160,6 +194,7 @@ if (!app.requestSingleInstanceLock()) {
     allowSerial()
     ipc()
     createWindow()
+    serveBridge(askWindow).catch((e) => console.error(`browser bridge unavailable: ${(e as Error).message}`))
     if (!offscreen) {
       tray = new Tray(nativeImage.createFromPath(resource('tray.png')))
       tray.on('click', () => (win?.isVisible() ? win.hide() : showWindow()))

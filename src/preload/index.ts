@@ -10,6 +10,24 @@ const api = {
     ipcRenderer.on('tray:sync', handler)
     return () => ipcRenderer.removeListener('tray:sync', handler)
   },
+  /** The main process forwards browser-extension requests here; the window owns the link. */
+  onBrowserRequest: (
+    handler: (request: import('../shared/bridge-types').BridgeRequest) => Promise<import('../shared/bridge-types').BridgeResult>
+  ): (() => void) => {
+    const listener = (_e: unknown, key: number, request: import('../shared/bridge-types').BridgeRequest): void => {
+      handler(request).then(
+        (result) => ipcRenderer.send('browser:response', key, { ok: true, result }),
+        (e: Error) => ipcRenderer.send('browser:response', key, { ok: false, error: e.message })
+      )
+    }
+    ipcRenderer.on('browser:request', listener)
+    return () => ipcRenderer.removeListener('browser:request', listener)
+  },
+  browsers: {
+    status: (): Promise<{ name: string; registered: boolean }[]> => ipcRenderer.invoke('browsers:status'),
+    register: (): Promise<{ name: string; registered: boolean }[]> => ipcRenderer.invoke('browsers:register'),
+    unregister: (): Promise<{ name: string; registered: boolean }[]> => ipcRenderer.invoke('browsers:unregister')
+  },
   settings: {
     startAtLogin: (): Promise<boolean> => ipcRenderer.invoke('settings:startAtLogin'),
     setStartAtLogin: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setStartAtLogin', on)
