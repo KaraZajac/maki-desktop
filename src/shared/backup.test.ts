@@ -31,10 +31,10 @@ describe.skipIf(!FAKE_BUILT)('backups', () => {
 
     const [b, tb] = await client()
     expect((await b.getLogin('site7.example.com')).approval).toBe('no match')
-    expect(await b.restore(data)).toEqual({ approval: 'approved', logins: 40, codes: 0 })
+    expect(await b.restore(data)).toEqual({ approval: 'approved', logins: 40, codes: 0, passkeys: 0 })
     expect(await b.getLogin('site7.example.com')).toMatchObject({ approval: 'approved', username: 'user7' })
     // nothing new the second time: nothing to ask about
-    expect(await b.restore(data)).toEqual({ approval: 'approved', logins: 0, codes: 0 })
+    expect(await b.restore(data)).toEqual({ approval: 'approved', logins: 0, codes: 0, passkeys: 0 })
     await tb.close()
   }, 60_000)
 
@@ -68,7 +68,7 @@ describe.skipIf(!FAKE_BUILT)('the link keeps backups', () => {
     link2.autoSync = false
     expect(await link2.attach(await TcpTransport.open(b.port), 'fake maki')).toBe(true)
     await link2.restoreLatest()
-    expect(link2.log.join('\n')).toMatch(/restored 1 logins and 0 codes/)
+    expect(link2.log.join('\n')).toMatch(/restored 1 logins, 0 codes and 0 passkeys/)
     expect(link2.log.join('\n')).not.toMatch(/kara|pw\b/)
     link2.drop()
     b.proc.kill()

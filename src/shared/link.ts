@@ -153,9 +153,9 @@ export class Link {
       const r = await client.restore(blob)
       this.note(
         r.approval === 'approved'
-          ? r.logins + r.codes === 0
+          ? r.logins + r.codes + r.passkeys === 0
             ? 'maki already has everything in the backup'
-            : `restored ${r.logins} logins and ${r.codes} codes`
+            : `restored ${r.logins} logins, ${r.codes} codes and ${r.passkeys} passkeys`
           : r.approval === 'not yours'
             ? 'that backup is from another recovery phrase'
             : `restore: ${r.approval}`

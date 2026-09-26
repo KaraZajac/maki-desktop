@@ -218,8 +218,9 @@ export class MakiClient {
     return { status: 'approved', data }
   }
 
-  /** Send a backup back to maki; the owner approves the restore on maki's screen. */
-  async restore(blob: Uint8Array): Promise<{ approval: ApprovalValue; logins: number; codes: number }> {
+  /** Send a backup back to maki; the owner approves the restore on maki's screen. Passkeys are
+   * matched by credential ID; maki keeps what it has. */
+  async restore(blob: Uint8Array): Promise<{ approval: ApprovalValue; logins: number; codes: number; passkeys: number }> {
     for (let offset = 0; offset < blob.length || offset === 0; ) {
       const piece = blob.subarray(offset, offset + BACKUP_PIECE)
       const last = offset + piece.length >= blob.length
@@ -229,12 +230,13 @@ export class MakiClient {
       const approval = Approval[r.u8()] ?? 'unavailable'
       const logins = r.u16()
       const codes = r.u16()
+      const passkeys = r.u16()
       r.end()
-      if (done) return { approval, logins, codes }
+      if (done) return { approval, logins, codes, passkeys }
       offset += piece.length
       if (blob.length === 0) break
     }
-    return { approval: 'unavailable', logins: 0, codes: 0 }
+    return { approval: 'unavailable', logins: 0, codes: 0, passkeys: 0 }
   }
 
   /** How long signing waits: maki gives the owner five minutes to go through a transaction. */
