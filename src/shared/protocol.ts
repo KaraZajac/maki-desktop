@@ -28,7 +28,7 @@ export type TimeStateValue = (typeof TimeState)[keyof typeof TimeState]
 export const ProofStatus = { SET: 0, TOO_FEW_VERIFIED: 1, DISAGREE: 2 } as const
 export const AnswerStatus = ['verified', 'unknown server', 'duplicate', 'invalid', 'too imprecise'] as const
 export const ErrorCode = ['', 'malformed', 'unknown kind', 'no challenge', 'challenge expired', 'bad argument'] as const
-export const Approval = ['approved', 'denied', 'no match', 'timed out', 'unavailable', 'clock not verified'] as const
+export const Approval = ['approved', 'denied', 'no match', 'timed out', 'unavailable', 'clock not verified', 'locked'] as const
 export type ApprovalValue = (typeof Approval)[number]
 
 export interface Packet {

@@ -61,6 +61,8 @@ function trouble(r: Reply): string | null {
       return 'maki can’t reach its vault right now'
     case 'clock not verified':
       return 'maki’s clock isn’t verified yet, so it can’t make a code'
+    case 'locked':
+      return 'maki is locked: enter your PIN on maki'
     default:
       return null
   }
