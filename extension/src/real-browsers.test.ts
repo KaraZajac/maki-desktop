@@ -9,7 +9,7 @@
  * MAKI_CHROMIUM and MAKI_FIREFOX point at other browser binaries.
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server as HttpServer } from 'node:http'
 import type { AddressInfo, Server } from 'node:net'
 import { homedir, tmpdir, userInfo } from 'node:os'
@@ -64,7 +64,17 @@ async function run() {
   document.body.innerHTML = '<form><input type="text" name="app_otp" autocomplete="one-time-code" id="otp"></form>'
   focus(document.getElementById('otp'))
   await until(() => document.getElementById('otp').value, 'no code filled')
-  await report('done', { ...login, code: document.getElementById('otp').value })
+  const code = document.getElementById('otp').value
+
+  // the Ethereum provider maki puts in the page, found the EIP-6963 way too
+  let wallet = null
+  addEventListener('eip6963:announceProvider', (e) => (wallet = e.detail.info.name))
+  dispatchEvent(new Event('eip6963:requestProvider'))
+  if (!window.ethereum) throw new Error('no window.ethereum')
+  const [account] = await window.ethereum.request({ method: 'eth_requestAccounts' })
+  const hex = [...new TextEncoder().encode('Sign in to demo.maki')].map((b) => b.toString(16).padStart(2, '0')).join('')
+  const signature = await window.ethereum.request({ method: 'personal_sign', params: ['0x' + hex, account] })
+  await report('done', { ...login, code, wallet, account, signature })
 }
 addEventListener('load', () => setTimeout(() => run().catch((e) => report('failed', { error: String(e) })), 1000))
 </script>`
@@ -84,7 +94,8 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
   beforeAll(async () => {
     execFileSync('npm', ['run', '-s', 'build'], { cwd: DESKTOP, stdio: 'ignore' })
     execFileSync('npm', ['run', '-s', 'build:extension'], { cwd: DESKTOP, stdio: 'ignore' })
-    fake = await startFake(['--clock-verified', '--totp', `localhost=${SECRET_B32}`])
+    // 127.0.0.1 rather than localhost: an entry for a name without a dot covers nothing
+    fake = await startFake(['--clock-verified', '--totp', `127.0.0.1=${SECRET_B32}`])
     link = new Link(async () => {
       throw new Error('offline')
     })
@@ -96,7 +107,7 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
     chmodSync(launcher, 0o755)
     http = createServer((req, res) => {
       if (req.url === '/saved') {
-        res.end(JSON.stringify({ saved: link.log.some((l) => l.includes('localhost: save approved')) }))
+        res.end(JSON.stringify({ saved: link.log.some((l) => l.includes('127.0.0.1: save approved')) }))
       } else if (req.url === '/report') {
         let body = ''
         req.on('data', (c) => (body += c))
@@ -110,7 +121,7 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
       }
     })
     await new Promise<void>((ok) => http.listen(0, '127.0.0.1', ok))
-    origin = `http://localhost:${(http.address() as AddressInfo).port}`
+    origin = `http://127.0.0.1:${(http.address() as AddressInfo).port}`
   }, 120_000)
 
   afterAll(() => {
@@ -132,6 +143,10 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
     expect(r).toMatchObject({ username: 'kara@example.com', password: 'correct horse' })
     const now = Math.floor(Date.now() / 1000)
     expect([expectedTotp(SECRET_B32, now - 10), expectedTotp(SECRET_B32, now)]).toContain(r.code)
+    // the page's Ethereum provider: the test phrase's account, and the firmware's signature
+    expect(r).toMatchObject({ wallet: 'maki', account: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94' })
+    const sig = resolve(DESKTOP, '../xous-core/libs/maki-eth/tests/fixtures/abandon-message.sig')
+    if (existsSync(sig)) expect(r.signature).toBe(`0x${readFileSync(sig).toString('hex')}`)
   }
 
   it.skipIf(!chromium())('Chromium', async () => {
