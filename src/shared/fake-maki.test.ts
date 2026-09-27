@@ -5,8 +5,10 @@
 import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { relay } from '../main/roughtime'
+import { readBundle } from './bundle'
 import { MakiClient, MakiError, syncTime } from './client'
 import { TimeState } from './protocol'
+import { createPrivateKey, createPublicKey, hkdfSync, pbkdf2Sync } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { APP_FIXTURES, APP_FIXTURES_THERE, expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from './test-support'
@@ -164,6 +166,35 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki
     expect((await c.appList()).apps.map((a) => a.id)).toEqual(['com.leviathan.maki.tally'])
     expect(await c.appRemove('com.leviathan.maki.dice')).toBe('no match')
     await expect(c.appRemove('Not An ID')).rejects.toThrow('bad argument')
+    await t.close()
+  })
+
+  it('hands apps with the link permission messages, and brings back their answers', async () => {
+    const t = await TcpTransport.open(fake.port)
+    const c = new MakiClient(t)
+    const ssh = bundle('ssh')
+    expect(await c.appInstall(ssh)).toEqual({ approval: 'approved', reason: '' })
+    // an SSH agent's request for its keys, on connection 1: the SSH app starts to answer it
+    const r = await c.appMessage('com.leviathan.maki.ssh', new Uint8Array([0, 0, 0, 1, 11]))
+    expect(r.status).toBe('approved')
+    expect(Array.from(r.answer.subarray(0, 5))).toEqual([12, 0, 0, 0, 1])
+    // its one key: the app's secret for "ssh" from the phrase (the BIP39 test phrase here), made
+    // into an Ed25519 key, worked out here apart from maki's code
+    const seed = pbkdf2Sync(Array(11).fill('abandon').concat('about').join(' '), 'mnemonic', 2048, 64, 'sha512')
+    const id = Buffer.from('com.leviathan.maki.ssh')
+    const developer = Buffer.from(readBundle(ssh).developer)
+    const info = Buffer.concat([Buffer.from('app v1'), Buffer.from([id.length]), id, developer, Buffer.from([3]), Buffer.from('ssh')])
+    const secret = Buffer.from(hkdfSync('sha256', seed, 'maki', info, 32))
+    const pkcs8 = Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), secret])
+    const spki = createPublicKey(createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' })).export({ format: 'der', type: 'spki' })
+    const blob = Buffer.concat([Buffer.from([0, 0, 0, 11]), Buffer.from('ssh-ed25519'), Buffer.from([0, 0, 0, 32]), spki.subarray(-32)])
+    expect(Buffer.from(r.answer.subarray(9, 9 + blob.length))).toEqual(blob)
+
+    // an app without the link permission, no such app, and no app ID
+    expect((await c.appMessage('com.leviathan.maki.tally', new Uint8Array([1]))).status).toBe('refused')
+    expect((await c.appMessage('com.example.none', new Uint8Array([1]))).status).toBe('no match')
+    await expect(c.appMessage('Not An ID', new Uint8Array([1]))).rejects.toThrow('bad argument')
+    await expect(c.appMessage('com.leviathan.maki.ssh', new Uint8Array(4097))).rejects.toThrow('4096')
     await t.close()
   })
 })

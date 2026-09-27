@@ -42,6 +42,15 @@ extension to maki. The app store will come through here too.
   transaction (EIP-1559), and broadcasts what maki signed; reads go to public servers for
   Ethereum, Base, Optimism, Arbitrum, Polygon and Sepolia. Typed data (EIP-712) and `eth_sign`
   are refused.
+- **Installs apps on maki.** The Apps section lists what's installed and installs a `.maki` file
+  (or `maki install app.maki` from the SDK does, through this app): it shows what the bundle is,
+  that it's sideloaded, its developer's key and what it asks to do, and maki goes through the same
+  on its screen and asks. Software on this computer can send messages to apps that may talk to it
+  (the link permission), through the local socket.
+- **Is an SSH agent for maki's SSH app.** ssh and git talk to it (`SSH_AUTH_SOCK`, which the Apps
+  section shows once the app is installed), and it hands each request to the app on maki, which
+  reads what's to be signed, asks you, and signs. The agent holds no keys: `ssh-add -L` shows the
+  app's public key, for servers' authorized_keys or for git (`git config gpg.format ssh`).
 
 ## Browsers
 
@@ -131,6 +140,7 @@ src/main/                tray, window, Roughtime UDP relay, start-at-login, dev 
 src/main/bridge.ts       the local socket the native host connects to
 src/main/native-host.ts  --native-host: native messaging on stdio, relayed to the socket
 src/main/browsers.ts     registering the native host with installed browsers
+src/main/ssh-agent.ts    the SSH agent: each request to maki's SSH app, the answer back
 src/renderer/            Web Serial discovery (usb.ts) and the window (Bitcoin.tsx: the wallet)
 extension/               the browser extension: background, content script, field finding
 scripts/icons.py         draws the icons in resources/

@@ -14,6 +14,11 @@ export type BridgeRequest =
   | { id: number; type: 'install'; path: string }
   /** the same, once the main process has read the file: to the window only */
   | { id: number; type: 'installBundle'; data: Uint8Array }
+  /**
+   * a message for an app on maki with the link permission (base64 over the socket), from software
+   * on this computer, never the extension; maki desktop's SSH agent sends these to maki's SSH app
+   */
+  | { id: number; type: 'appMessage'; app: string; data: Uint8Array }
 
 /** What the browser extension may ask: the native messaging host passes on nothing else. */
 export const EXTENSION_REQUESTS = ['status', 'getLogin', 'getTotp', 'saveLogin', 'eth'] as const
@@ -26,8 +31,29 @@ export type BridgeResult =
   /** an EIP-1193 answer: the result, or the error the page's promise rejects with */
   | { type: 'eth'; result?: unknown; error?: { code: number; message: string } }
   | { type: 'install'; name: string; approval: string; reason: string }
+  /** the app's answer, base64, when `status` is 'approved' */
+  | { type: 'appMessage'; status: string; data: string }
 
 export type BridgeResponse = ({ id: number; ok: true } & BridgeResult) | { id: number; ok: false; error: string }
+
+/** maki's SSH app (the SDK's example `ssh`), which maki desktop's SSH agent talks to. */
+export const SSH_APP = 'com.leviathan.maki.ssh'
+
+/** An app ID as bundles have them: reverse-DNS, lower case. */
+export const APP_ID = /^(?=.{3,64}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+
+export function toBase64(bytes: Uint8Array): string {
+  let s = ''
+  for (const b of bytes) s += String.fromCharCode(b)
+  return btoa(s)
+}
+
+/** null if it isn't base64. */
+export function fromBase64(s: string): Uint8Array | null {
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s) || s.length % 4 !== 0) return null
+  const bin = atob(s)
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0))
+}
 
 /** Everything the app accepts, checked field by field: the socket is reachable by any local process. */
 export function parseRequest(value: unknown): BridgeRequest | null {
@@ -57,6 +83,13 @@ export function parseRequest(value: unknown): BridgeRequest | null {
     case 'install': {
       const path = str('path', 4096)
       return path === null ? null : { id, type: 'install', path }
+    }
+    case 'appMessage': {
+      const app = str('app', 64)
+      const data = str('data', 8192)
+      const bytes = data === null ? null : fromBase64(data)
+      if (app === null || !APP_ID.test(app) || bytes === null || bytes.length > 4096) return null
+      return { id, type: 'appMessage', app, data: bytes }
     }
     case 'saveLogin': {
       const site = str('site', 253)

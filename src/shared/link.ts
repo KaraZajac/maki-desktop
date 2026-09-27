@@ -4,7 +4,7 @@
  * renderer (usb.ts) and hands transports in through `attach`.
  */
 
-import type { BridgeRequest, BridgeResult } from './bridge-types'
+import { type BridgeRequest, type BridgeResult, toBase64 } from './bridge-types'
 import {
   MakiClient,
   syncTime,
@@ -244,6 +244,14 @@ export class Link {
     return r
   }
 
+  /**
+   * A message for an app on maki with the link permission, and its answer. Not logged: what an
+   * app and the software talking to it say is theirs.
+   */
+  async appMessage(id: string, message: Uint8Array): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
+    return this.linkedClient().appMessage(id, message)
+  }
+
   /** Remove an app and its data, once the owner says so on maki. */
   async appRemove(id: string, name: string): Promise<ApprovalValue> {
     const client = this.linkedClient()
@@ -319,6 +327,10 @@ export class Link {
       return { type: 'install', name, ...r }
     }
     if (request.type === 'install') throw new Error('malformed request')
+    if (request.type === 'appMessage') {
+      const r = await this.appMessage(request.app, request.data)
+      return { type: 'appMessage', status: r.status, data: toBase64(r.answer) }
+    }
     const client = this.client
     if (!client || !this.state.linked) throw new Error('maki is not linked')
     switch (request.type) {

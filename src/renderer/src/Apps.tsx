@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { SSH_APP } from '@shared/bridge-types'
 import { fingerprint, iconPixels, readBundle, type Bundle } from '@shared/bundle'
 import type { InstalledApp } from '@shared/client'
 import type { Link } from '@shared/link'
@@ -70,6 +71,10 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
   const [chosen, setChosen] = useState<{ bundle: Bundle; path: string; developer: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
+  const [agent, setAgent] = useState<string | null>(null)
+  useEffect(() => {
+    void window.maki.ssh.socket().then(setAgent)
+  }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -136,6 +141,7 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
     })
 
   const idle = linked && busy === null
+  const ssh = apps?.find((a) => a.id === SSH_APP)
   const m = chosen?.bundle.manifest
   const update = m ? apps?.find((a) => a.id === m.id) : undefined
 
@@ -185,6 +191,27 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
             </li>
           ))}
         </ul>
+      )}
+
+      {ssh && agent && (
+        <div className="mt-3 rounded-lg border border-zinc-800 p-3 text-sm">
+          <p className="text-zinc-300">
+            SSH and git: maki desktop is an SSH agent for {ssh.name}, which asks you on maki before every sign-in and
+            signature. Point ssh at it:
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-300">
+              export SSH_AUTH_SOCK={agent}
+            </code>
+            <button className={button} onClick={() => void window.maki.copy(`export SSH_AUTH_SOCK=${agent}`)}>
+              Copy
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-zinc-500">
+            Then <code>ssh-add -L</code> shows its public key, for a server's authorized_keys, or for git to sign with
+            (<code>git config gpg.format ssh</code>).
+          </p>
+        </div>
       )}
 
       {chosen && m && (

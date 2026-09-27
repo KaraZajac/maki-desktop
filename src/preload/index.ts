@@ -41,6 +41,10 @@ const api = {
     /** A save dialog starting at `defaultPath`; where it went, or null if cancelled. */
     save: (defaultPath: string, data: Uint8Array): Promise<string | null> => ipcRenderer.invoke('wallet:save', defaultPath, data)
   },
+  ssh: {
+    /** where maki desktop's SSH agent listens: SSH_AUTH_SOCK */
+    socket: (): Promise<string> => ipcRenderer.invoke('ssh:socket')
+  },
   apps: {
     /** A file dialog for a .maki bundle; its path and bytes, or null if cancelled. */
     open: (): Promise<{ path: string; data: Uint8Array } | null> => ipcRenderer.invoke('apps:open')

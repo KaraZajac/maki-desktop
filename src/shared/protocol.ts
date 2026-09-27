@@ -44,6 +44,8 @@ export const Kind = {
   APP_INSTALL: 0x51,
   /** an app to remove, answered once the owner decides */
   APP_REMOVE: 0x52,
+  /** a message for an app with the link permission, answered with the app's answer */
+  APP_MESSAGE: 0x53,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const
@@ -82,6 +84,8 @@ export const MAX_MESSAGE = 4096
 export const APP_PIECE = 4096
 /** The biggest bundle maki takes. */
 export const MAX_APP = 512 * 1024
+/** The biggest message to or from an app. */
+export const MAX_APP_MESSAGE = 4096
 /** Bitcoin itself, or the test networks (testnet and signet share keys and addresses). */
 export const Network = { BITCOIN: 0, TESTNET: 1 } as const
 export type NetworkValue = (typeof Network)[keyof typeof Network]

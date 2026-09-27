@@ -16,6 +16,7 @@ import {
   Reader,
   TimeStateValue,
   BACKUP_PIECE,
+  MAX_APP_MESSAGE,
   MAX_MESSAGE,
   MAX_PSBT,
   MAX_TX,
@@ -298,6 +299,22 @@ export class MakiClient {
     const approval = Approval[r.u8()] ?? 'unavailable'
     r.end()
     return approval
+  }
+
+  /**
+   * A message for the app with this ID (it needs the link permission), and its answer: 'approved'
+   * with the app's answer, or why there's none ('denied': the app didn't answer; 'no match': no
+   * such app; 'unavailable': another app is open on maki; 'refused': no link permission). The app
+   * may ask the owner first, so this can take as long as they do.
+   */
+  async appMessage(id: string, message: Uint8Array): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
+    if (message.length > MAX_APP_MESSAGE) throw new Error(`messages to apps are at most ${MAX_APP_MESSAGE} bytes`)
+    const body = new Writer().str8(id).bytes16(message).finish()
+    const r = new Reader((await this.request(Kind.APP_MESSAGE, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const status = Approval[r.u8()] ?? 'unavailable'
+    const answer = r.bytes16()
+    r.end()
+    return { status, answer }
   }
 
   /** How long signing waits: maki gives the owner five minutes to go through a transaction. */

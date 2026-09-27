@@ -3,7 +3,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BridgeRequest, BridgeResult } from '../shared/bridge-types'
+import { fromBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
@@ -11,6 +11,7 @@ import { forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
 import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
+import { agentSocketPath, serveAgent, SSH_APP } from './ssh-agent'
 
 /**
  * maki's desktop app lives in the tray: the window can close, the link stays. The renderer owns
@@ -172,6 +173,7 @@ function ipc(): void {
     if ((await stat(path)).size > 1024 * 1024) throw new Error('that file is too big to be a PSBT maki takes')
     return { path, data: new Uint8Array(await readFile(path)) }
   })
+  ipcMain.handle('ssh:socket', () => agentSocketPath())
   ipcMain.handle('apps:open', async () => {
     const r = await dialog.showOpenDialog(win!, {
       title: 'Choose a maki app to install',
@@ -288,6 +290,11 @@ if (process.argv.includes('--native-host')) {
     ipc()
     createWindow()
     serveBridge(askWindow).catch((e) => console.error(`browser bridge unavailable: ${(e as Error).message}`))
+    // ssh and git, through maki's SSH app
+    serveAgent(async (message) => {
+      const r = await askWindow({ id: 0, type: 'appMessage', app: SSH_APP, data: message })
+      return r.type === 'appMessage' && r.status === 'approved' ? fromBase64(r.data) : null
+    }).catch((e) => console.error(`SSH agent unavailable: ${(e as Error).message}`))
     if (!offscreen) {
       tray = new Tray(nativeImage.createFromPath(resource('tray.png')))
       tray.on('click', () => (win?.isVisible() ? win.hide() : showWindow()))

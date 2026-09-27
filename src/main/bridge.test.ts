@@ -110,8 +110,11 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
     const host = runNativeHost({ socketPath: sock, input: b.input, output: b.output })
     b.send({ id: 7, type: 'install', path: join(APP_FIXTURES, 'dice.maki') })
     b.send({ id: 8, type: 'installBundle', data: [] })
+    // nor apps' messages, which are for software on this computer
+    b.send({ id: 9, type: 'appMessage', app: 'com.leviathan.maki.ssh', data: 'AAAAAQs=' })
     expect(await b.reply(7)).toEqual({ id: 7, ok: false, error: 'not for the extension' })
     expect(await b.reply(8)).toEqual({ id: 8, ok: false, error: 'not for the extension' })
+    expect(await b.reply(9)).toEqual({ id: 9, ok: false, error: 'not for the extension' })
     b.input.end()
     await host
   })
@@ -140,6 +143,21 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
     expect(await ask({ id: 2, type: 'install', path: 'dice.maki' })).toMatchObject({ ok: false, error: expect.stringContaining('full path') })
     expect(await ask({ id: 3, type: 'installBundle', data: [] })).toEqual({ id: 3, ok: false, error: 'malformed request' })
     expect((await link.appList()).apps.map((a) => a.id)).toContain('com.leviathan.maki.dice')
+
+    // a message for an app, from software on this computer: SSH's list of keys
+    expect(await ask({ id: 4, type: 'install', path: join(APP_FIXTURES, 'ssh.maki') })).toMatchObject({ ok: true, approval: 'approved' })
+    const listed = await ask({ id: 5, type: 'appMessage', app: 'com.leviathan.maki.ssh', data: 'AAAAAQs=' })
+    expect(listed).toMatchObject({ id: 5, ok: true, type: 'appMessage', status: 'approved' })
+    expect(Buffer.from(listed.data as string, 'base64')[0]).toBe(12)
+    // Dice can't be talked to; and what isn't a message
+    expect(await ask({ id: 6, type: 'appMessage', app: 'com.leviathan.maki.dice', data: 'AA==' })).toMatchObject({ ok: true, status: 'refused', data: '' })
+    for (const [id, bad] of [
+      [7, { app: 'com.leviathan.maki.ssh', data: 'not base64!' }],
+      [8, { app: 'SSH', data: 'AA==' }],
+      [9, { app: 'com.leviathan.maki.ssh', data: Buffer.alloc(4097).toString('base64') }]
+    ] as const) {
+      expect(await ask({ id, type: 'appMessage', ...bad })).toEqual({ id, ok: false, error: 'malformed request' })
+    }
   })
 
   it('rejects what it cannot parse, and sites maki would not show', async () => {
