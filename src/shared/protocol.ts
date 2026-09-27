@@ -38,6 +38,12 @@ export const Kind = {
   ETH_SIGNED: 0x42,
   /** a message to sign (EIP-191), answered once the owner decides */
   ETH_SIGN_MESSAGE: 0x43,
+  /** the apps installed on maki, one per request */
+  APP_LIST: 0x50,
+  /** a piece of a .maki bundle to install; the last is answered once the owner decides */
+  APP_INSTALL: 0x51,
+  /** an app to remove, answered once the owner decides */
+  APP_REMOVE: 0x52,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const
@@ -72,6 +78,10 @@ export const TX_PIECE = 4096
 export const MAX_TX = 128 * 1024
 /** The longest message maki signs. */
 export const MAX_MESSAGE = 4096
+/** Pieces of a .maki bundle. */
+export const APP_PIECE = 4096
+/** The biggest bundle maki takes. */
+export const MAX_APP = 512 * 1024
 /** Bitcoin itself, or the test networks (testnet and signet share keys and addresses). */
 export const Network = { BITCOIN: 0, TESTNET: 1 } as const
 export type NetworkValue = (typeof Network)[keyof typeof Network]

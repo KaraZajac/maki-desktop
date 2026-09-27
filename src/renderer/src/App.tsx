@@ -3,6 +3,7 @@ import type { BrowserStatus } from '@shared/bridge-types'
 import { ProviderError } from '@shared/ethereum'
 import { Link } from '@shared/link'
 import { TimeState } from '@shared/protocol'
+import { Apps } from './Apps'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
 import { DevTransport } from './transports'
@@ -238,6 +239,8 @@ export default function App(): React.JSX.Element {
 
         <Ethereum link={link} />
 
+        <Apps link={link} />
+
         <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Backups</h2>
           <p className="mb-3 text-sm text-zinc-400">
@@ -268,10 +271,6 @@ export default function App(): React.JSX.Element {
               Show folder
             </button>
           </div>
-        </section>
-
-        <section className="rounded-xl border border-dashed border-zinc-800 p-4 text-sm text-zinc-500">
-          Apps — the maki app store will live here.
         </section>
       </main>
 

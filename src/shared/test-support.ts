@@ -62,3 +62,7 @@ export function expectedTotp(secretB32: string, unixS: number): string {
 
 export const FAKE_BUILT = existsSync(FAKE)
 
+/** The SDK's example apps, packed: libs/maki-wasm/tests/fixtures in the firmware repo. */
+export const APP_FIXTURES = resolve(__dirname, '../../../xous-core/libs/maki-wasm/tests/fixtures')
+export const APP_FIXTURES_THERE = existsSync(APP_FIXTURES)
+

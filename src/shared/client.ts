@@ -6,6 +6,7 @@ import {
   Approval,
   type ApprovalValue,
   AnswerStatus,
+  APP_PIECE,
   Deframer,
   encodeFrame,
   ErrorCode,
@@ -242,6 +243,63 @@ export class MakiClient {
     return { approval: 'unavailable', logins: 0, codes: 0, passkeys: 0 }
   }
 
+  /** The apps installed on maki, in order of ID; 'locked' (and none) until its PIN is in. */
+  async appList(): Promise<{ status: ApprovalValue; apps: InstalledApp[] }> {
+    const apps: InstalledApp[] = []
+    for (let index = 0; ; index++) {
+      const r = new Reader((await this.request(Kind.APP_LIST, new Writer().u32(index).finish())).body)
+      const status = Approval[r.u8()] ?? 'unavailable'
+      const count = r.u32()
+      const present = r.u8() === 1
+      if (status !== 'approved' || !present) {
+        r.end()
+        return { status, apps: status === 'approved' ? apps : [] }
+      }
+      const app: InstalledApp = {
+        id: r.str8(),
+        name: r.str8(),
+        version: r.u32(),
+        label: r.str8(),
+        developer: r.bytes16(),
+        fromStore: r.u8() === 1,
+        backup: r.u8() === 1,
+        used: r.u32(),
+        icon: iconWords(r.bytes16())
+      }
+      r.end()
+      apps.push(app)
+      if (index + 1 >= count) return { status, apps }
+    }
+  }
+
+  /**
+   * Install a .maki bundle: maki checks it, shows the owner what it is and what it may do, and
+   * installs it if they say so. Refused ones come back with maki's reason.
+   */
+  async appInstall(bundle: Uint8Array): Promise<{ approval: ApprovalValue; reason: string }> {
+    for (let offset = 0; offset < bundle.length; ) {
+      const piece = bundle.subarray(offset, offset + APP_PIECE)
+      const last = offset + piece.length >= bundle.length
+      const body = new Writer().u32(bundle.length).u32(offset).bytes16(piece).finish()
+      const r = new Reader((await this.request(Kind.APP_INSTALL, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
+      const done = r.u8() === 1
+      const approval = Approval[r.u8()] ?? 'unavailable'
+      const reason = r.str8()
+      r.end()
+      if (done) return { approval, reason }
+      offset += piece.length
+    }
+    return { approval: 'unavailable', reason: '' }
+  }
+
+  /** Remove an app and its data, once the owner says so on maki ('no match' if there's no such app). */
+  async appRemove(id: string): Promise<ApprovalValue> {
+    const r = new Reader((await this.request(Kind.APP_REMOVE, new Writer().str8(id).finish(), MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const approval = Approval[r.u8()] ?? 'unavailable'
+    r.end()
+    return approval
+  }
+
   /** How long signing waits: maki gives the owner five minutes to go through a transaction. */
   static readonly SIGN_TIMEOUT_MS = 330_000
 
@@ -386,6 +444,30 @@ export class MakiClient {
 }
 
 /** Seconds east of UTC, as the badge wants it. */
+/** An app installed on maki. */
+export interface InstalledApp {
+  id: string
+  name: string
+  version: number
+  label: string
+  /** the developer's Ed25519 public key */
+  developer: Uint8Array
+  /** reviewed and stamped by the maki store; otherwise sideloaded */
+  fromStore: boolean
+  /** whether its data goes in maki's backup: the owner's choice */
+  backup: boolean
+  /** bytes of storage it uses */
+  used: number
+  /** 64x64 in maki_icons form, or null */
+  icon: Uint32Array | null
+}
+
+function iconWords(raw: Uint8Array): Uint32Array | null {
+  if (raw.length !== 512) return null
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
+  return Uint32Array.from({ length: 128 }, (_, i) => view.getUint32(i * 4, true))
+}
+
 export function localTzOffsetS(date = new Date()): number {
   return -date.getTimezoneOffset() * 60
 }

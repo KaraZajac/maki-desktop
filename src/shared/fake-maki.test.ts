@@ -7,7 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { relay } from '../main/roughtime'
 import { MakiClient, MakiError, syncTime } from './client'
 import { TimeState } from './protocol'
-import { expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from './test-support'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { APP_FIXTURES, APP_FIXTURES_THERE, expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from './test-support'
 
 describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
   let fake: { port: number; proc: ChildProcess }
@@ -120,6 +122,48 @@ describe.skipIf(!FAKE_BUILT)('when the owner says no', () => {
     const c = new MakiClient(t)
     expect(await c.saveLogin('github.com', 'kara', 'pw')).toBe('denied')
     expect(await c.getTotp('example.com')).toEqual({ approval: 'denied', code: '', validForS: 0 })
+    await t.close()
+  })
+})
+
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki', () => {
+  let fake: { port: number; proc: ChildProcess }
+  const bundle = (name: string): Uint8Array => new Uint8Array(readFileSync(join(APP_FIXTURES, `${name}.maki`)))
+
+  beforeAll(async () => {
+    fake = await startFake()
+  })
+  afterAll(() => fake?.proc.kill())
+
+  it('installs, lists and removes apps, and refuses what maki would', async () => {
+    const t = await TcpTransport.open(fake.port)
+    const c = new MakiClient(t)
+    expect(await c.appList()).toEqual({ status: 'approved', apps: [] })
+
+    expect(await c.appInstall(bundle('dice'))).toEqual({ approval: 'approved', reason: '' })
+    expect(await c.appInstall(bundle('tally'))).toEqual({ approval: 'approved', reason: '' })
+    const { apps } = await c.appList()
+    expect(apps.map((a) => [a.id, a.name, a.version, a.label, a.fromStore, a.backup])).toEqual([
+      ['com.leviathan.maki.dice', 'Dice', 1, '1.0', false, true],
+      ['com.leviathan.maki.tally', 'Tally', 1, '1.0', false, true]
+    ])
+    expect(apps[0].developer).toHaveLength(32)
+    expect(apps[0].icon).toHaveLength(128)
+
+    // the same version again, and one changed after it was signed
+    const again = await c.appInstall(bundle('dice'))
+    expect(again.approval).toBe('refused')
+    expect(again.reason).toMatch(/version 1 is installed/)
+    const tampered = bundle('hello')
+    tampered[40] ^= 1
+    const bad = await c.appInstall(tampered)
+    expect(bad.approval).toBe('refused')
+    expect(bad.reason).toMatch(/signature/)
+
+    expect(await c.appRemove('com.leviathan.maki.dice')).toBe('approved')
+    expect((await c.appList()).apps.map((a) => a.id)).toEqual(['com.leviathan.maki.tally'])
+    expect(await c.appRemove('com.leviathan.maki.dice')).toBe('no match')
+    await expect(c.appRemove('Not An ID')).rejects.toThrow('bad argument')
     await t.close()
   })
 })

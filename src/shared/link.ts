@@ -5,7 +5,16 @@
  */
 
 import type { BridgeRequest, BridgeResult } from './bridge-types'
-import { MakiClient, syncTime, type Hello, type Relay, type Status, type SyncReport, type Transport } from './client'
+import {
+  MakiClient,
+  syncTime,
+  type Hello,
+  type InstalledApp,
+  type Relay,
+  type Status,
+  type SyncReport,
+  type Transport
+} from './client'
 import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
 import type { ApprovalValue, NetworkValue } from './protocol'
 
@@ -210,6 +219,35 @@ export class Link {
       this.syncing = false
       this.emit()
     }
+  }
+
+  /** The apps installed on maki. */
+  async appList(): Promise<{ status: ApprovalValue; apps: InstalledApp[] }> {
+    return this.linkedClient().appList()
+  }
+
+  /** Install a .maki bundle, once the owner has gone through it on maki's screen. */
+  async appInstall(name: string, bundle: Uint8Array): Promise<{ approval: ApprovalValue; reason: string }> {
+    const client = this.linkedClient()
+    this.note(`${name}: go through it on maki to install`)
+    const r = await client.appInstall(bundle)
+    this.note(
+      r.approval === 'approved'
+        ? `${name} installed`
+        : r.approval === 'refused'
+          ? `maki won't install ${name}: ${r.reason}`
+          : `${name}: ${r.approval}`
+    )
+    return r
+  }
+
+  /** Remove an app and its data, once the owner says so on maki. */
+  async appRemove(id: string, name: string): Promise<ApprovalValue> {
+    const client = this.linkedClient()
+    this.note(`removing ${name}: approve on maki`)
+    const r = await client.appRemove(id)
+    this.note(r === 'approved' ? `${name} removed` : `removing ${name}: ${r}`)
+    return r
   }
 
   /** The Bitcoin account for wallet software, once the owner agrees on maki. */

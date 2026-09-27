@@ -171,6 +171,20 @@ function ipc(): void {
     if ((await stat(path)).size > 1024 * 1024) throw new Error('that file is too big to be a PSBT maki takes')
     return { path, data: new Uint8Array(await readFile(path)) }
   })
+  ipcMain.handle('apps:open', async () => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: 'Choose a maki app to install',
+      filters: [
+        { name: 'maki apps', extensions: ['maki'] },
+        { name: 'All files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    const path = r.filePaths[0]
+    if ((await stat(path)).size > 512 * 1024) throw new Error('that file is bigger than any app maki takes (512 KiB)')
+    return { path, data: new Uint8Array(await readFile(path)) }
+  })
   ipcMain.handle('wallet:save', async (_e, defaultPath: string, data: Uint8Array) => {
     const r = await dialog.showSaveDialog(win!, {
       title: 'Save the signed transaction',
