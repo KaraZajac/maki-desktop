@@ -19,9 +19,11 @@ import {
   MAX_APP_MESSAGE,
   MAX_MESSAGE,
   MAX_PSBT,
+  MAX_STORE_RECORD,
   MAX_TX,
   type NetworkValue,
   PSBT_PIECE,
+  STORE_PIECE,
   TX_PIECE,
   Writer,
   type Packet
@@ -317,6 +319,28 @@ export class MakiClient {
     return { status, answer }
   }
 
+  /**
+   * Hands maki a maki store record (a newer root, a revocation list), which it checks against
+   * the root it trusts and keeps without asking anyone; or, with nothing, asks what it has.
+   * 'approved': taken (or nothing sent); 'refused' with maki's reason; 'locked'; 'unavailable'.
+   */
+  async storeUpdate(record: Uint8Array = new Uint8Array()): Promise<StoreUpdate> {
+    if (record.length > MAX_STORE_RECORD) throw new Error(`store records are at most ${MAX_STORE_RECORD / 1024} KiB`)
+    for (let offset = 0; ; ) {
+      const piece = record.subarray(offset, offset + STORE_PIECE)
+      const body = new Writer().u32(record.length).u32(offset).bytes16(piece).finish()
+      const r = new Reader((await this.request(Kind.STORE_UPDATE, body, 10_000)).body)
+      const done = r.u8() === 1
+      const status = Approval[r.u8()] ?? 'unavailable'
+      const state = { root: r.u32(), revocations: r.u32(), revocationsExpires: r.u64() }
+      const reason = r.str8()
+      r.end()
+      if (done || record.length === 0) return { status, reason, state }
+      offset += piece.length
+      if (offset >= record.length) return { status: 'unavailable', reason: '', state }
+    }
+  }
+
   /** How long signing waits: maki gives the owner five minutes to go through a transaction. */
   static readonly SIGN_TIMEOUT_MS = 330_000
 
@@ -460,7 +484,6 @@ export class MakiClient {
   }
 }
 
-/** Seconds east of UTC, as the badge wants it. */
 /** An app installed on maki. */
 export interface InstalledApp {
   id: string
@@ -479,12 +502,23 @@ export interface InstalledApp {
   icon: Uint32Array | null
 }
 
+/** What maki said to a store record, and what it has of the store now. */
+export interface StoreUpdate {
+  status: ApprovalValue
+  /** why maki refused it, in its own words */
+  reason: string
+  /** the version of the root maki trusts, and of its revocation list and when that goes stale
+   * (unix seconds; 0 for none), unless it's locked */
+  state: { root: number; revocations: number; revocationsExpires: number }
+}
+
 function iconWords(raw: Uint8Array): Uint32Array | null {
   if (raw.length !== 512) return null
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
   return Uint32Array.from({ length: 128 }, (_, i) => view.getUint32(i * 4, true))
 }
 
+/** Seconds east of UTC, as the badge wants it. */
 export function localTzOffsetS(date = new Date()): number {
   return -date.getTimezoneOffset() * 60
 }

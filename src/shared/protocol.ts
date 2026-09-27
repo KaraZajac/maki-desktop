@@ -46,6 +46,8 @@ export const Kind = {
   APP_REMOVE: 0x52,
   /** a message for an app with the link permission, answered with the app's answer */
   APP_MESSAGE: 0x53,
+  /** a piece of a maki store record (a root, a revocation list), which maki checks and keeps */
+  STORE_UPDATE: 0x54,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const
@@ -86,6 +88,10 @@ export const APP_PIECE = 4096
 export const MAX_APP = 512 * 1024
 /** The biggest message to or from an app. */
 export const MAX_APP_MESSAGE = 4096
+/** Pieces of a maki store record. */
+export const STORE_PIECE = 4096
+/** The biggest store record maki takes. */
+export const MAX_STORE_RECORD = 64 * 1024
 /** Bitcoin itself, or the test networks (testnet and signet share keys and addresses). */
 export const Network = { BITCOIN: 0, TESTNET: 1 } as const
 export type NetworkValue = (typeof Network)[keyof typeof Network]
@@ -270,6 +276,16 @@ export class Reader {
     const at = this.pos
     this.pos += n
     return at
+  }
+
+  /** How far it has read. */
+  get offset(): number {
+    return this.pos
+  }
+  /** `n` bytes as they are. */
+  fixed(n: number): Uint8Array {
+    const at = this.need(n)
+    return this.data.slice(at, at + n)
   }
 
   u8(): number {

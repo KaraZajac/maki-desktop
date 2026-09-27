@@ -18,6 +18,7 @@ import {
 import { readBundle } from './bundle'
 import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
 import type { ApprovalValue, NetworkValue } from './protocol'
+import type { Store, StoreApp } from './store'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
 export const HEARTBEAT_MS = 10_000
@@ -52,6 +53,15 @@ export class Link {
   log: string[] = []
   /** Called after an app is installed from outside the window (`maki install`). */
   appsChanged: (() => void) | null = null
+  /**
+   * The maki store, when this side knows where it is (`where`): its apps to show, and its newest
+   * root and revocation list for maki, handed over on each link.
+   */
+  store: Store | null = null
+  storeWhere: string | null = null
+  /** whether this link's maki has what the store has (it can't take anything while locked) */
+  private storeHanded = false
+  private storeBusy = false
 
   private client: MakiClient | null = null
   private heartbeat: ReturnType<typeof setInterval> | null = null
@@ -122,9 +132,16 @@ export class Link {
       return false
     }
     this.note(`linked to ${hello.name} ${hello.version} over ${via}`)
+    this.storeHanded = false
     this.heartbeat = setInterval(() => void this.beat(), HEARTBEAT_MS)
-    this.resync = setInterval(() => void this.syncNow(), RESYNC_MS)
-    if (this.autoSync) await this.syncNow()
+    this.resync = setInterval(() => {
+      void this.syncNow().then(() => this.storeNow())
+    }, RESYNC_MS)
+    if (this.autoSync) {
+      await this.syncNow()
+      // after the clock: maki takes the catalogue key's records only with verified time
+      void this.storeNow()
+    }
     if (this.backups) {
       this.backups_ = setInterval(() => void this.backupNow({ quiet: true }), BACKUP_EVERY_MS)
       if (this.autoSync) void this.backupNow({ quiet: true })
@@ -226,7 +243,46 @@ export class Link {
 
   /** The apps installed on maki. */
   async appList(): Promise<{ status: ApprovalValue; apps: InstalledApp[] }> {
-    return this.linkedClient().appList()
+    const r = await this.linkedClient().appList()
+    // unlocked since the link came up: now maki can take the store's records
+    if (r.status === 'approved' && !this.storeHanded) void this.storeNow()
+    return r
+  }
+
+  /** Checks the maki store again, whether or not maki is linked: for the list of its apps. */
+  async storeCheck(): Promise<void> {
+    if (!this.store) return
+    await this.store.refresh().catch(() => {})
+    this.emit()
+  }
+
+  /**
+   * Checks the maki store if it's been a while, and hands maki the roots and revocation list it
+   * hasn't taken; maki checks each itself. Quiet unless something changed or went wrong.
+   */
+  async storeNow(): Promise<void> {
+    const store = this.store
+    const client = this.client
+    if (!store || !client || !this.state.linked || this.storeBusy) return
+    this.storeBusy = true
+    try {
+      if (store.stale || !store.root) await store.refresh()
+      const r = await store.push(client)
+      for (const line of r.notes) this.note(line)
+      this.storeHanded = !r.locked
+    } catch (e) {
+      this.note(`maki store: ${(e as Error).message}`)
+    } finally {
+      this.storeBusy = false
+    }
+    this.emit()
+  }
+
+  /** Installs an app from the store: its stamped bundle, checked against the index, then maki's own checks and the owner. */
+  async storeInstall(app: StoreApp): Promise<{ approval: ApprovalValue; reason: string }> {
+    if (!this.store) throw new Error('maki desktop has no store to install from')
+    const bundle = await this.store.bundle(app)
+    return this.appInstall(app.name, bundle.bytes)
   }
 
   /** Install a .maki bundle, once the owner has gone through it on maki's screen. */

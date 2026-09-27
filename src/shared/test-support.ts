@@ -66,3 +66,6 @@ export const FAKE_BUILT = existsSync(FAKE)
 export const APP_FIXTURES = resolve(__dirname, '../../../xous-core/libs/maki-wasm/tests/fixtures')
 export const APP_FIXTURES_THERE = existsSync(APP_FIXTURES)
 
+/** The development maki store: libs/maki-store/dev-store in the firmware repo. */
+export const DEV_STORE = resolve(__dirname, '../../../xous-core/libs/maki-store/dev-store')
+export const DEV_STORE_THERE = existsSync(DEV_STORE)

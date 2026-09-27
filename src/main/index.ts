@@ -3,7 +3,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fromBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
+import { fromBase64, toBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
@@ -12,6 +12,7 @@ import { getStartAtLogin, setStartAtLogin } from './login'
 import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
 import { agentSocketPath, serveAgent, SSH_APP } from './ssh-agent'
+import { storeSource, storeWhere } from './store-source'
 
 /**
  * maki's desktop app lives in the tray: the window can close, the link stays. The renderer owns
@@ -235,6 +236,29 @@ function ipc(): void {
     } catch (e) {
       return { error: { code: -32603, message: `the network is unreachable: ${(e as Error).message}` } }
     }
+  })
+  // the maki store: where it is, its files (only those), and what this side keeps of it between
+  // runs (the newest root it took, and the newest index's version)
+  const where = storeWhere()
+  const store = where ? storeSource(where) : null
+  const storeFile = (): string => join(app.getPath('userData'), 'store.json')
+  ipcMain.handle('store:where', () => where)
+  ipcMain.handle('store:get', (_e, path: unknown) => (store && typeof path === 'string' ? store.get(path) : null))
+  ipcMain.handle('store:load', async () => {
+    try {
+      const kept = JSON.parse(await readFile(storeFile(), 'utf8')) as { root?: unknown; indexVersion?: unknown }
+      return {
+        root: typeof kept.root === 'string' ? fromBase64(kept.root) : null,
+        indexVersion: Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
+      }
+    } catch {
+      return { root: null, indexVersion: 0 }
+    }
+  })
+  ipcMain.handle('store:save', async (_e, kept: { root: unknown; indexVersion: unknown }) => {
+    const root = kept.root instanceof Uint8Array ? toBase64(kept.root) : null
+    const indexVersion = Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
+    await writeFile(storeFile(), JSON.stringify({ root, indexVersion }))
   })
   ipcMain.handle('settings:startAtLogin', () => getStartAtLogin())
   ipcMain.handle('settings:setStartAtLogin', async (_e, on: boolean) => {

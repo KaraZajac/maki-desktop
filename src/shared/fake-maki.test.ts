@@ -11,7 +11,19 @@ import { TimeState } from './protocol'
 import { createPrivateKey, createPublicKey, hkdfSync, pbkdf2Sync } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { APP_FIXTURES, APP_FIXTURES_THERE, expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from './test-support'
+import { storeSource } from '../main/store-source'
+import { Store } from './store'
+import {
+  APP_FIXTURES,
+  APP_FIXTURES_THERE,
+  DEV_STORE,
+  DEV_STORE_THERE,
+  expectedTotp,
+  FAKE_BUILT,
+  SECRET_B32,
+  startFake,
+  TcpTransport
+} from './test-support'
 
 describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
   let fake: { port: number; proc: ChildProcess }
@@ -195,6 +207,58 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki
     expect((await c.appMessage('com.example.none', new Uint8Array([1]))).status).toBe('no match')
     await expect(c.appMessage('Not An ID', new Uint8Array([1]))).rejects.toThrow('bad argument')
     await expect(c.appMessage('com.leviathan.maki.ssh', new Uint8Array(4097))).rejects.toThrow('4096')
+    await t.close()
+  })
+})
+
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !DEV_STORE_THERE)('the maki store, against the fake maki', () => {
+  let fake: { port: number; proc: ChildProcess }
+
+  beforeAll(async () => {
+    // records from the catalogue key need a verified clock on maki
+    fake = await startFake(['--clock-verified'])
+  })
+  afterAll(() => fake?.proc.kill())
+
+  it('hands maki the store’s newest root and revocation list, then installs store apps as the store’s', async () => {
+    const t = await TcpTransport.open(fake.port)
+    const c = new MakiClient(t)
+    // the firmware's root, and no list yet
+    expect(await c.storeUpdate()).toEqual({ status: 'approved', reason: '', state: { root: 1, revocations: 0, revocationsExpires: 0 } })
+    const store = new Store(storeSource(DEV_STORE))
+    await store.refresh()
+    const dice = await store.bundle(store.index!.apps.find((a) => a.name === 'Dice')!)
+
+    // stamped by root 2's catalogue key: maki, still on root 1, won't have it yet
+    const early = await c.appInstall(dice.bytes)
+    expect(early.approval).toBe('refused')
+    expect(early.reason).toMatch(/stamp doesn't check out/)
+
+    expect(await store.push(c)).toEqual({ locked: false, notes: ["maki took the store's root 2", "maki took the store's revocation list 1"] })
+    const state = (await c.storeUpdate()).state
+    expect(state).toEqual({ root: 2, revocations: 1, revocationsExpires: store.revocations!.expires })
+    // nothing new the next time
+    expect(await store.push(c)).toEqual({ locked: false, notes: [] })
+    // and nothing older, nor anything but the store's
+    const old = await c.storeUpdate(new Uint8Array(readFileSync(join(DEV_STORE, 'roots/1.bin'))))
+    expect(old.status).toBe('refused')
+    expect(old.reason).toMatch(/older than what maki has/)
+    const junk = await c.storeUpdate(new Uint8Array(100))
+    expect(junk.reason).toMatch(/not a store record/)
+
+    expect(await c.appInstall(dice.bytes)).toEqual({ approval: 'approved', reason: '' })
+    // Tally, sideloaded: the store's list revokes it wherever it's from
+    const tally = await c.appInstall(new Uint8Array(readFileSync(join(APP_FIXTURES, 'tally.maki'))))
+    expect(tally.approval).toBe('refused')
+    expect(tally.reason).toMatch(/the maki store revoked it: A test entry/)
+    // a sideloaded app is still welcome
+    expect((await c.appInstall(new Uint8Array(readFileSync(join(APP_FIXTURES, 'hello.maki'))))).approval).toBe('approved')
+
+    const { apps } = await c.appList()
+    expect(apps.map((a) => [a.name, a.fromStore])).toEqual([
+      ['Dice', true],
+      ['Hello', false]
+    ])
     await t.close()
   })
 })

@@ -4,6 +4,7 @@ import { fingerprint, iconPixels, readBundle, type Bundle } from '@shared/bundle
 import type { InstalledApp } from '@shared/client'
 import type { Link } from '@shared/link'
 import type { ApprovalValue } from '@shared/protocol'
+import { revoked, type StoreApp } from '@shared/store'
 
 const button =
   'rounded-lg border border-zinc-700 px-3 py-1.5 text-sm hover:border-zinc-500 disabled:opacity-40'
@@ -68,7 +69,7 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
   const [apps, setApps] = useState<InstalledApp[] | null>(null)
   const [status, setStatus] = useState<ApprovalValue | null>(null)
   const [keys, setKeys] = useState<Record<string, string>>({})
-  const [chosen, setChosen] = useState<{ bundle: Bundle; path: string; developer: string } | null>(null)
+  const [chosen, setChosen] = useState<{ bundle: Bundle; developer: string; fromStore: boolean } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [agent, setAgent] = useState<string | null>(null)
@@ -118,7 +119,15 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
       const file = await window.maki.apps.open()
       if (!file) return
       const bundle = readBundle(file.data)
-      setChosen({ bundle, path: file.path, developer: await fingerprint(bundle.developer) })
+      setChosen({ bundle, developer: await fingerprint(bundle.developer), fromStore: false })
+    })
+
+  // from the store: its bundle, checked against the index, to go through before maki does
+  const chooseFromStore = (app: StoreApp): Promise<void> =>
+    run(`store ${app.id}`, async () => {
+      if (!link.store) return
+      const bundle = await link.store.bundle(app)
+      setChosen({ bundle, developer: await fingerprint(bundle.developer), fromStore: true })
     })
 
   const install = (): Promise<void> =>
@@ -144,6 +153,8 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
   const ssh = apps?.find((a) => a.id === SSH_APP)
   const m = chosen?.bundle.manifest
   const update = m ? apps?.find((a) => a.id === m.id) : undefined
+  const store = link.store
+  const revocations = store?.revocations ?? null
 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
@@ -171,13 +182,23 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium">{a.name}</span>
                   <span className="text-xs text-zinc-500">{a.label || `version ${a.version}`}</span>
-                  {!a.fromStore && (
+                  {a.fromStore ? (
+                    <span className="rounded border border-emerald-700/60 px-1.5 text-[10px] uppercase tracking-wide text-emerald-400">
+                      maki store
+                    </span>
+                  ) : (
                     <span className="rounded border border-amber-700/60 px-1.5 text-[10px] uppercase tracking-wide text-amber-400">
                       sideloaded
                     </span>
                   )}
                 </div>
                 <div className="truncate font-mono text-xs text-zinc-500">{a.id}</div>
+                {revoked(revocations, a.id, a.version, a.developer) && (
+                  <div className="text-xs text-red-400">
+                    Revoked by the maki store: {revoked(revocations, a.id, a.version, a.developer)} maki warns before
+                    opening it; remove it unless you're sure.
+                  </div>
+                )}
                 <div className="text-xs text-zinc-500">
                   developer <span className="font-mono">{keys[a.id] ?? '…'}</span>
                 </div>
@@ -230,7 +251,16 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
               {m.description && <p className="mt-1 text-sm text-zinc-300">{m.description}</p>}
             </div>
           </div>
-          <p className="mt-3 text-sm text-amber-400">Sideloaded: nobody has reviewed it. Install apps only from people you trust.</p>
+          {chosen.fromStore ? (
+            <p className="mt-3 text-sm text-emerald-400">
+              From the maki store: reviewed, and built from its source by the store. maki checks the store's stamp itself.
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-amber-400">Sideloaded: nobody has reviewed it. Install apps only from people you trust.</p>
+          )}
+          {update?.fromStore && !chosen.fromStore && (
+            <p className="mt-1 text-sm text-amber-400">It replaces the maki store's version of {update.name}.</p>
+          )}
           <p className="mt-1 text-sm text-zinc-400">
             Developer key <span className="font-mono text-zinc-200">{chosen.developer}</span>: maki shows it too; they should
             match.
@@ -266,6 +296,85 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
       )}
 
       {problem && <p className="mt-3 text-sm text-red-400">{problem}</p>}
+
+      <StoreApps link={link} installed={apps} disabled={!idle} busy={busy} choose={(a) => void chooseFromStore(a)} />
     </section>
+  )
+}
+
+/** The maki store's apps, as its signed index lists them, with what's installed. */
+function StoreApps({
+  link,
+  installed,
+  disabled,
+  busy,
+  choose
+}: {
+  link: Link
+  installed: InstalledApp[] | null
+  disabled: boolean
+  busy: string | null
+  choose: (app: StoreApp) => void
+}): React.JSX.Element {
+  const store = link.store
+  const index = store?.index
+  return (
+    <div className="mt-4 border-t border-zinc-800 pt-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">maki store</h3>
+        {store && (
+          <button className={button} disabled={busy !== null} onClick={() => void link.storeCheck()}>
+            Check again
+          </button>
+        )}
+      </div>
+      {!store && <p className="mt-2 text-sm text-zinc-500">The maki store isn't open yet.</p>}
+      {store && store.problem && <p className="mt-2 text-sm text-red-400">The maki store: {store.problem}</p>}
+      {store && !store.problem && !index && <p className="mt-2 text-sm text-zinc-500">Checking the maki store…</p>}
+      {index && index.apps.length === 0 && <p className="mt-2 text-sm text-zinc-500">No apps in the store yet.</p>}
+      {index && index.apps.length > 0 && (
+        <ul className="mt-2 divide-y divide-zinc-800">
+          {index.apps.map((a) => {
+            const have = installed?.find((i) => i.id === a.id)
+            const action = !have ? 'Install…' : have.version < a.version ? `Update to ${a.label || a.version}…` : null
+            return (
+              <li key={a.id} className="flex items-start gap-3 py-2">
+                <Icon icon={a.icon} name={a.name} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-medium">{a.name}</span>
+                    <span className="text-xs text-zinc-500">{a.label || `version ${a.version}`}</span>
+                  </div>
+                  {a.description && <p className="text-sm text-zinc-400">{a.description}</p>}
+                  <div className="text-xs text-zinc-500">
+                    {a.permissions.length === 0
+                      ? 'Asks for nothing beyond the basics'
+                      : `Asks to: ${a.permissions.map((p) => p.permission.title.toLowerCase()).join(', ')}`}
+                  </div>
+                </div>
+                {action ? (
+                  <button className={button} disabled={disabled} onClick={() => choose(a)}>
+                    {busy === `store ${a.id}` ? 'Fetching…' : action}
+                  </button>
+                ) : (
+                  <span className="py-1.5 text-xs text-zinc-500">Installed</span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {store?.revocations && store.revocations.expires * 1000 < Date.now() && (
+        <p className="mt-2 text-xs text-amber-400">
+          The store's revocation list went out of date on {new Date(store.revocations.expires * 1000).toLocaleDateString()}:
+          apps it has revoked since may not be on it.
+        </p>
+      )}
+      {index && index.skipped > 0 && (
+        <p className="mt-2 text-xs text-zinc-500">
+          {index.skipped} more {index.skipped === 1 ? 'app needs' : 'apps need'} a newer maki desktop.
+        </p>
+      )}
+    </div>
   )
 }

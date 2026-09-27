@@ -3,6 +3,7 @@ import type { BrowserStatus } from '@shared/bridge-types'
 import { ProviderError } from '@shared/ethereum'
 import { Link } from '@shared/link'
 import { TimeState } from '@shared/protocol'
+import { Store } from '@shared/store'
 import { Apps } from './Apps'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
@@ -57,6 +58,19 @@ export default function App(): React.JSX.Element {
   }, [link.log.length])
   const [startAtLogin, setStartAtLogin] = useState<boolean | null>(null)
   const [, tick] = useState(0)
+
+  // the maki store, when maki desktop knows where it is: its apps to show, and records for maki
+  useEffect(() => {
+    void window.maki.store.where().then((where) => {
+      if (!where || link.store) return
+      link.storeWhere = where
+      link.store = new Store(
+        { get: (path) => window.maki.store.get(path) },
+        { load: () => window.maki.store.load(), save: (kept) => window.maki.store.save(kept) }
+      )
+      void link.storeCheck().then(() => link.storeNow())
+    })
+  }, [link])
 
   useEffect(() => watchUsb(link), [link])
   useEffect(() => window.maki.onTraySync(() => void link.syncNow()), [link])

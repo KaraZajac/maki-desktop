@@ -62,6 +62,8 @@ export interface Bundle {
   icon: Uint32Array | null
   /** the developer's Ed25519 public key */
   developer: Uint8Array
+  /** the maki store's stamp, after the developer's signature, or null for a sideloaded bundle */
+  stamp: Uint8Array | null
   bytes: Uint8Array
 }
 
@@ -103,8 +105,9 @@ export function readBundle(bytes: Uint8Array): Bundle {
     for (let i = 0; i < 128; i++) icon[i] = iv.getUint32(i * 4, true)
   }
   const sig = section(255)
+  const stamp = bytes[at] === 254 ? section(254).slice() : null
   if (sig.length !== 96 || at !== bytes.length) throw new BundleError('sections missing or out of order')
-  return { manifest: readManifest(manifestBytes), codeBytes: code.length, icon, developer: sig.slice(0, 32), bytes }
+  return { manifest: readManifest(manifestBytes), codeBytes: code.length, icon, developer: sig.slice(0, 32), stamp, bytes }
 }
 
 function readManifest(b: Uint8Array): Manifest {
