@@ -15,6 +15,7 @@ import {
   type SyncReport,
   type Transport
 } from './client'
+import { readBundle } from './bundle'
 import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
 import type { ApprovalValue, NetworkValue } from './protocol'
 
@@ -49,6 +50,8 @@ export class Link {
   syncing = false
   autoSync = true
   log: string[] = []
+  /** Called after an app is installed from outside the window (`maki install`). */
+  appsChanged: (() => void) | null = null
 
   private client: MakiClient | null = null
   private heartbeat: ReturnType<typeof setInterval> | null = null
@@ -309,6 +312,13 @@ export class Link {
       return { type: 'status', linked: this.state.linked, timeState: this.state.linked ? this.state.status.timeState : null }
     }
     if (request.type === 'eth') return this.fromSite(request.site, request.method, request.params)
+    if (request.type === 'installBundle') {
+      const name = readBundle(request.data).manifest.name
+      const r = await this.appInstall(name, request.data)
+      this.appsChanged?.()
+      return { type: 'install', name, ...r }
+    }
+    if (request.type === 'install') throw new Error('malformed request')
     const client = this.client
     if (!client || !this.state.linked) throw new Error('maki is not linked')
     switch (request.type) {

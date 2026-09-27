@@ -4,14 +4,14 @@
  */
 import type { ChildProcess } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
-import type { Server } from 'node:net'
+import { connect, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Link } from '../shared/link'
-import { expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from '../shared/test-support'
-import { serveBridge } from './bridge'
+import { APP_FIXTURES, APP_FIXTURES_THERE, expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from '../shared/test-support'
+import { forWindow, serveBridge } from './bridge'
 import { readNativeMessages, runNativeHost, writeNativeMessage } from './native-host'
 
 /** A browser's end of native messaging: send framed JSON, collect framed replies by id. */
@@ -76,7 +76,7 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
     })
     link.autoSync = false
     expect(await link.attach(await TcpTransport.open(fake.port), 'fake maki')).toBe(true)
-    server = await serveBridge((r) => link.fromBrowser(r), sock)
+    server = await serveBridge(async (r) => link.fromBrowser(await forWindow(r)), sock)
   })
   afterAll(() => {
     link?.drop()
@@ -103,6 +103,43 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
     expect(link.log.join('\n')).not.toMatch(/correct horse|kara|\d{6}/)
     b.input.end()
     await host
+  })
+
+  it('keeps installing apps away from the extension', async () => {
+    const b = browser()
+    const host = runNativeHost({ socketPath: sock, input: b.input, output: b.output })
+    b.send({ id: 7, type: 'install', path: join(APP_FIXTURES, 'dice.maki') })
+    b.send({ id: 8, type: 'installBundle', data: [] })
+    expect(await b.reply(7)).toEqual({ id: 7, ok: false, error: 'not for the extension' })
+    expect(await b.reply(8)).toEqual({ id: 8, ok: false, error: 'not for the extension' })
+    b.input.end()
+    await host
+  })
+
+  it.skipIf(!APP_FIXTURES_THERE)('installs an app for `maki install`, straight on the socket', async () => {
+    const ask = async (request: object): Promise<Record<string, unknown>> => {
+      const s = connect(sock)
+      s.setEncoding('utf8')
+      s.write(JSON.stringify(request) + '\n')
+      const line = await new Promise<string>((ok) => {
+        let got = ''
+        s.on('data', (d: string) => {
+          got += d
+          if (got.includes('\n')) ok(got.slice(0, got.indexOf('\n')))
+        })
+      })
+      s.end()
+      return JSON.parse(line) as Record<string, unknown>
+    }
+    expect(await ask({ id: 1, type: 'install', path: join(APP_FIXTURES, 'dice.maki') })).toMatchObject({
+      ok: true,
+      type: 'install',
+      name: 'Dice',
+      approval: 'approved'
+    })
+    expect(await ask({ id: 2, type: 'install', path: 'dice.maki' })).toMatchObject({ ok: false, error: expect.stringContaining('full path') })
+    expect(await ask({ id: 3, type: 'installBundle', data: [] })).toEqual({ id: 3, ok: false, error: 'malformed request' })
+    expect((await link.appList()).apps.map((a) => a.id)).toContain('com.leviathan.maki.dice')
   })
 
   it('rejects what it cannot parse, and sites maki would not show', async () => {

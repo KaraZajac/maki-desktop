@@ -88,6 +88,14 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
     else setApps(null)
   }, [linked, refresh])
 
+  // `maki install` goes round this window: show what it installed
+  useEffect(() => {
+    link.appsChanged = () => void refresh()
+    return () => {
+      link.appsChanged = null
+    }
+  }, [link, refresh])
+
   const run = async (what: string, f: () => Promise<void>): Promise<void> => {
     setBusy(what)
     setProblem(null)

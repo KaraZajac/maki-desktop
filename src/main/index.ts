@@ -7,7 +7,7 @@ import type { BridgeRequest, BridgeResult } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
-import { serveBridge, socketPath } from './bridge'
+import { forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
 import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
@@ -44,8 +44,9 @@ const launch = (): Launch => ({ exe: process.env['APPIMAGE'] ?? process.execPath
 const fromBrowser = new Map<number, (r: { ok: true; result: BridgeResult } | { ok: false; error: string }) => void>()
 let nextBrowserRequest = 1
 
-function askWindow(request: BridgeRequest): Promise<BridgeResult> {
-  if (!win) return Promise.reject(new Error('maki desktop is starting'))
+async function askWindow(request: BridgeRequest): Promise<BridgeResult> {
+  if (!win) throw new Error('maki desktop is starting')
+  request = await forWindow(request)
   const key = nextBrowserRequest++
   return new Promise((resolve, reject) => {
     fromBrowser.set(key, (r) => (r.ok ? resolve(r.result) : reject(new Error(r.error))))

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { connect, type Socket } from 'node:net'
 import type { Readable, Writable } from 'node:stream'
+import { EXTENSION_REQUESTS } from '../shared/bridge-types'
 
 /**
  * The native messaging host: what a browser starts when the maki extension calls connectNative.
@@ -65,7 +66,12 @@ export async function runNativeHost({ socketPath, input, output, launchApp, retr
 
   const toApp = (json: string): void => {
     try {
-      const id = (JSON.parse(json) as { id?: unknown }).id
+      const { id, type } = JSON.parse(json) as { id?: unknown; type?: unknown }
+      // the extension's requests only: installing apps is for this computer's own tools
+      if (!(EXTENSION_REQUESTS as readonly unknown[]).includes(type)) {
+        writeNativeMessage(output, JSON.stringify({ id: typeof id === 'number' ? id : -1, ok: false, error: 'not for the extension' }))
+        return
+      }
       if (typeof id === 'number') pendingIds.add(id)
     } catch {
       /* the app will reject it */

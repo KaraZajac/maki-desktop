@@ -10,6 +10,13 @@ export type BridgeRequest =
   | { id: number; type: 'getTotp'; site: string }
   | { id: number; type: 'saveLogin'; site: string; username: string; password: string }
   | { id: number; type: 'eth'; site: string; method: string; params: unknown[] }
+  /** from `maki install` on this computer, never the extension: a .maki file to install */
+  | { id: number; type: 'install'; path: string }
+  /** the same, once the main process has read the file: to the window only */
+  | { id: number; type: 'installBundle'; data: Uint8Array }
+
+/** What the browser extension may ask: the native messaging host passes on nothing else. */
+export const EXTENSION_REQUESTS = ['status', 'getLogin', 'getTotp', 'saveLogin', 'eth'] as const
 
 export type BridgeResult =
   | { type: 'status'; linked: boolean; timeState: number | null }
@@ -18,6 +25,7 @@ export type BridgeResult =
   | { type: 'saveLogin'; approval: string }
   /** an EIP-1193 answer: the result, or the error the page's promise rejects with */
   | { type: 'eth'; result?: unknown; error?: { code: number; message: string } }
+  | { type: 'install'; name: string; approval: string; reason: string }
 
 export type BridgeResponse = ({ id: number; ok: true } & BridgeResult) | { id: number; ok: false; error: string }
 
@@ -45,6 +53,10 @@ export function parseRequest(value: unknown): BridgeRequest | null {
       // a transaction's data can be long; nothing a page sends needs more than this
       if (!Array.isArray(params) || JSON.stringify(params).length > 512 * 1024) return null
       return { id, type: 'eth', site, method, params }
+    }
+    case 'install': {
+      const path = str('path', 4096)
+      return path === null ? null : { id, type: 'install', path }
     }
     case 'saveLogin': {
       const site = str('site', 253)

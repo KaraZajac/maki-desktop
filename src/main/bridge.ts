@@ -1,7 +1,8 @@
 import { chmodSync, existsSync, unlinkSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { parseRequest, type BridgeRequest, type BridgeResponse, type BridgeResult } from '../shared/bridge-types'
 
 /**
@@ -17,6 +18,18 @@ export function socketPath(): string {
 }
 
 export type Handler = (request: BridgeRequest) => Promise<BridgeResult>
+
+/**
+ * A request as the window takes it. `maki install` names a file, which the window can't read:
+ * the bundle goes to it as bytes. maki checks it, and asks its owner, either way.
+ */
+export async function forWindow(request: BridgeRequest): Promise<BridgeRequest> {
+  if (request.type === 'installBundle') throw new Error('malformed request')
+  if (request.type !== 'install') return request
+  if (!isAbsolute(request.path)) throw new Error('give the bundle’s full path')
+  if ((await stat(request.path)).size > 512 * 1024) throw new Error('that file is bigger than any app maki takes (512 KiB)')
+  return { id: request.id, type: 'installBundle', data: new Uint8Array(await readFile(request.path)) }
+}
 
 /** One JSON object per line in both directions; requests may overlap. */
 export function serveBridge(handler: Handler, path = socketPath()): Promise<Server> {
