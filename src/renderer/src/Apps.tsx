@@ -268,10 +268,14 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
             Developer key <span className="font-mono text-zinc-200">{chosen.developer}</span>: maki shows it too; they should
             match.
           </p>
+          {m.kind === 'native' && (
+            <p className="mt-1 text-sm text-zinc-400">
+              A native app: machine code for maki's processor, which maki runs in a process of its own, confined by its
+              kernel to its own memory and to what it asks for here. Built for {m.firmware || 'no firmware in particular'}.
+            </p>
+          )}
           <div className="mt-2 text-sm">
-            {m.kind === 'native' ? (
-              <p className="text-zinc-400">A native app: maki doesn't take these yet.</p>
-            ) : m.permissions.length === 0 ? (
+            {m.permissions.length === 0 ? (
               <p className="text-zinc-400">
                 It asks for nothing beyond the basics: its own screen, buttons and {m.storageKib} KiB of storage.
               </p>
