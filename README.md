@@ -55,7 +55,8 @@ page ── content script ── background ══ native messaging ══ maki
   code fields, asks when you focus one, and fills what maki approves. The site it asks about is
   the hostname the browser reports for the asking frame, never something the page says; https
   only (and localhost). The page's own notices only say what's going on: the decision is made on
-  maki's screen.
+  maki's screen. It also puts maki's Ethereum provider in pages (`inpage.ts`, in the page's own
+  world), which asks through the same path.
 - The browser starts this app with `--native-host` (headless, no window) as a relay to the
   running tray app, starting that if needed. The extension hangs up after 30 s idle.
 - **Set up** (Browsers, in the window) registers the relay with each installed browser. Firefox
@@ -63,9 +64,12 @@ page ── content script ── background ══ native messaging ══ maki
   registrations from `~/.mozilla`, and creating `~/.mozilla` would switch it back to the old
   layout and an empty profile, so for that Firefox the registration goes in the system folder
   (`/usr/lib64/mozilla` or `/usr/lib/mozilla`) and asks for an admin password once.
-- Not yet: Windows (it registers through the registry), usernames asked on a page of their own
-  (they're typed; the password page fills), logins sent without a form submit, a published
-  extension.
+- On **Windows** the registration is a registry key per browser (under `HKCU\Software\...\
+  NativeMessagingHosts`, set with `reg.exe`) naming a manifest in `%APPDATA%\maki`, which points
+  at a `maki-native-host.cmd` that starts this app as the relay; the local socket is a named
+  pipe. Tested with the registry in memory, not yet on Windows itself.
+- Not yet: usernames asked on a page of their own (they're typed; the password page fills),
+  logins sent without a form submit, a published extension.
 
 Load the extension by hand for now:
 

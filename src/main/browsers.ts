@@ -6,8 +6,8 @@ import type { BrowserStatus } from '../shared/bridge-types'
 
 /**
  * Registering the native messaging host with installed browsers, so the maki extension can reach
- * this app. Linux and macOS read a JSON manifest from per-browser folders; Windows uses the
- * registry, which isn't done yet.
+ * this app. Linux and macOS read a JSON manifest from per-browser folders; Windows reads a
+ * registry key per browser whose default value is the manifest's path.
  *
  * Firefox on Linux is the awkward one. It reads a user's manifests only from
  * ~/.mozilla/native-messaging-hosts, but since Firefox 147 a new install keeps its profiles in
@@ -30,12 +30,65 @@ interface Browser {
   firefox?: boolean
   /** a system folder: writing there asks for an admin password */
   system?: boolean
+  /** Windows: the HKCU key whose default value names the manifest */
+  regKey?: string
+}
+
+/** The Windows registry, as much of it as this needs: a key's default value. */
+export interface Registry {
+  get(key: string): Promise<string | null>
+  set(key: string, value: string): Promise<void>
+  remove(key: string): Promise<void>
+}
+
+/** reg.exe, which every Windows has. */
+export const regExe: Registry = {
+  get: (key) =>
+    new Promise((resolve) =>
+      execFile('reg', ['query', key, '/ve'], (e, out) => {
+        // "    (Default)    REG_SZ    C:\path\to\manifest.json"
+        const m = e ? null : /REG_SZ\s+(.+?)\s*$/m.exec(String(out))
+        resolve(m ? m[1] : null)
+      })
+    ),
+  set: (key, value) =>
+    new Promise((resolve, reject) =>
+      execFile('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', value, '/f'], (e) => (e ? reject(e) : resolve()))
+    ),
+  remove: (key) => new Promise((resolve) => execFile('reg', ['delete', key, '/f'], () => resolve()))
 }
 
 const exists = (path: string): Promise<boolean> => stat(path).then(() => true, () => false)
 
 async function browsers(): Promise<Browser[]> {
   const home = homedir()
+  if (process.platform === 'win32') {
+    const local = process.env['LOCALAPPDATA'] || join(home, 'AppData', 'Local')
+    const roaming = process.env['APPDATA'] || join(home, 'AppData', 'Roaming')
+    // the manifests themselves: one for the Chromium family, one for Firefox
+    const hosts = join(roaming, 'maki', 'native-messaging')
+    const chromium = (name: string, dir: string, key: string): Browser => ({
+      name,
+      config: join(local, dir, 'User Data'),
+      hosts: join(hosts, 'chromium'),
+      regKey: `HKCU\\Software\\${key}\\NativeMessagingHosts\\${HOST_NAME}`
+    })
+    return [
+      chromium('Chrome', 'Google/Chrome', 'Google\\Chrome'),
+      chromium('Chromium', 'Chromium', 'Chromium'),
+      chromium('Brave', 'BraveSoftware/Brave-Browser', 'BraveSoftware\\Brave-Browser'),
+      chromium('Edge', 'Microsoft/Edge', 'Microsoft\\Edge'),
+      // Vivaldi looks where Chrome does
+      chromium('Vivaldi', 'Vivaldi', 'Google\\Chrome'),
+      {
+        name: 'Firefox',
+        config: join(roaming, 'Mozilla', 'Firefox'),
+        hosts: join(hosts, 'firefox'),
+        firefox: true,
+        regKey: `HKCU\\Software\\Mozilla\\NativeMessagingHosts\\${HOST_NAME}`
+      }
+    ]
+  }
   if (process.platform === 'darwin') {
     const s = join(home, 'Library', 'Application Support')
     const chromium = (name: string, dir: string): Browser => ({ name, config: join(s, dir), hosts: join(s, dir, 'NativeMessagingHosts') })
@@ -79,6 +132,9 @@ export interface Launch {
 
 /** Where the manifests point: a small script, since a browser runs one executable with no arguments. */
 export function launcherPath(): string {
+  if (process.platform === 'win32') {
+    return join(process.env['APPDATA'] || join(homedir(), 'AppData', 'Roaming'), 'maki', 'maki-native-host.cmd')
+  }
   const base =
     process.platform === 'darwin'
       ? join(homedir(), 'Library', 'Application Support', 'maki')
@@ -87,6 +143,13 @@ export function launcherPath(): string {
 }
 
 function launcherScript({ exe, appPath }: Launch): string {
+  if (process.platform === 'win32') {
+    // a batch file: browsers on Windows start hosts through cmd.exe. Paths can't hold a
+    // double quote there; a percent sign is doubled so cmd doesn't expand it.
+    const q = (s: string): string => `"${s.replace(/%/g, '%%')}"`
+    const target = appPath ? `${q(exe)} ${q(appPath)}` : q(exe)
+    return `@echo off\r\nrem written by maki desktop: the browser starts this to reach the running app\r\n${target} --native-host %*\r\n`
+  }
   const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
   const target = appPath ? `${q(exe)} ${q(appPath)}` : q(exe)
   // headless: the host is a stdio relay, and must start without a display
@@ -119,7 +182,9 @@ export const pkexec: AsAdmin = (command) =>
 
 const hostFile = (b: Browser): string => join(b.hosts, `${HOST_NAME}.json`)
 
-async function registered(b: Browser): Promise<boolean> {
+async function registered(b: Browser, registry: Registry): Promise<boolean> {
+  // on Windows, the browser finds the manifest through its key: it must name ours
+  if (b.regKey && (await registry.get(b.regKey)) !== hostFile(b)) return false
   // a system-wide manifest may be another user's: only one pointing at our launcher counts
   const text = await readFile(hostFile(b), 'utf8').catch(() => null)
   if (text === null) return false
@@ -130,17 +195,21 @@ async function registered(b: Browser): Promise<boolean> {
   }
 }
 
-export async function browserStatus(): Promise<BrowserStatus[]> {
+export async function browserStatus(registry: Registry = regExe): Promise<BrowserStatus[]> {
   const out: BrowserStatus[] = []
   for (const b of await browsers()) {
-    if (await exists(b.config)) out.push({ name: b.name, registered: await registered(b), system: !!b.system })
+    if (await exists(b.config)) out.push({ name: b.name, registered: await registered(b, registry), system: !!b.system })
   }
   return out
 }
 
-/** Register with one installed browser, by name. Unsupported on Windows for now. */
-export async function registerBrowser(name: string, launch: Launch, asAdmin: AsAdmin = pkexec): Promise<BrowserStatus[]> {
-  if (process.platform === 'win32') throw new Error('browser integration on Windows is not built yet')
+/** Register with one installed browser, by name. */
+export async function registerBrowser(
+  name: string,
+  launch: Launch,
+  asAdmin: AsAdmin = pkexec,
+  registry: Registry = regExe
+): Promise<BrowserStatus[]> {
   const b = (await browsers()).find((x) => x.name === name)
   if (!b || !(await exists(b.config))) throw new Error(`${name} isn't installed`)
   const launcher = launcherPath()
@@ -155,14 +224,18 @@ export async function registerBrowser(name: string, launch: Launch, asAdmin: AsA
     await mkdir(b.hosts, { recursive: true })
     await writeFile(hostFile(b), manifest(b))
   }
-  return browserStatus()
+  if (b.regKey) await registry.set(b.regKey, hostFile(b))
+  return browserStatus(registry)
 }
 
-export async function unregisterBrowser(name: string, asAdmin: AsAdmin = pkexec): Promise<BrowserStatus[]> {
+export async function unregisterBrowser(name: string, asAdmin: AsAdmin = pkexec, registry: Registry = regExe): Promise<BrowserStatus[]> {
   const b = (await browsers()).find((x) => x.name === name)
-  if (b && (await registered(b))) {
-    if (b.system) await asAdmin(['/usr/bin/rm', '-f', hostFile(b)])
+  if (b && (await registered(b, registry))) {
+    if (b.regKey) {
+      // the key only: the manifest file may serve the browser's siblings (Vivaldi shares Chrome's)
+      await registry.remove(b.regKey)
+    } else if (b.system) await asAdmin(['/usr/bin/rm', '-f', hostFile(b)])
     else await rm(hostFile(b), { force: true })
   }
-  return browserStatus()
+  return browserStatus(registry)
 }
