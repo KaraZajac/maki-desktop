@@ -8,7 +8,7 @@ for (const target of ['chrome', 'firefox']) {
   rmSync(out, { recursive: true, force: true })
   mkdirSync(out, { recursive: true })
   await build({
-    entryPoints: ['extension/src/background.ts', 'extension/src/content.ts', 'extension/src/popup.ts'],
+    entryPoints: ['extension/src/background.ts', 'extension/src/content.ts', 'extension/src/inpage.ts', 'extension/src/popup.ts'],
     bundle: true,
     format: 'iife',
     target: 'es2020',

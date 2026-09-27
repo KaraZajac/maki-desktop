@@ -6,6 +6,7 @@
 
 import type { BridgeRequest, BridgeResult } from './bridge-types'
 import { MakiClient, syncTime, type Hello, type Relay, type Status, type SyncReport, type Transport } from './client'
+import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
 import type { ApprovalValue, NetworkValue } from './protocol'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
@@ -48,11 +49,17 @@ export class Link {
   private listeners = new Set<() => void>()
   backingUp = false
 
+  /** the Ethereum account, for sites through the browser extension */
+  readonly ethereum: Ethereum
+
   constructor(
     private relay: Relay,
     private now: () => Date = () => new Date(),
-    private backups: BackupStore | null = null
-  ) {}
+    private backups: BackupStore | null = null,
+    eth: { rpc: Rpc; store: EthStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memoryStore() }
+  ) {
+    this.ethereum = new Ethereum(() => (this.state.linked ? this.client : null), eth.rpc, eth.store)
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -263,6 +270,7 @@ export class Link {
     if (request.type === 'status') {
       return { type: 'status', linked: this.state.linked, timeState: this.state.linked ? this.state.status.timeState : null }
     }
+    if (request.type === 'eth') return this.fromSite(request.site, request.method, request.params)
     const client = this.client
     if (!client || !this.state.linked) throw new Error('maki is not linked')
     switch (request.type) {
@@ -288,6 +296,29 @@ export class Link {
         }
         return { type: 'saveLogin', approval }
       }
+    }
+  }
+
+  /** Ethereum methods that need the owner, and so a line in the log; reads don't. */
+  private static readonly ETH_ASKS: Record<string, string> = {
+    eth_requestAccounts: 'wants to connect to your Ethereum account',
+    wallet_requestPermissions: 'wants to connect to your Ethereum account',
+    personal_sign: 'wants a message signed',
+    eth_sendTransaction: 'sent a transaction'
+  }
+
+  /** An EIP-1193 request from a site. Its errors go back to the page as they are. */
+  private async fromSite(site: string, method: string, params: unknown[]): Promise<BridgeResult> {
+    const asks = Link.ETH_ASKS[method]
+    if (asks) this.note(`${site} ${asks}: approve on maki`)
+    try {
+      const result = await this.ethereum.request(site, method, params)
+      if (asks) this.note(`${site}: ${method === 'eth_sendTransaction' ? `sent, ${String(result)}` : 'done'}`)
+      return { type: 'eth', result }
+    } catch (e) {
+      const error = e instanceof ProviderError ? { code: e.code, message: e.message } : { code: -32603, message: (e as Error).message }
+      if (asks) this.note(`${site}: ${error.message}`)
+      return { type: 'eth', error }
     }
   }
 

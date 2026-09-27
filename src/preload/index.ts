@@ -42,6 +42,12 @@ const api = {
     save: (defaultPath: string, data: Uint8Array): Promise<string | null> => ipcRenderer.invoke('wallet:save', defaultPath, data)
   },
   copy: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:write', text),
+  ethereum: {
+    rpc: (url: string, method: string, params: unknown[]): Promise<{ result?: unknown; error?: { code: number; message: string } }> =>
+      ipcRenderer.invoke('eth:rpc', url, method, params),
+    load: (): Promise<import('../shared/ethereum').EthState> => ipcRenderer.invoke('eth:load'),
+    save: (state: import('../shared/ethereum').EthState): Promise<void> => ipcRenderer.invoke('eth:save', state)
+  },
   settings: {
     startAtLogin: (): Promise<boolean> => ipcRenderer.invoke('settings:startAtLogin'),
     setStartAtLogin: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setStartAtLogin', on)

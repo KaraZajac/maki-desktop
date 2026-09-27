@@ -30,6 +30,14 @@ export const Kind = {
   BTC_SIGN: 0x32,
   /** a piece of the PSBT maki signed */
   BTC_SIGNED: 0x33,
+  /** the Ethereum account's address, once the owner lets the site connect */
+  ETH_ACCOUNT: 0x40,
+  /** a piece of an Ethereum transaction to sign; the last is answered once the owner decides */
+  ETH_SIGN_TX: 0x41,
+  /** a piece of the transaction maki signed */
+  ETH_SIGNED: 0x42,
+  /** a message to sign (EIP-191), answered once the owner decides */
+  ETH_SIGN_MESSAGE: 0x43,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const
@@ -58,6 +66,12 @@ export const BACKUP_PIECE = 4096
 export const PSBT_PIECE = 4096
 /** The biggest PSBT maki takes in. */
 export const MAX_PSBT = 512 * 1024
+/** Pieces of an Ethereum transaction, either way. */
+export const TX_PIECE = 4096
+/** The biggest Ethereum transaction maki takes in. */
+export const MAX_TX = 128 * 1024
+/** The longest message maki signs. */
+export const MAX_MESSAGE = 4096
 /** Bitcoin itself, or the test networks (testnet and signet share keys and addresses). */
 export const Network = { BITCOIN: 0, TESTNET: 1 } as const
 export type NetworkValue = (typeof Network)[keyof typeof Network]

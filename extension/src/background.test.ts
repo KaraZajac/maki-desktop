@@ -73,6 +73,18 @@ describe('background', () => {
     expect(b.sent).toEqual([{ id: 1, type: 'getTotp', site: 'localhost' }])
   })
 
+  it('relays a page’s Ethereum requests with the site the browser names', async () => {
+    const { reply } = b.fromPage({ type: 'eth', method: 'eth_chainId', params: [], site: 'evil.example' }, 'https://app.uniswap.org/#/swap')
+    expect(b.sent).toEqual([{ id: 1, type: 'eth', site: 'app.uniswap.org', method: 'eth_chainId', params: [] }])
+    b.fromHost({ id: 1, ok: true, type: 'eth', result: '0x1' })
+    expect(await reply).toMatchObject({ ok: true, result: '0x1' })
+    expect(await b.fromPage({ type: 'eth', method: 'eth_chainId' }, 'https://app.uniswap.org/').reply).toMatchObject({ ok: false })
+    expect(await b.fromPage({ type: 'eth', method: 'eth_chainId', params: [] }, 'http://example.com/').reply).toEqual({
+      ok: false,
+      error: 'maki only works on https pages'
+    })
+  })
+
   it('ignores other extensions', () => {
     expect(b.fromPage({ type: 'getLogin' }, 'https://github.com/', 'someone-else').handled).toBe(false)
     expect(b.connections()).toBe(0)

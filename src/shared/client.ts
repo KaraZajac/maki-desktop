@@ -15,9 +15,12 @@ import {
   Reader,
   TimeStateValue,
   BACKUP_PIECE,
+  MAX_MESSAGE,
   MAX_PSBT,
+  MAX_TX,
   type NetworkValue,
   PSBT_PIECE,
+  TX_PIECE,
   Writer,
   type Packet
 } from './protocol'
@@ -294,6 +297,71 @@ export class MakiClient {
     const signed = new Uint8Array(total)
     for (let offset = 0; offset < total; ) {
       const r = new Reader((await this.request(Kind.BTC_SIGNED, new Writer().u32(offset).finish())).body)
+      const status = Approval[r.u8()] ?? 'unavailable'
+      const size = r.u32()
+      const at = r.u32()
+      const piece = r.bytes16()
+      r.end()
+      if (status !== 'approved' || size !== total || at !== offset || piece.length === 0 || offset + piece.length > total) {
+        return { approval: 'unavailable', reason: '', signed: null }
+      }
+      signed.set(piece, offset)
+      offset += piece.length
+    }
+    return { approval: 'approved', reason: '', signed }
+  }
+
+  /** The Ethereum account's address (EIP-55), once the owner lets `site` connect on maki. */
+  async ethAccount(site: string, index = 0): Promise<{ approval: ApprovalValue; address: string }> {
+    const body = new Writer().str8(site).u32(index).finish()
+    const r = new Reader((await this.request(Kind.ETH_ACCOUNT, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const out = { approval: Approval[r.u8()] ?? 'unavailable', address: r.str8() }
+    r.end()
+    return out
+  }
+
+  /** Sign a message (EIP-191 personal_sign) once the owner has read it: r, s, v (65 bytes). */
+  async ethSignMessage(site: string, message: Uint8Array, index = 0): Promise<{ approval: ApprovalValue; signature: Uint8Array }> {
+    if (message.length > MAX_MESSAGE) return { approval: 'refused', signature: new Uint8Array() }
+    const body = new Writer().str8(site).u32(index).bytes16(message).finish()
+    const r = new Reader((await this.request(Kind.ETH_SIGN_MESSAGE, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const out = { approval: Approval[r.u8()] ?? 'unavailable', signature: r.bytes16() }
+    r.end()
+    return out
+  }
+
+  /**
+   * Sign an Ethereum transaction (unsigned EIP-1559 or EIP-155 bytes): maki shows the owner what
+   * it does, and it comes back signed, ready for eth_sendRawTransaction. Refused ones come back
+   * with maki's reason.
+   */
+  async ethSignTransaction(
+    site: string,
+    unsigned: Uint8Array,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
+    if (unsigned.length === 0 || unsigned.length > MAX_TX) {
+      return { approval: 'refused', reason: `a transaction maki takes is 1 byte to ${MAX_TX / 1024} KiB`, signed: null }
+    }
+    let total = 0
+    for (let offset = 0; offset < unsigned.length; ) {
+      const piece = unsigned.subarray(offset, offset + TX_PIECE)
+      const last = offset + piece.length >= unsigned.length
+      const body = new Writer().str8(site).u32(index).u32(unsigned.length).u32(offset).bytes16(piece).finish()
+      const r = new Reader((await this.request(Kind.ETH_SIGN_TX, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
+      const done = r.u8() === 1
+      const approval = Approval[r.u8()] ?? 'unavailable'
+      total = r.u32()
+      const reason = r.str8()
+      r.end()
+      if (done && approval !== 'approved') return { approval, reason, signed: null }
+      if (done) break
+      if (last) return { approval: 'unavailable', reason: '', signed: null }
+      offset += piece.length
+    }
+    const signed = new Uint8Array(total)
+    for (let offset = 0; offset < total; ) {
+      const r = new Reader((await this.request(Kind.ETH_SIGNED, new Writer().u32(offset).finish())).body)
       const status = Approval[r.u8()] ?? 'unavailable'
       const size = r.u32()
       const at = r.u32()

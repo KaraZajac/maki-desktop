@@ -9,12 +9,15 @@ export type BridgeRequest =
   | { id: number; type: 'getLogin'; site: string }
   | { id: number; type: 'getTotp'; site: string }
   | { id: number; type: 'saveLogin'; site: string; username: string; password: string }
+  | { id: number; type: 'eth'; site: string; method: string; params: unknown[] }
 
 export type BridgeResult =
   | { type: 'status'; linked: boolean; timeState: number | null }
   | { type: 'getLogin'; approval: string; username: string; password: string }
   | { type: 'getTotp'; approval: string; code: string; validForS: number }
   | { type: 'saveLogin'; approval: string }
+  /** an EIP-1193 answer: the result, or the error the page's promise rejects with */
+  | { type: 'eth'; result?: unknown; error?: { code: number; message: string } }
 
 export type BridgeResponse = ({ id: number; ok: true } & BridgeResult) | { id: number; ok: false; error: string }
 
@@ -33,6 +36,15 @@ export function parseRequest(value: unknown): BridgeRequest | null {
     case 'getTotp': {
       const site = str('site', 253)
       return site === null ? null : { id, type: v.type, site }
+    }
+    case 'eth': {
+      const site = str('site', 253)
+      const method = str('method', 64)
+      if (site === null || method === null || !/^[A-Za-z0-9_]+$/.test(method)) return null
+      const params = v.params === undefined ? [] : v.params
+      // a transaction's data can be long; nothing a page sends needs more than this
+      if (!Array.isArray(params) || JSON.stringify(params).length > 512 * 1024) return null
+      return { id, type: 'eth', site, method, params }
     }
     case 'saveLogin': {
       const site = str('site', 253)

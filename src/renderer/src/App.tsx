@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { BrowserStatus } from '@shared/bridge-types'
+import { ProviderError } from '@shared/ethereum'
 import { Link } from '@shared/link'
 import { TimeState } from '@shared/protocol'
 import { Bitcoin } from './Bitcoin'
+import { Ethereum } from './Ethereum'
 import { DevTransport } from './transports'
 import { chooseUsb, watchUsb } from './usb'
 
@@ -28,10 +30,22 @@ export default function App(): React.JSX.Element {
   const link = useLink(
     useMemo(
       () =>
-        new Link(window.maki.relay, undefined, {
-          save: (data) => window.maki.backups.save(data),
-          latest: () => window.maki.backups.latest()
-        }),
+        new Link(
+          window.maki.relay,
+          undefined,
+          {
+            save: (data) => window.maki.backups.save(data),
+            latest: () => window.maki.backups.latest()
+          },
+          {
+            rpc: async (url, method, params) => {
+              const r = await window.maki.ethereum.rpc(url, method, params)
+              if (r.error) throw new ProviderError(r.error.code, r.error.message)
+              return r.result
+            },
+            store: { load: () => window.maki.ethereum.load(), save: (s) => window.maki.ethereum.save(s) }
+          }
+        ),
       []
     )
   )
@@ -221,6 +235,8 @@ export default function App(): React.JSX.Element {
         </section>
 
         <Bitcoin link={link} />
+
+        <Ethereum link={link} />
 
         <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Backups</h2>

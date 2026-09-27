@@ -4,6 +4,7 @@ import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BridgeRequest, BridgeResult } from '../shared/bridge-types'
+import { NETWORKS, type EthState } from '../shared/ethereum'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
 import { serveBridge, socketPath } from './bridge'
@@ -181,6 +182,43 @@ function ipc(): void {
     return r.filePath
   })
   ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
+
+  // Ethereum: which sites are connected, and each site's network; and the networks' servers
+  const ethFile = (): string => join(app.getPath('userData'), 'ethereum.json')
+  const ethState = (v: unknown): EthState | null => {
+    const o = v as EthState | null
+    const strings = (r: unknown): boolean =>
+      typeof r === 'object' && r !== null && Object.values(r).every((x) => typeof x === 'string')
+    return o && strings(o.connected) && strings(o.chains) ? { connected: o.connected, chains: o.chains } : null
+  }
+  ipcMain.handle('eth:load', async () => {
+    try {
+      return ethState(JSON.parse(await readFile(ethFile(), 'utf8'))) ?? { connected: {}, chains: {} }
+    } catch {
+      return { connected: {}, chains: {} }
+    }
+  })
+  ipcMain.handle('eth:save', async (_e, state: unknown) => {
+    const s = ethState(state)
+    if (s) await writeFile(ethFile(), JSON.stringify(s))
+  })
+  ipcMain.handle('eth:rpc', async (_e, url: string, method: string, params: unknown[]) => {
+    // only the networks maki desktop knows: the renderer can't send this process anywhere else
+    if (!NETWORKS.some((n) => n.rpc === url)) return { error: { code: 4901, message: 'unknown network' } }
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        signal: AbortSignal.timeout(20_000)
+      })
+      const body = (await res.json()) as { result?: unknown; error?: { code?: number; message?: string } }
+      if (body.error) return { error: { code: body.error.code ?? -32603, message: body.error.message ?? 'the network refused it' } }
+      return { result: body.result ?? null }
+    } catch (e) {
+      return { error: { code: -32603, message: `the network is unreachable: ${(e as Error).message}` } }
+    }
+  })
   ipcMain.handle('settings:startAtLogin', () => getStartAtLogin())
   ipcMain.handle('settings:setStartAtLogin', async (_e, on: boolean) => {
     await setStartAtLogin(on)
