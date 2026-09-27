@@ -133,7 +133,10 @@ export function Apps({ link }: { link: Link }): React.JSX.Element {
   const install = (): Promise<void> =>
     run('install', async () => {
       if (!chosen) return
-      const r = await link.appInstall(chosen.bundle.manifest.name, chosen.bundle.bytes)
+      const store = chosen.fromStore ? link.store?.index?.apps.find((a) => a.id === chosen.bundle.manifest.id) : undefined
+      const r = store
+        ? await link.storeInstall(store)
+        : await link.appInstall(chosen.bundle.manifest.name, chosen.bundle.bytes)
       if (r.approval === 'approved') {
         setChosen(null)
         await refresh()

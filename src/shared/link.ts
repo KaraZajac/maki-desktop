@@ -282,6 +282,8 @@ export class Link {
   async storeInstall(app: StoreApp): Promise<{ approval: ApprovalValue; reason: string }> {
     if (!this.store) throw new Error('maki desktop has no store to install from')
     const bundle = await this.store.bundle(app)
+    // maki checks the stamp against the newest root it has: hand it the store's first
+    if (!this.storeHanded) await this.storeNow()
     return this.appInstall(app.name, bundle.bytes)
   }
 

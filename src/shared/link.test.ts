@@ -1,9 +1,11 @@
 import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { storeSource } from '../main/store-source'
 import type { Transport } from './client'
-import { FAKE_BUILT, startFake, TcpTransport as Tcp } from './test-support'
+import { DEV_STORE, DEV_STORE_THERE, FAKE_BUILT, startFake, TcpTransport as Tcp } from './test-support'
 import { Link, PROBE_TIMEOUT_MS } from './link'
 import { TimeState } from './protocol'
+import { Store } from './store'
 
 /** A device that never answers: what a stock DC34 badge looks like to the probe. */
 class Silent implements Transport {
@@ -68,5 +70,28 @@ describe.skipIf(!FAKE_BUILT)('linking to the fake maki', () => {
     await t.close() // unplug
     await dropped
     expect(link.log[0]).toMatch(/disconnected/)
+  })
+})
+
+describe.skipIf(!FAKE_BUILT || !DEV_STORE_THERE)('the maki store, through the link', () => {
+  let fake: { port: number; proc: ChildProcess }
+
+  beforeAll(async () => {
+    fake = await startFake(['--clock-verified'])
+  })
+  afterAll(() => fake?.proc.kill())
+
+  it('hands maki the store’s newest root before installing from the store, if it hasn’t yet', async () => {
+    const link = new Link(noRelay)
+    link.autoSync = false // nothing handed over as it links
+    link.store = new Store(storeSource(DEV_STORE))
+    await link.storeCheck()
+    expect(await link.attach(await Tcp.open(fake.port), 'fake maki')).toBe(true)
+    const dice = link.store.index!.apps.find((a) => a.name === 'Dice')!
+    // stamped by root 2's catalogue key: maki needs root 2 first, and gets it
+    expect(await link.storeInstall(dice)).toEqual({ approval: 'approved', reason: '' })
+    expect(link.log.some((l) => l.includes("maki took the store's root 2"))).toBe(true)
+    const { apps } = await link.appList()
+    expect(apps.map((a) => [a.name, a.fromStore])).toEqual([['Dice', true]])
   })
 })
