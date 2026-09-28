@@ -1,4 +1,5 @@
-/** Sizes and times as the window shows them. */
+/** Sizes, times and amounts as the window shows them. */
+import { units } from '../../shared/tokens'
 
 /** A number with at most `places` decimals, none of them trailing zeros. */
 const trim = (n: number, places: number): string => n.toFixed(places).replace(/\.?0+$/, '')
@@ -27,4 +28,16 @@ export function ago(ms: number, now = Date.now()): string {
     month: 'short',
     year: 'numeric'
   })
+}
+
+/**
+ * An amount to read at a glance: thousands marked, and at most six places, or for a sliver of a
+ * coin, its first four digits after the zeros. The whole of it is a hover away.
+ */
+export function readable(amount: bigint, decimals: number): string {
+  const [whole, frac = ''] = units(amount, decimals).split('.')
+  const grouped = BigInt(whole).toLocaleString('en-US')
+  const zeros = whole === '0' ? /^0*/.exec(frac)![0].length : 0
+  const places = Math.max(6, zeros + 4)
+  return frac ? `${grouped}.${frac.slice(0, places)}${frac.length > places ? '…' : ''}` : grouped
 }

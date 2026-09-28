@@ -55,12 +55,21 @@ export function fromBase64(s: string): Uint8Array | null {
   return Uint8Array.from(bin, (c) => c.charCodeAt(0))
 }
 
+/**
+ * The site maki desktop is, to maki, for its own wallet's sends: a hostname no website can have
+ * (.maki is no top-level domain), and one the bridge refuses from anything else.
+ */
+export const WALLET_SITE = 'desktop.maki'
+
 /** Everything the app accepts, checked field by field: the socket is reachable by any local process. */
 export function parseRequest(value: unknown): BridgeRequest | null {
   if (typeof value !== 'object' || value === null) return null
   const v = value as Record<string, unknown>
-  const str = (k: string, max = 255): string | null =>
-    typeof v[k] === 'string' && (v[k] as string).length <= max ? (v[k] as string) : null
+  const str = (k: string, max = 255): string | null => {
+    const s = typeof v[k] === 'string' && (v[k] as string).length <= max ? (v[k] as string) : null
+    // no page speaks for maki desktop's own wallet
+    return k === 'site' && s !== null && (s === 'maki' || s.endsWith('.maki')) ? null : s
+  }
   if (typeof v.id !== 'number' || !Number.isInteger(v.id)) return null
   const id = v.id
   switch (v.type) {

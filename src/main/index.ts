@@ -1,10 +1,12 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron'
+import { spawn } from 'node:child_process'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fromBase64, toBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
+import { polite } from '../shared/polite'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
 import { forWindow, serveBridge, socketPath } from './bridge'
@@ -34,8 +36,20 @@ let link: LinkReport = { linked: false, via: null, timeState: null }
 const startHidden = process.argv.includes('--hidden')
 // MAKI_OFFSCREEN=1 renders without ever showing a window: scripts/screenshot.cjs, UI tests
 const offscreen = process.env['MAKI_OFFSCREEN'] === '1'
-// screenshots and UI tests keep their settings and backups out of the real app data
-if (offscreen) app.setPath('userData', join(tmpdir(), `maki-offscreen-${process.pid}`))
+// screenshots and UI tests keep their settings and backups out of the real app data, and leave
+// nothing behind (MAKI_OFFSCREEN_KEEP=1 keeps them, to look at)
+if (offscreen) {
+  const scratch = join(tmpdir(), `maki-offscreen-${process.pid}`)
+  app.setPath('userData', scratch)
+  // Chromium writes the last of it as it shuts down, after this process's own exit handlers: a
+  // watcher sweeps it up once the process is gone, crashed or not
+  if (process.env['MAKI_OFFSCREEN_KEEP'] !== '1' && process.platform !== 'win32') {
+    spawn('sh', ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.5; done; rm -rf "$0"`, scratch], {
+      detached: true,
+      stdio: 'ignore'
+    }).unref()
+  }
+}
 
 const resource = (name: string): string => join(app.getAppPath(), 'resources', name)
 
@@ -226,21 +240,77 @@ function ipc(): void {
   })
   ipcMain.handle('eth:rpc', async (_e, url: string, method: string, params: unknown[]) => {
     // only the networks maki desktop knows: the renderer can't send this process anywhere else
-    if (!NETWORKS.some((n) => n.rpc === url)) return { error: { code: 4901, message: 'unknown network' } }
+    const network = NETWORKS.find((n) => n.rpc === url)
+    if (!network) return { error: { code: 4901, message: 'unknown network' } }
+    // its servers in turn: the next when one can't be reached, not when one answers "no"
+    let unreachable = ''
+    for (const server of [network.rpc, ...network.fallbacks]) {
+      try {
+        const res = await fetch(server, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+          signal: AbortSignal.timeout(20_000)
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const body = (await res.json()) as { result?: unknown; error?: { code?: number; message?: string } }
+        if (body.error) return { error: { code: body.error.code ?? -32603, message: body.error.message ?? 'the network refused it' } }
+        return { result: body.result ?? null }
+      } catch (e) {
+        unreachable = (e as Error).message
+      }
+    }
+    return { error: { code: -32603, message: `the network is unreachable: ${unreachable}` } }
+  })
+  // Bitcoin: mempool.space's Esplora API, for the wallet (only these paths, and a broadcast), and
+  // the accounts' descriptors maki shared, kept so the balance shows without asking maki again
+  const ESPLORA = { bitcoin: 'https://mempool.space/api', test: 'https://mempool.space/testnet4/api' }
+  const ESPLORA_PATH = /^\/(address\/[a-zA-Z0-9]{14,90}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
+  // a wallet's first look can be a hundred requests, and mempool.space turns away bursts (and
+  // then stops answering for a while): two a second, and a long wait when it asks for one
+  const esplora = polite((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }), {
+    atOnce: 2,
+    perSecond: 2,
+    wait: 5000
+  })
+  ipcMain.handle('btc:esplora', async (_e, network: unknown, path: unknown, body?: unknown) => {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-        signal: AbortSignal.timeout(20_000)
-      })
-      const body = (await res.json()) as { result?: unknown; error?: { code?: number; message?: string } }
-      if (body.error) return { error: { code: body.error.code ?? -32603, message: body.error.message ?? 'the network refused it' } }
-      return { result: body.result ?? null }
+      if (network !== 'bitcoin' && network !== 'test') throw new Error('which network?')
+      const post = path === '/tx' && typeof body === 'string' && /^[0-9a-f]{20,800000}$/.test(body)
+      if (!post && (typeof path !== 'string' || !ESPLORA_PATH.test(path))) throw new Error('not something the wallet asks')
+      let res: Response
+      try {
+        res = await esplora(`${ESPLORA[network]}${path}`, {
+          method: post ? 'POST' : 'GET',
+          body: post ? (body as string) : undefined,
+          headers: post ? { 'content-type': 'text/plain' } : undefined
+        })
+      } catch {
+        throw new Error('mempool.space can’t be reached')
+      }
+      const text = await res.text()
+      if (res.status === 429) throw new Error('mempool.space has had too many requests from this computer: try again in a minute')
+      // Esplora says what's wrong in a line of text (a broadcast it turns down, say); anything else, just the status
+      if (!res.ok) throw new Error(/^[^<]{1,300}$/.test(text.trim()) ? `mempool.space: ${text.trim()}` : `mempool.space answered ${res.status}`)
+      return { text }
     } catch (e) {
-      return { error: { code: -32603, message: `the network is unreachable: ${(e as Error).message}` } }
+      return { error: (e as Error).message }
     }
   })
+  const btcFile = (): string => join(app.getPath('userData'), 'bitcoin.json')
+  ipcMain.handle('btc:load', async () => {
+    try {
+      const kept = JSON.parse(await readFile(btcFile(), 'utf8')) as { descriptors?: unknown }
+      return Array.isArray(kept.descriptors) ? kept.descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300) : []
+    } catch {
+      return []
+    }
+  })
+  ipcMain.handle('btc:save', async (_e, descriptors: unknown) => {
+    const list = Array.isArray(descriptors) ? descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300) : []
+    await writeFile(btcFile(), JSON.stringify({ descriptors: list.slice(0, 8) }))
+  })
+
   // the maki store: where it is, its files (only those), and what this side keeps of it between
   // runs (the newest root it took, and the newest index's version)
   const where = storeWhere()

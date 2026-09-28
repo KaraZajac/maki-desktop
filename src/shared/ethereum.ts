@@ -11,17 +11,69 @@ import { fromHex, quantity, toHex, toQuantity, unsignedEip1559 } from './rlp'
 export interface EthNetwork {
   chainId: bigint
   name: string
+  /** its coin */
+  unit: string
   /** a public JSON-RPC server; it sees the account's address and this computer's IP */
   rpc: string
+  /** others like it, tried in turn when it can't be reached */
+  fallbacks: string[]
+  /** where to read an address's activity or a transaction, on the web */
+  explorer: string
 }
 
+/**
+ * The networks maki desktop knows, each with public servers to try in turn: when one can't be
+ * reached (they come and go), the next.
+ */
 export const NETWORKS: EthNetwork[] = [
-  { chainId: 1n, name: 'Ethereum', rpc: 'https://ethereum-rpc.publicnode.com' },
-  { chainId: 8453n, name: 'Base', rpc: 'https://mainnet.base.org' },
-  { chainId: 10n, name: 'Optimism', rpc: 'https://mainnet.optimism.io' },
-  { chainId: 42161n, name: 'Arbitrum One', rpc: 'https://arb1.arbitrum.io/rpc' },
-  { chainId: 137n, name: 'Polygon', rpc: 'https://polygon-rpc.com' },
-  { chainId: 11155111n, name: 'Sepolia', rpc: 'https://ethereum-sepolia-rpc.publicnode.com' }
+  {
+    chainId: 1n,
+    name: 'Ethereum',
+    unit: 'ETH',
+    rpc: 'https://ethereum-rpc.publicnode.com',
+    fallbacks: ['https://eth.drpc.org'],
+    explorer: 'https://etherscan.io'
+  },
+  {
+    chainId: 8453n,
+    name: 'Base',
+    unit: 'ETH',
+    rpc: 'https://mainnet.base.org',
+    fallbacks: ['https://base-rpc.publicnode.com'],
+    explorer: 'https://basescan.org'
+  },
+  {
+    chainId: 10n,
+    name: 'Optimism',
+    unit: 'ETH',
+    rpc: 'https://mainnet.optimism.io',
+    fallbacks: ['https://optimism-rpc.publicnode.com'],
+    explorer: 'https://optimistic.etherscan.io'
+  },
+  {
+    chainId: 42161n,
+    name: 'Arbitrum One',
+    unit: 'ETH',
+    rpc: 'https://arb1.arbitrum.io/rpc',
+    fallbacks: ['https://arbitrum-one-rpc.publicnode.com'],
+    explorer: 'https://arbiscan.io'
+  },
+  {
+    chainId: 137n,
+    name: 'Polygon',
+    unit: 'POL',
+    rpc: 'https://polygon-bor-rpc.publicnode.com',
+    fallbacks: ['https://polygon.drpc.org'],
+    explorer: 'https://polygonscan.com'
+  },
+  {
+    chainId: 11155111n,
+    name: 'Sepolia',
+    unit: 'ETH',
+    rpc: 'https://ethereum-sepolia-rpc.publicnode.com',
+    fallbacks: [],
+    explorer: 'https://sepolia.etherscan.io'
+  }
 ]
 
 /** An EIP-1193 error: the page's promise rejects with its code and message. */

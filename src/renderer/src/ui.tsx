@@ -6,7 +6,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { iconPixels } from '@shared/bundle'
 
-export { ago, bytes } from './format'
+export { ago, bytes, readable } from './format'
 
 /** maki's mark: a maki roll seen face on (the nori, the rice, the salmon). */
 export function MakiMark({ className = 'h-9 w-9' }: { className?: string }): React.JSX.Element {
@@ -163,6 +163,38 @@ const glyphs: Record<string, ReactNode> = {
     <>
       <rect x="7" y="7" width="10" height="10" rx="1.5" />
       <path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="8" y="8" width="12" height="12" rx="2.5" />
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+    </>
+  ),
+  qr: (
+    <>
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h1M18 14h2" />
+    </>
+  ),
+  send: (
+    <>
+      <path d="M7 17 17 7" />
+      <path d="M8 7h9v9" />
+    </>
+  ),
+  receive: (
+    <>
+      <path d="M17 7 7 17" />
+      <path d="M16 17H7V8" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="2.8" />
     </>
   )
 }
@@ -363,6 +395,75 @@ export function PixelIcon({
         </div>
       )}
     </div>
+  )
+}
+
+/** A choice of a few, side by side: the chosen one in peach. */
+export function Segmented<T extends string | number>({
+  value,
+  options,
+  onChange,
+  label,
+  disabled = false
+}: {
+  value: T
+  options: [T, string][]
+  onChange: (value: T) => void
+  label: string
+  disabled?: boolean
+}): React.JSX.Element {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex rounded-lg border border-surface1 bg-crust/50 p-0.5 font-mono text-[0.68rem]"
+    >
+      {options.map(([v, text]) => (
+        <button
+          key={String(v)}
+          role="radio"
+          aria-checked={value === v}
+          disabled={disabled}
+          onClick={() => onChange(v)}
+          className={`rounded-md px-2.5 py-1 font-bold tracking-wide whitespace-nowrap transition-colors disabled:opacity-40 ${
+            value === v ? 'bg-peach text-crust' : 'text-subtext0 hover:text-fg'
+          }`}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** A text field as the window has them: monospace for what's typed, a unit after it if it has one. */
+export function Field({
+  label,
+  unit,
+  hint,
+  className = '',
+  ...rest
+}: {
+  label: string
+  unit?: ReactNode
+  hint?: ReactNode
+} & React.InputHTMLAttributes<HTMLInputElement>): React.JSX.Element {
+  return (
+    <label className={`block ${className}`}>
+      <span className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1">
+        {label}
+      </span>
+      <span className="mt-1.5 flex items-center rounded-lg border border-surface1 bg-crust/60 transition-colors focus-within:border-peach/70">
+        <input
+          {...rest}
+          spellCheck={false}
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-sm text-fg outline-none placeholder:text-overlay0"
+        />
+        {unit && <span className="pr-3 font-mono text-xs text-overlay1">{unit}</span>}
+      </span>
+      {hint && <span className="mt-1 block text-xs text-overlay1">{hint}</span>}
+    </label>
   )
 }
 

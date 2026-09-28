@@ -18,6 +18,7 @@ import {
 } from './client'
 import { readBundle } from './bundle'
 import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
+import { EthWallet } from './eth-wallet'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
 import type { Store, StoreApp } from './store'
 
@@ -74,6 +75,8 @@ export class Link {
 
   /** the Ethereum account, for sites through the browser extension */
   readonly ethereum: Ethereum
+  /** the same account as a wallet in maki desktop: what it holds, and sending from it */
+  readonly ethWallet: EthWallet
 
   constructor(
     private relay: Relay,
@@ -82,6 +85,7 @@ export class Link {
     eth: { rpc: Rpc; store: EthStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memoryStore() }
   ) {
     this.ethereum = new Ethereum(() => (this.state.linked ? this.client : null), eth.rpc, eth.store)
+    this.ethWallet = new EthWallet(this.ethereum, eth.rpc)
   }
 
   subscribe(listener: () => void): () => void {

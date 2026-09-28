@@ -45,5 +45,13 @@
   "allowScripts": {
     "esbuild@0.25.12": true,
     "esbuild@0.21.5": true
+  },
+  "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@paulmillr/qr": "^0.3.0",
+    "@scure/base": "^2.4.0",
+    "@scure/bip32": "^2.4.0",
+    "@scure/btc-signer": "^2.4.1"
   }
 }

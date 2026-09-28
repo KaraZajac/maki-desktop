@@ -165,8 +165,11 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
     const host = runNativeHost({ socketPath: sock, input: b.input, output: b.output })
     b.send({ id: 5, type: 'getLogin' })
     b.send({ id: 6, type: 'getLogin', site: 'GitHub.com' })
+    // no page speaks for maki desktop's own wallet
+    b.send({ id: 7, type: 'eth', site: 'desktop.maki', method: 'eth_requestAccounts', params: [] })
     expect(await b.reply(5)).toEqual({ id: 5, ok: false, error: 'malformed request' })
     expect(await b.reply(6)).toMatchObject({ ok: false, error: expect.stringContaining('bad argument') })
+    expect(await b.reply(7)).toEqual({ id: 7, ok: false, error: 'malformed request' })
     b.input.end()
     await host
   })

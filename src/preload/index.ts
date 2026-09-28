@@ -62,6 +62,17 @@ const api = {
     save: (kept: import('../shared/store').StoreMemory): Promise<void> => ipcRenderer.invoke('store:save', kept)
   },
   copy: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:write', text),
+  bitcoin: {
+    /** Esplora (mempool.space): a path under the network's API; with a body, a broadcast */
+    esplora: async (network: 'bitcoin' | 'test', path: string, body?: string): Promise<string> => {
+      const r = (await ipcRenderer.invoke('btc:esplora', network, path, body)) as { text: string } | { error: string }
+      if ('error' in r) throw new Error(r.error)
+      return r.text
+    },
+    /** the accounts' descriptors maki shared, kept */
+    load: (): Promise<string[]> => ipcRenderer.invoke('btc:load'),
+    save: (descriptors: string[]): Promise<void> => ipcRenderer.invoke('btc:save', descriptors)
+  },
   /** opens an https page in the browser */
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open:external', url),
   ethereum: {
