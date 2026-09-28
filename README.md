@@ -37,11 +37,13 @@ extension to maki. The app store will come through here too.
   only when you say so. The signed PSBT goes back to the wallet software to broadcast.
 - **Gives sites an Ethereum account.** The extension puts an EIP-1193 provider in pages
   (`window.ethereum` when no other wallet has it, and announced the EIP-6963 way). A site
-  connects once you allow it on maki; messages (`personal_sign`) and transactions are shown on
-  maki and signed there. This app fills in nonce, gas and fees from the network, builds the
-  transaction (EIP-1559), and broadcasts what maki signed; reads go to public servers for
-  Ethereum, Base, Optimism, Arbitrum, Polygon and Sepolia. Typed data (EIP-712) and `eth_sign`
-  are refused.
+  connects once you allow it on maki; messages (`personal_sign`), typed data
+  (`eth_signTypedData_v4`, EIP-712: permits spelled out, anything else field by field) and
+  transactions are shown on maki and signed there. This app fills in nonce, gas and fees from
+  the network, builds the transaction (EIP-1559), and broadcasts what maki signed; reads go to
+  public servers for Ethereum, Base, Optimism, Arbitrum, Polygon and Sepolia. Typed data for
+  another network than the site is on, the older typed-data methods and `eth_sign` are
+  refused.
 - **Installs apps on maki.** The Apps section lists what's installed and installs a `.maki` file
   (or `maki install app.maki` from the SDK does, through this app): it shows what the bundle is,
   that it's sideloaded, its developer's key and what it asks to do, and maki goes through the same

@@ -21,6 +21,7 @@ import {
   MAX_PSBT,
   MAX_STORE_RECORD,
   MAX_TX,
+  MAX_TYPED,
   type NetworkValue,
   PSBT_PIECE,
   STORE_PIECE,
@@ -473,6 +474,40 @@ export class MakiClient {
       offset += piece.length
     }
     return { approval: 'approved', reason: '', signed }
+  }
+
+  /**
+   * Sign typed data (EIP-712: the JSON eth_signTypedData_v4 takes): maki reads it itself, shows
+   * the owner what it says, and signs it: r, s, v (65 bytes). Refused ones come back with maki's
+   * reason.
+   */
+  async ethSignTypedData(
+    site: string,
+    json: string,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    const bytes = new TextEncoder().encode(json)
+    if (bytes.length === 0 || bytes.length > MAX_TYPED) {
+      return { approval: 'refused', reason: `typed data maki takes is 1 byte to ${MAX_TYPED / 1024} KiB`, signature: null }
+    }
+    for (let offset = 0; offset < bytes.length; ) {
+      const piece = bytes.subarray(offset, offset + TX_PIECE)
+      const last = offset + piece.length >= bytes.length
+      const body = new Writer().str8(site).u32(index).u32(bytes.length).u32(offset).bytes16(piece).finish()
+      const r = new Reader((await this.request(Kind.ETH_SIGN_TYPED, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
+      const done = r.u8() === 1
+      const approval = Approval[r.u8()] ?? 'unavailable'
+      const signature = r.bytes16()
+      const reason = r.str8()
+      r.end()
+      if (done && approval === 'approved') {
+        return signature.length === 65 ? { approval, reason, signature } : { approval: 'unavailable', reason: '', signature: null }
+      }
+      if (done) return { approval, reason, signature: null }
+      if (last) return { approval: 'unavailable', reason: '', signature: null }
+      offset += piece.length
+    }
+    return { approval: 'unavailable', reason: '', signature: null }
   }
 
   /** The host's own clock. Refused (false) once the badge holds a verified time. */

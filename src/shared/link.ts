@@ -422,6 +422,7 @@ export class Link {
     eth_requestAccounts: 'wants to connect to your Ethereum account',
     wallet_requestPermissions: 'wants to connect to your Ethereum account',
     personal_sign: 'wants a message signed',
+    eth_signTypedData_v4: 'wants typed data signed',
     eth_sendTransaction: 'sent a transaction'
   }
 

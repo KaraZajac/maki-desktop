@@ -94,6 +94,63 @@ describe.skipIf(!FAKE_BUILT || !existsSync(resolve(FIXTURES, 'abandon-tx-unsigne
       )
     })
 
+    it('signs typed data as the firmware does, for the network the site is on', async () => {
+      const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
+      const json = readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8')
+      // not connected yet
+      await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json]), 4100)
+      await eth.request('demo.maki', 'eth_requestAccounts')
+      const signature = toHex(fixture('abandon-typed.sig'))
+      expect(await eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json])).toBe(
+        signature
+      )
+      // the object itself, as some libraries pass it
+      expect(
+        await eth.request('demo.maki', 'eth_signTypedData_v4', [
+          ADDRESS.toLowerCase(),
+          JSON.parse(json)
+        ])
+      ).toBe(signature)
+      // for another network than the site's: refused before maki sees it
+      await eth.request('demo.maki', 'wallet_switchEthereumChain', [{ chainId: '0x2105' }])
+      await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json]), -32602)
+      // not the connected account; nothing to sign; the older versions
+      await rejects(
+        eth.request('demo.maki', 'eth_signTypedData_v4', [
+          '0x0000000000000000000000000000000000000001',
+          json
+        ]),
+        4100
+      )
+      await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS]), -32602)
+      await rejects(eth.request('demo.maki', 'eth_signTypedData_v3', [ADDRESS, json]), 4200)
+      await rejects(eth.request('demo.maki', 'eth_signTypedData', [[], ADDRESS]), 4200)
+    })
+
+    it('passes on maki’s reason for typed data it won’t sign', async () => {
+      const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
+      await eth.request('demo.maki', 'eth_requestAccounts')
+      const typed = JSON.parse(readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8'))
+      // a value its type doesn't declare would go unsigned, so maki won't show it
+      typed.message.extra = 'looks important'
+      await expect(
+        eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, typed])
+      ).rejects.toMatchObject({
+        code: -32603,
+        message: expect.stringMatching(/not declared/)
+      })
+      const state = { connected: { 'demo.maki': ADDRESS }, chains: {} }
+      const store = memoryStore()
+      await store.save(state)
+      const denied = new Ethereum(() => refusing, network({}).rpc, store)
+      await rejects(
+        denied.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, JSON.stringify(typed)]),
+        -32603
+      )
+      delete typed.message.extra
+      await rejects(denied.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, typed]), 4001)
+    })
+
     it('builds, signs and broadcasts a transaction', async () => {
       const net = network({ eth_getTransactionCount: '0x2a', eth_sendRawTransaction: '0xabc123' })
       const eth = new Ethereum(() => maki, net.rpc, memoryStore())
@@ -149,7 +206,7 @@ describe.skipIf(!FAKE_BUILT || !existsSync(resolve(FIXTURES, 'abandon-tx-unsigne
       const eth = new Ethereum(() => maki, net.rpc, memoryStore())
       expect(await eth.request('app.example.com', 'eth_blockNumber')).toBe('0x10')
       await rejects(eth.request('app.example.com', 'eth_sign', []), 4200)
-      await rejects(eth.request('app.example.com', 'eth_signTypedData_v4', []), 4200)
+      await rejects(eth.request('app.example.com', 'eth_signTypedData_v3', []), 4200)
       await rejects(
         eth.request('app.example.com', 'wallet_switchEthereumChain', [{ chainId: '0x539' }]),
         4902

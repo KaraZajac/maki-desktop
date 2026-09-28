@@ -50,6 +50,26 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the Ethereum account', () => {
     })
   })
 
+  it('signs typed data exactly as the firmware does', async () => {
+    const maki = await client()
+    const json = readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8')
+    expect(await maki.ethSignTypedData('demo.maki', json)).toEqual({
+      approval: 'approved',
+      reason: '',
+      signature: fixture('abandon-typed.sig')
+    })
+    // in more than one piece
+    const spaced = json.replace(/,/g, ',' + ' '.repeat(200))
+    expect(new TextEncoder().encode(spaced).length).toBeGreaterThan(4096)
+    expect((await maki.ethSignTypedData('demo.maki', spaced)).signature).toEqual(
+      fixture('abandon-typed.sig')
+    )
+    // what maki can't read, it says why
+    const r = await maki.ethSignTypedData('demo.maki', json.replace('"EIP712Domain"', '"Domain"'))
+    expect(r.approval).toBe('refused')
+    expect(r.reason).toMatch(/EIP712Domain/)
+  })
+
   it('gives nothing away when the owner says no, and refuses what it can’t show', async () => {
     const maki = await client(['--deny'])
     expect(await maki.ethAccount('app.example.com')).toEqual({ approval: 'denied', address: '' })
@@ -64,6 +84,12 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the Ethereum account', () => {
         'hex'
       )
     )
+    const typed = readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8')
+    expect(await maki.ethSignTypedData('demo.maki', typed)).toEqual({
+      approval: 'denied',
+      reason: '',
+      signature: null
+    })
     const r = await maki.ethSignTransaction('demo.maki', pre155)
     expect(r.approval).toBe('refused')
     expect(r.reason).toMatch(/chain ID/)

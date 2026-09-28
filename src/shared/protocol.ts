@@ -38,6 +38,8 @@ export const Kind = {
   ETH_SIGNED: 0x42,
   /** a message to sign (EIP-191), answered once the owner decides */
   ETH_SIGN_MESSAGE: 0x43,
+  /** a piece of typed data to sign (EIP-712, JSON); the last is answered, with the signature, once the owner decides */
+  ETH_SIGN_TYPED: 0x44,
   /** the apps installed on maki, one per request */
   APP_LIST: 0x50,
   /** a piece of a .maki bundle to install; the last is answered once the owner decides */
@@ -82,6 +84,8 @@ export const TX_PIECE = 4096
 export const MAX_TX = 128 * 1024
 /** The longest message maki signs. */
 export const MAX_MESSAGE = 4096
+/** The most typed data (EIP-712 JSON, UTF-8) maki takes in, in pieces of TX_PIECE. */
+export const MAX_TYPED = 64 * 1024
 /** Pieces of a .maki bundle. */
 export const APP_PIECE = 4096
 /** The biggest bundle maki takes. */

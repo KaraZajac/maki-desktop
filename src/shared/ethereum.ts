@@ -69,6 +69,11 @@ export interface EthSigner {
     unsigned: Uint8Array,
     index?: number
   ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }>
+  ethSignTypedData(
+    site: string,
+    json: string,
+    index?: number
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }>
 }
 
 /** Reads anyone may make: passed to the network as they are. */
@@ -116,6 +121,35 @@ function messageBytes(data: unknown): Uint8Array {
   if (typeof data !== 'string') throw new ProviderError(-32602, 'personal_sign takes a message')
   if (/^0x([0-9a-fA-F]{2})*$/.test(data)) return fromHex(data)
   return new TextEncoder().encode(data)
+}
+
+/**
+ * Typed data as eth_signTypedData_v4 passes it: JSON text (most sites), or the object itself.
+ * maki reads the JSON, strictly, and shows what it says; nothing here takes its word for it.
+ */
+function typedJson(data: unknown): string {
+  if (typeof data === 'string') return data
+  if (data !== null && typeof data === 'object') {
+    try {
+      return JSON.stringify(data)
+    } catch {
+      // falls through
+    }
+  }
+  throw new ProviderError(-32602, 'eth_signTypedData_v4 takes typed data')
+}
+
+/** The chain typed data's domain names, if it names one maki desktop can read. */
+function typedChain(json: string): bigint | null {
+  let id: unknown
+  try {
+    id = (JSON.parse(json) as { domain?: { chainId?: unknown } }).domain?.chainId
+  } catch {
+    return null
+  }
+  if (typeof id === 'number' && Number.isSafeInteger(id) && id >= 0) return BigInt(id)
+  if (typeof id === 'string' && /^(0x[0-9a-fA-F]+|[0-9]+)$/.test(id)) return BigInt(id)
+  return null
 }
 
 type TxRequest = {
@@ -233,12 +267,26 @@ export class Ethereum {
           4200,
           'eth_sign would sign anything, a transaction included: maki refuses it'
         )
+      case 'eth_signTypedData_v4': {
+        ours(params[0])
+        const json = typedJson(params[1])
+        // as MetaMask has it: signed for the network the site is on, or not at all
+        const domainChain = typedChain(json)
+        if (domainChain !== null && toQuantity(domainChain) !== chainId) {
+          throw new ProviderError(
+            -32602,
+            `that typed data is for chain ${domainChain}, not the network this site is on`
+          )
+        }
+        const r = await this.maki().ethSignTypedData(site, json)
+        if (r.approval !== 'approved' || !r.signature) throw refusal(r.approval, r.reason)
+        return toHex(r.signature)
+      }
       case 'eth_signTypedData':
       case 'eth_signTypedData_v3':
-      case 'eth_signTypedData_v4':
         throw new ProviderError(
           4200,
-          'maki can’t show typed data (EIP-712) yet, so it doesn’t sign it'
+          'maki signs typed data (EIP-712) through eth_signTypedData_v4 only'
         )
       case 'eth_sendTransaction':
         return this.send(site, chainId, (params[0] ?? {}) as TxRequest, ours)

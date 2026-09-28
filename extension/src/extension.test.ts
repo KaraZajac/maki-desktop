@@ -128,8 +128,17 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
     const fixtures = resolve(__dirname, '../../../xous-core/libs/maki-eth/tests/fixtures/abandon-message.sig')
     const signature = await eth.request({ method: 'personal_sign', params: [message, ADDRESS] })
     if (existsSync(fixtures)) expect(signature).toBe(`0x${readFileSync(fixtures).toString('hex')}`)
+    // typed data (EIP-712), signed as the firmware signs it
+    const typedFixture = resolve(__dirname, '../../../xous-core/libs/maki-eth/tests/fixtures/abandon-typed.json')
+    if (existsSync(typedFixture)) {
+      const typedSignature = await eth.request({
+        method: 'eth_signTypedData_v4',
+        params: [ADDRESS, readFileSync(typedFixture, 'utf8')]
+      })
+      expect(typedSignature).toBe(`0x${readFileSync(typedFixture.replace('.json', '.sig')).toString('hex')}`)
+    }
     // refusals reach the page with their EIP-1193 codes
-    await expect(eth.request({ method: 'eth_signTypedData_v4', params: [] })).rejects.toMatchObject({ code: 4200 })
+    await expect(eth.request({ method: 'eth_signTypedData_v3', params: [] })).rejects.toMatchObject({ code: 4200 })
     await expect(eth.request({ method: 'eth_blockNumber' })).rejects.toMatchObject({ code: 4900 })
     expect(link.log.join('\n')).toMatch(/github\.com wants to connect to your Ethereum account/)
   })
