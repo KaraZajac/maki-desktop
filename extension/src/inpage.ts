@@ -1,6 +1,7 @@
 /**
  * In the page itself (the MAIN world): maki's Ethereum provider (EIP-1193), announced the way
- * EIP-6963 says, and as `window.ethereum` when no other wallet has taken it. Every request goes
+ * EIP-6963 says, and as `window.ethereum` when no other wallet has taken it; and `window.nostr`
+ * (NIP-07), likewise. Every request goes
  * to maki's content script, then the background, which adds the page's site as the browser
  * reports it, then maki desktop; whatever needs the account asks the owner on maki's screen.
  */
@@ -122,6 +123,48 @@ const ICON =
       configurable: true,
       writable: true
     })
+  }
+})()
+
+// ---- Nostr (NIP-07): window.nostr, answered by maki's Nostr app ----
+;(() => {
+  const NOSTR = 'maki-nostr'
+  let nextId = 1
+  const waiting = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>()
+  window.addEventListener('message', (e: MessageEvent) => {
+    const d = e.data as {
+      channel?: unknown
+      to?: unknown
+      id?: unknown
+      result?: unknown
+      error?: { message?: unknown }
+    }
+    if (e.source !== window || d?.channel !== NOSTR || d.to !== 'page' || typeof d.id !== 'number')
+      return
+    const w = waiting.get(d.id)
+    if (!w) return
+    waiting.delete(d.id)
+    if (d.error) w.reject(new Error(String(d.error.message ?? 'maki: error')))
+    else w.resolve(d.result)
+  })
+  const ask = (method: string, params: unknown[]): Promise<unknown> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++
+      waiting.set(id, { resolve, reject })
+      window.postMessage({ channel: NOSTR, to: 'maki', id, method, params }, '*')
+    })
+  const nostr = Object.freeze({
+    isMaki: true,
+    /** the key's public half, hex: maki asks its owner the first time a site wants it */
+    getPublicKey: (): Promise<unknown> => ask('getPublicKey', []),
+    /** the event with its id, pubkey and sig: maki shows it, and signs once its owner says so */
+    signEvent: (event: unknown): Promise<unknown> => ask('signEvent', [event]),
+    /** no relays of its own: the site's are the site's business */
+    getRelays: (): Promise<unknown> => ask('getRelays', [])
+  })
+  // only if nothing else claims it: a signer the owner uses already keeps its place
+  if (!('nostr' in window)) {
+    Object.defineProperty(window, 'nostr', { value: nostr, configurable: true, writable: true })
   }
 })()
 

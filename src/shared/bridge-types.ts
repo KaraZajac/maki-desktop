@@ -10,6 +10,8 @@ export type BridgeRequest =
   | { id: number; type: 'getTotp'; site: string }
   | { id: number; type: 'saveLogin'; site: string; username: string; password: string }
   | { id: number; type: 'eth'; site: string; method: string; params: unknown[] }
+  /** a page's `window.nostr` (NIP-07), answered by maki's Nostr app */
+  | { id: number; type: 'nostr'; site: string; method: string; params: unknown[] }
   /** from `maki install` on this computer, never the extension: a .maki file to install */
   | { id: number; type: 'install'; path: string }
   /** the same, once the main process has read the file: to the window only */
@@ -21,7 +23,7 @@ export type BridgeRequest =
   | { id: number; type: 'appMessage'; app: string; data: Uint8Array }
 
 /** What the browser extension may ask: the native messaging host passes on nothing else. */
-export const EXTENSION_REQUESTS = ['status', 'getLogin', 'getTotp', 'saveLogin', 'eth'] as const
+export const EXTENSION_REQUESTS = ['status', 'getLogin', 'getTotp', 'saveLogin', 'eth', 'nostr'] as const
 
 export type BridgeResult =
   | { type: 'status'; linked: boolean; timeState: number | null }
@@ -30,6 +32,8 @@ export type BridgeResult =
   | { type: 'saveLogin'; approval: string }
   /** an EIP-1193 answer: the result, or the error the page's promise rejects with */
   | { type: 'eth'; result?: unknown; error?: { code: number; message: string } }
+  /** a NIP-07 answer: the result, or why the page's promise rejects */
+  | { type: 'nostr'; result?: unknown; error?: { message: string } }
   | { type: 'install'; name: string; approval: string; reason: string }
   /** the app's answer, base64, when `status` is 'approved' */
   | { type: 'appMessage'; status: string; data: string }
@@ -88,6 +92,15 @@ export function parseRequest(value: unknown): BridgeRequest | null {
       // a transaction's data can be long; nothing a page sends needs more than this
       if (!Array.isArray(params) || JSON.stringify(params).length > 512 * 1024) return null
       return { id, type: 'eth', site, method, params }
+    }
+    case 'nostr': {
+      const site = str('site', 253)
+      const method = str('method', 32)
+      if (site === null || method === null || !/^[A-Za-z0-9_]+$/.test(method)) return null
+      const params = v.params === undefined ? [] : v.params
+      // an event maki can take is 4 KB; a little room over that for JSON's escapes
+      if (!Array.isArray(params) || JSON.stringify(params).length > 64 * 1024) return null
+      return { id, type: 'nostr', site, method, params }
     }
     case 'install': {
       const path = str('path', 4096)

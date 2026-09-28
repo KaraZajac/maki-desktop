@@ -8,6 +8,8 @@
  *
  * MAKI_CHROMIUM and MAKI_FIREFOX point at other browser binaries.
  */
+import { schnorr } from '@noble/curves/secp256k1.js'
+import { sha256 } from '@noble/hashes/sha2.js'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server as HttpServer } from 'node:http'
@@ -18,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { CHROME_EXTENSION_ID, FIREFOX_EXTENSION_ID, HOST_NAME } from '../../src/main/browsers'
 import { serveBridge } from '../../src/main/bridge'
 import { Link } from '../../src/shared/link'
-import { expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from '../../src/shared/test-support'
+import { APP_FIXTURES, expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from '../../src/shared/test-support'
 
 const DESKTOP = resolve(__dirname, '../..')
 const ELECTRON = join(DESKTOP, 'node_modules/electron/dist/electron')
@@ -74,7 +76,11 @@ async function run() {
   const [account] = await window.ethereum.request({ method: 'eth_requestAccounts' })
   const hex = [...new TextEncoder().encode('Sign in to demo.maki')].map((b) => b.toString(16).padStart(2, '0')).join('')
   const signature = await window.ethereum.request({ method: 'personal_sign', params: ['0x' + hex, account] })
-  await report('done', { ...login, code, wallet, account, signature })
+  // window.nostr (NIP-07): maki's Nostr app holds the key, and signs a note
+  if (!window.nostr) throw new Error('no window.nostr')
+  const nostrKey = await window.nostr.getPublicKey()
+  const note = await window.nostr.signEvent({ kind: 1, created_at: 1790000000, tags: [['t', 'maki']], content: 'gm from a real browser' })
+  await report('done', { ...login, code, wallet, account, signature, nostrKey, note: JSON.stringify(note) })
 }
 addEventListener('load', () => setTimeout(() => run().catch((e) => report('failed', { error: String(e) })), 1000))
 </script>`
@@ -104,6 +110,9 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
     })
     link.autoSync = false
     expect(await link.attach(await TcpTransport.open(fake.port), 'fake maki')).toBe(true)
+    // maki's Nostr app, for the page's window.nostr
+    const nostr = new Uint8Array(readFileSync(join(APP_FIXTURES, 'nostr.maki')))
+    expect(await link.appInstall('Nostr', nostr)).toMatchObject({ approval: 'approved' })
     // where the host looks for the app: $XDG_RUNTIME_DIR, which the browsers pass on
     bridge = await serveBridge((r) => link.fromBrowser(r), join(dir, `maki-${userInfo().uid}.sock`))
     writeFileSync(launcher, `#!/bin/sh\nexec '${ELECTRON}' '${DESKTOP}' --ozone-platform=headless --native-host "$@"\n`)
@@ -151,6 +160,13 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
     expect(r).toMatchObject({ wallet: 'maki', account: '0x9858EfFD232B4033E47d90003D41EC34EcaEda94' })
     const sig = resolve(DESKTOP, '../xous-core/libs/maki-eth/tests/fixtures/abandon-message.sig')
     if (existsSync(sig)) expect(r.signature).toBe(`0x${readFileSync(sig).toString('hex')}`)
+    // window.nostr: the note, signed by the key the page was given, with the id every client works out
+    const note = JSON.parse(r.note) as { id: string; pubkey: string; sig: string; kind: number; created_at: number; tags: string[][]; content: string }
+    expect(note).toMatchObject({ pubkey: r.nostrKey, kind: 1, content: 'gm from a real browser' })
+    const id = sha256(new TextEncoder().encode(JSON.stringify([0, note.pubkey, note.created_at, note.kind, note.tags, note.content])))
+    expect(note.id).toBe(Buffer.from(id).toString('hex'))
+    const bytes = (h: string): Uint8Array => Uint8Array.from(Buffer.from(h, 'hex'))
+    expect(schnorr.verify(bytes(note.sig), id, bytes(note.pubkey))).toBe(true)
   }
 
   it.skipIf(!chromium())('Chromium', async () => {

@@ -19,6 +19,7 @@ import {
 import { readBundle } from './bundle'
 import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
 import { EthWallet } from './eth-wallet'
+import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
 import type { Store, StoreApp } from './store'
 
@@ -77,6 +78,8 @@ export class Link {
   readonly ethereum: Ethereum
   /** the same account as a wallet in maki desktop: what it holds, and sending from it */
   readonly ethWallet: EthWallet
+  /** Nostr for sites, through maki's Nostr app */
+  readonly nostr: Nostr
 
   constructor(
     private relay: Relay,
@@ -86,6 +89,7 @@ export class Link {
   ) {
     this.ethereum = new Ethereum(() => (this.state.linked ? this.client : null), eth.rpc, eth.store)
     this.ethWallet = new EthWallet(this.ethereum, eth.rpc)
+    this.nostr = new Nostr((app, message) => this.appMessage(app, message))
   }
 
   subscribe(listener: () => void): () => void {
@@ -396,6 +400,15 @@ export class Link {
       return { type: 'status', linked: this.state.linked, timeState: this.state.linked ? this.state.status.timeState : null }
     }
     if (request.type === 'eth') return this.fromSite(request.site, request.method, request.params)
+    if (request.type === 'nostr') {
+      // a page's promise rejects with the reason, as NIP-07 pages expect: nothing is thrown past here
+      try {
+        if (request.method === 'signEvent') this.note(`${request.site} asked to sign a Nostr event: see maki`)
+        return { type: 'nostr', result: await this.nostr.request(request.site, request.method, request.params) }
+      } catch (e) {
+        return { type: 'nostr', error: { message: (e as Error).message } }
+      }
+    }
     if (request.type === 'installBundle') {
       const name = readBundle(request.data).manifest.name
       const r = await this.appInstall(name, request.data)

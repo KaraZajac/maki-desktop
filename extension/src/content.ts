@@ -142,6 +142,20 @@ document.addEventListener(
   true
 )
 
+// ---- Nostr: the page's window.nostr (inpage.ts) asks through here, and hears back ----
+window.addEventListener('message', (e: MessageEvent) => {
+  const d = e.data as { channel?: unknown; to?: unknown; id?: unknown; method?: unknown; params?: unknown }
+  if (e.source !== window || d?.channel !== 'maki-nostr' || d.to !== 'maki') return
+  if (typeof d.id !== 'number' || typeof d.method !== 'string' || !Array.isArray(d.params)) return
+  const id = d.id
+  void (ext.runtime.sendMessage({ type: 'nostr', method: d.method, params: d.params }) as Promise<EthReply>)
+    .catch((err: Error) => ({ ok: false, error: err.message }) as EthReply)
+    .then((r) => {
+      const answer = r.ok ? (r.error ? { error: r.error } : { result: r.result ?? null }) : { error: { message: `maki: ${String(r.error ?? 'unavailable')}` } }
+      window.postMessage({ channel: 'maki-nostr', to: 'page', id, ...answer }, '*')
+    })
+})
+
 // ---- Ethereum: the page's provider (inpage.ts) asks through here, and hears back ----
 type EthReply = { ok: boolean; error?: unknown; result?: unknown }
 window.addEventListener('message', (e: MessageEvent) => {
