@@ -1,9 +1,11 @@
 /**
- * The Wallets page, end to end: the real app, offscreen, linked to the fake maki (maki's own
- * wallet code, the test phrase's accounts), its networks stand-ins on this computer. It adds the
- * Bitcoin account and sends from it, and connects to the Ethereum account and sends a token from
- * it, pressing what a person would; maki reviews and signs each, and the stand-ins get what's
- * broadcast, which is checked here: where it goes, how much, and that the account signed it.
+ * The Wallets page, end to end: the real app, offscreen, linked to the fake maki running maki's
+ * Bitcoin and Ethereum apps (maki's own wallet code, the test phrase's accounts), its networks
+ * stand-ins on this computer. It adds the Bitcoin account and sends from it, and connects to the
+ * Ethereum account and sends a token from it, pressing what a person would; the apps review each
+ * and maki signs, and the stand-ins get what's broadcast, which is checked here: where it goes,
+ * how much, and that the account signed it. And on a maki without the apps, the page offers the
+ * store's.
  *
  *     MAKI_E2E=1 npx vitest run src/e2e
  *
@@ -30,8 +32,16 @@ import {
   serveEthRpc,
   signedBy
 } from '../shared/stand-ins'
-import { FAKE_BUILT, startFake, TcpTransport } from '../shared/test-support'
+import {
+  APP_FIXTURES,
+  FAKE_BUILT,
+  MAKI_STORE,
+  MAKI_STORE_THERE,
+  startFake,
+  TcpTransport
+} from '../shared/test-support'
 import { tokensOn } from '../shared/tokens'
+import { BITCOIN_APP, BitcoinApp } from '../shared/wallet-apps'
 import { build, drive as driveApp, E2E } from './drive'
 
 const ACCOUNT = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
@@ -46,7 +56,12 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
 
   beforeAll(async () => {
     build()
-    fake = await startFake()
+    fake = await startFake([
+      '--app',
+      join(APP_FIXTURES, 'bitcoin.maki'),
+      '--app',
+      join(APP_FIXTURES, 'ethereum.maki')
+    ])
     home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
   }, 180_000)
   afterAll(() => {
@@ -60,8 +75,12 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
   it('adds the Bitcoin account, shows its coin, and sends from it: maki signs, the chain gets it', async () => {
     // the account's first receiving address holds 50,000 satoshis
     const t = await TcpTransport.open(fake.port)
+    const client = new MakiClient(t)
+    const bitcoin = new BitcoinApp((app, message, timeoutMs) =>
+      client.appMessage(app, message, timeoutMs)
+    )
     const info = parseDescriptor(
-      (await new MakiClient(t).btcAccount(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
+      (await bitcoin.account(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
     )
     await t.close()
     const keys = new BtcWallet(info, async () => '').keys
@@ -185,5 +204,51 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
     expect(Number(BigInt('0x' + (hex.encode(fields[0]) || '0')))).toBe(1)
     expect('0x' + hex.encode(fields[5])).toBe(usdc.contract.toLowerCase())
     expect('0x' + hex.encode(fields[7])).toBe(transferData(PAYEE_ETH, 1_250_000n))
+  }, 180_000)
+})
+
+describe.skipIf(!E2E || !FAKE_BUILT || !MAKI_STORE_THERE)('the Wallets page, on a maki without the apps', () => {
+  let fake: { port: number; proc: ChildProcess }
+  let home = ''
+
+  beforeAll(async () => {
+    build()
+    fake = await startFake()
+    home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
+  }, 180_000)
+  afterAll(() => {
+    fake?.proc.kill()
+    if (home) rmSync(home, { recursive: true, force: true })
+  })
+
+  it('offers the Bitcoin app from the maki store, and has the account once maki installs it', async () => {
+    // the test phrase's first address (BIP84's vector) holds 50,000 satoshis, on a stand-in chain
+    const chain = pretendChain('bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', 50_000)
+    const esplora = await serveEsplora(chain.esplora)
+    let said = ''
+    try {
+      said = await driveApp(
+        home,
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--until', 'Bitcoin app isn’t installed'],
+          ...['--click', 'Add Bitcoin', '--gone', 'Bitcoin app isn’t installed'],
+          ...['--click', 'Add from maki', '--until', '0.0005']
+        ],
+        { MAKI_STORE, MAKI_ESPLORA: esplora.url }
+      )
+    } finally {
+      esplora.close()
+    }
+    // the account's coin, from the stand-in chain
+    expect(said).toMatch(/0\.0005/)
+    const t = await TcpTransport.open(fake.port)
+    try {
+      const apps = (await new MakiClient(t).appList()).apps
+      // from the store, as the store's
+      expect(apps.map((a) => [a.id, a.fromStore])).toContainEqual([BITCOIN_APP, true])
+    } finally {
+      await t.close()
+    }
   }, 180_000)
 })

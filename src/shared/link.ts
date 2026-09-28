@@ -21,6 +21,7 @@ import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from '.
 import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
+import { BitcoinApp, EthereumApp } from './wallet-apps'
 import type { Store, StoreApp } from './store'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
@@ -74,6 +75,9 @@ export class Link {
   private listeners = new Set<() => void>()
   backingUp = false
 
+  /** maki's wallets: apps from the maki store, which maki keeps the keys for */
+  readonly bitcoin: BitcoinApp
+  readonly ethereumApp: EthereumApp
   /** the Ethereum account, for sites through the browser extension */
   readonly ethereum: Ethereum
   /** the same account as a wallet in maki desktop: what it holds, and sending from it */
@@ -87,9 +91,12 @@ export class Link {
     private backups: BackupStore | null = null,
     eth: { rpc: Rpc; store: EthStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memoryStore() }
   ) {
-    this.ethereum = new Ethereum(() => (this.state.linked ? this.client : null), eth.rpc, eth.store)
+    const send = (app: string, message: Uint8Array, timeoutMs?: number) => this.appMessage(app, message, timeoutMs)
+    this.bitcoin = new BitcoinApp(send)
+    this.ethereumApp = new EthereumApp(send)
+    this.ethereum = new Ethereum(() => (this.state.linked ? this.ethereumApp : null), eth.rpc, eth.store)
     this.ethWallet = new EthWallet(this.ethereum, eth.rpc)
-    this.nostr = new Nostr((app, message) => this.appMessage(app, message))
+    this.nostr = new Nostr(send)
   }
 
   subscribe(listener: () => void): () => void {
@@ -320,8 +327,8 @@ export class Link {
    * A message for an app on maki with the link permission, and its answer. Not logged: what an
    * app and the software talking to it say is theirs.
    */
-  async appMessage(id: string, message: Uint8Array): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
-    return this.linkedClient().appMessage(id, message)
+  async appMessage(id: string, message: Uint8Array, timeoutMs?: number): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
+    return this.linkedClient().appMessage(id, message, timeoutMs)
   }
 
   /** Remove an app and its data, once the owner says so on maki. */
@@ -338,11 +345,23 @@ export class Link {
     network: NetworkValue,
     account: BtcAccountValue = BtcAccount.SEGWIT
   ): Promise<{ zpub: string; descriptor: string } | null> {
-    const client = this.linkedClient()
+    this.linkedClient()
     this.note('sharing the Bitcoin account: approve on maki')
-    const r = await client.btcAccount(network, account)
-    this.note(r.approval === 'approved' ? 'Bitcoin account shared' : `Bitcoin account: ${r.approval}`)
+    const r = await this.bitcoin.account(network, account)
+    this.note(r.approval === 'approved' ? 'Bitcoin account shared' : `Bitcoin account: ${Link.walletSays(r.approval, 'Bitcoin')}`)
     return r.approval === 'approved' ? { zpub: r.zpub, descriptor: r.descriptor } : null
+  }
+
+  /** A wallet app's answer that isn't a yes, for the log. */
+  static walletSays(approval: ApprovalValue, wallet: 'Bitcoin' | 'Ethereum'): string {
+    switch (approval) {
+      case 'no match':
+        return `maki's ${wallet} app isn't installed: add it from the maki store, in Apps`
+      case 'unavailable':
+        return `maki couldn't run its ${wallet} app: if another app is open on maki, go back to the home screen and try again`
+      default:
+        return approval
+    }
   }
 
   /** Put an address on maki's screen; the owner says whether it matches this computer's. */
@@ -352,16 +371,16 @@ export class Link {
     index: number,
     account: BtcAccountValue = BtcAccount.SEGWIT
   ): Promise<{ approval: ApprovalValue; address: string }> {
-    const client = this.linkedClient()
+    this.linkedClient()
     const which = `${account === BtcAccount.TAPROOT ? 'taproot ' : ''}${change ? 'change' : 'receive'} address #${index}`
     this.note(`${which} is on maki's screen: compare it`)
-    const r = await client.btcAddress(network, change, index, account)
+    const r = await this.bitcoin.address(network, change, index, account)
     this.note(
       r.approval === 'approved'
         ? `${which} matches maki's`
         : r.approval === 'denied'
           ? `${which} doesn't match maki's: don't use this computer's copy`
-          : `${which}: ${r.approval}`
+          : `${which}: ${Link.walletSays(r.approval, 'Bitcoin')}`
     )
     return r
   }
@@ -371,9 +390,9 @@ export class Link {
     network: NetworkValue,
     psbt: Uint8Array
   ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
-    const client = this.linkedClient()
+    this.linkedClient()
     this.note('transaction sent: go through it on maki')
-    const r = await client.btcSign(network, psbt)
+    const r = await this.bitcoin.sign(network, psbt)
     this.note(
       r.approval === 'approved'
         ? 'transaction signed'
@@ -381,7 +400,7 @@ export class Link {
           ? `maki won't sign it: ${r.reason}`
           : r.approval === 'denied'
             ? 'transaction rejected on maki'
-            : `transaction: ${r.approval}`
+            : `transaction: ${Link.walletSays(r.approval, 'Bitcoin')}`
     )
     return r
   }

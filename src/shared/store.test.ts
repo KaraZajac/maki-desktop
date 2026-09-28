@@ -41,7 +41,9 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     const apps = store.index!.apps
     expect(apps.map((a) => [a.name, a.kind, a.category])).toEqual([
       ['Age', 'wasm', 'Security'],
+      ['Bitcoin', 'wasm', 'Finance'],
       ['Dice', 'wasm', 'Games'],
+      ['Ethereum', 'wasm', 'Finance'],
       ['Nostr', 'wasm', 'Social'],
       ['Passphrase', 'wasm', 'Security'],
       ['Pomodoro', 'native', 'Productivity'],
@@ -63,6 +65,10 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     )
     expect(store.revocations?.entries).toEqual([])
     expect((await store.bundle(pomodoro)).manifest.kind).toBe('native')
+    // a wallet: its accounts come with it, and what may sign for them
+    const bitcoin = apps.find((a) => a.name === 'Bitcoin')!
+    expect(bitcoin.permissions.map((p) => p.permission.name)).toEqual(['link', 'wallet'])
+    expect((await store.bundle(bitcoin)).manifest.wallet?.paths).toHaveLength(4)
   })
 })
 

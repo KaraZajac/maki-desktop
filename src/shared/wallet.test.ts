@@ -1,16 +1,18 @@
 /**
- * The wallet against the fake maki, which signs with the firmware's own code (maki-btc) from the
- * BIP39 test phrase: the account, an address, and the fixture PSBT that the emulated firmware
- * also signs (libs/maki-btc/tests/fixtures in the firmware repo).
+ * The wallet against the fake maki running maki's Bitcoin app, which reads and signs with the
+ * firmware's own code (maki-btc; maki keeps the keys, from the BIP39 test phrase): the account,
+ * an address, and the fixture PSBT that the emulated firmware also signs
+ * (libs/maki-btc/tests/fixtures in the firmware repo).
  */
 import type { ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { BtcAccount, Network } from './protocol'
 import { readPsbt, toBase64 } from './psbt'
-import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { BitcoinApp } from './wallet-apps'
 
 const FIXTURES = resolve(__dirname, '../../../xous-core/libs/maki-btc/tests/fixtures')
 const fixture = (name: string): Uint8Array => new Uint8Array(readFileSync(resolve(FIXTURES, name)))
@@ -34,18 +36,20 @@ describe('reading PSBTs', () => {
   })
 })
 
-describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the wallet', () => {
+describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the wallet', () => {
   const fakes: ChildProcess[] = []
-  const client = async (args: string[] = []): Promise<MakiClient> => {
-    const fake = await startFake(args)
+  /** a fake maki with the Bitcoin app installed */
+  const client = async (args: string[] = []): Promise<BitcoinApp> => {
+    const fake = await startFake(['--app', join(APP_FIXTURES, 'bitcoin.maki'), ...args])
     fakes.push(fake.proc)
-    return new MakiClient(await TcpTransport.open(fake.port))
+    const c = new MakiClient(await TcpTransport.open(fake.port))
+    return new BitcoinApp((app, message, timeoutMs) => c.appMessage(app, message, timeoutMs))
   }
   afterAll(() => fakes.forEach((p) => p.kill()))
 
   it('shares the account once the owner agrees', async () => {
     const maki = await client()
-    const a = await maki.btcAccount(Network.BITCOIN)
+    const a = await maki.account(Network.BITCOIN)
     expect(a.approval).toBe('approved')
     // BIP84's test vector for the test phrase
     expect(a.zpub).toBe(
@@ -54,48 +58,48 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the wallet', () => {
     expect(a.descriptor).toMatch(
       /^wpkh\(\[73c5da0a\/84h\/0h\/0h\]xpub[1-9A-HJ-NP-Za-km-z]{107}\/<0;1>\/\*\)#[a-z0-9]{8}$/
     )
-    const t = await maki.btcAccount(Network.TESTNET)
+    const t = await maki.account(Network.TESTNET)
     expect(t.zpub.startsWith('vpub')).toBe(true)
     expect(t.descriptor).toMatch(/^wpkh\(\[73c5da0a\/84h\/1h\/0h\]tpub/)
   })
 
   it('gives nothing away when the owner says no', async () => {
     const maki = await client(['--deny'])
-    expect(await maki.btcAccount(Network.BITCOIN)).toEqual({
+    expect(await maki.account(Network.BITCOIN)).toEqual({
       approval: 'denied',
       zpub: '',
       descriptor: ''
     })
     // an address that doesn't match still says which one maki showed
-    expect(await maki.btcAddress(Network.BITCOIN, false, 0)).toEqual({
+    expect(await maki.address(Network.BITCOIN, false, 0)).toEqual({
       approval: 'denied',
       address: 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu'
     })
-    const r = await maki.btcSign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
+    const r = await maki.sign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
     expect(r).toEqual({ approval: 'denied', reason: '', signed: null })
   })
 
   it('shows addresses to compare', async () => {
     const maki = await client()
-    expect(await maki.btcAddress(Network.BITCOIN, false, 1)).toEqual({
+    expect(await maki.address(Network.BITCOIN, false, 1)).toEqual({
       approval: 'approved',
       address: 'bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g'
     })
-    expect((await maki.btcAddress(Network.BITCOIN, true, 0)).address).toBe(
+    expect((await maki.address(Network.BITCOIN, true, 0)).address).toBe(
       'bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el'
     )
   })
 
   it('signs a PSBT exactly as the firmware does', async () => {
     const maki = await client()
-    const r = await maki.btcSign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
+    const r = await maki.sign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
     expect(r.approval).toBe('approved')
     expect(r.signed).toEqual(fixture('abandon-signed.psbt'))
   })
 
   it('has a taproot account too, and signs its coins as the firmware does', async () => {
     const maki = await client()
-    const a = await maki.btcAccount(Network.BITCOIN, BtcAccount.TAPROOT)
+    const a = await maki.account(Network.BITCOIN, BtcAccount.TAPROOT)
     // BIP86's test vectors for the test phrase
     expect(a.zpub).toBe(
       'xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ'
@@ -104,17 +108,17 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the wallet', () => {
       /^tr\(\[73c5da0a\/86h\/0h\/0h\]xpub6BgBgses.*\/<0;1>\/\*\)#[a-z0-9]{8}$/
     )
     expect(
-      (await maki.btcAccount(Network.TESTNET, BtcAccount.TAPROOT)).zpub.startsWith('tpub')
+      (await maki.account(Network.TESTNET, BtcAccount.TAPROOT)).zpub.startsWith('tpub')
     ).toBe(true)
-    expect(await maki.btcAddress(Network.BITCOIN, false, 0, BtcAccount.TAPROOT)).toEqual({
+    expect(await maki.address(Network.BITCOIN, false, 0, BtcAccount.TAPROOT)).toEqual({
       approval: 'approved',
       address: 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr'
     })
-    expect((await maki.btcAddress(Network.BITCOIN, true, 0, BtcAccount.TAPROOT)).address).toBe(
+    expect((await maki.address(Network.BITCOIN, true, 0, BtcAccount.TAPROOT)).address).toBe(
       'bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7'
     )
     // taproot and native SegWit coins alike, from one PSBT request
-    const r = await maki.btcSign(Network.BITCOIN, fixture('abandon-taproot-unsigned.psbt'))
+    const r = await maki.sign(Network.BITCOIN, fixture('abandon-taproot-unsigned.psbt'))
     expect(r.approval).toBe('approved')
     expect(r.signed).toEqual(fixture('abandon-taproot-signed.psbt'))
   })
@@ -127,7 +131,7 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the wallet', () => {
     const pad = (p: Uint8Array): Uint8Array =>
       Uint8Array.from([...p.subarray(0, 5), ...field, ...p.subarray(5)])
     const maki = await client()
-    const r = await maki.btcSign(Network.BITCOIN, pad(unsigned))
+    const r = await maki.sign(Network.BITCOIN, pad(unsigned))
     expect(r.approval).toBe('approved')
     expect(r.signed).toEqual(pad(signed))
   }, 20_000)
@@ -135,10 +139,10 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the wallet', () => {
   it('refuses what isn’t this wallet’s, saying why, without asking', async () => {
     const maki = await client(['--deny'])
     // the test networks' account doesn't own bitcoin's coins
-    const r = await maki.btcSign(Network.TESTNET, fixture('abandon-unsigned.psbt'))
+    const r = await maki.sign(Network.TESTNET, fixture('abandon-unsigned.psbt'))
     expect(r.approval).toBe('refused')
     expect(r.reason).toMatch(/^input 0 isn't this wallet's/)
-    const garbage = await maki.btcSign(
+    const garbage = await maki.sign(
       Network.BITCOIN,
       new TextEncoder().encode('psbt\xffnot really')
     )
@@ -148,7 +152,7 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the wallet', () => {
 
   it('refuses a PSBT from a different phrase', async () => {
     const maki = await client(['--phrase', 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong'])
-    const r = await maki.btcSign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
+    const r = await maki.sign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
     expect(r).toMatchObject({ approval: 'refused', signed: null })
   })
 })

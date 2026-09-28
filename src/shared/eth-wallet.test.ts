@@ -4,6 +4,7 @@
  * of a coin, each signed on maki, its signer recovered here with noble.
  */
 import type { ChildProcess } from 'node:child_process'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { Ethereum, memoryStore, NETWORKS, type Rpc } from './ethereum'
@@ -19,7 +20,8 @@ import {
 import { toHex } from './rlp'
 import { tokensOn } from './tokens'
 import { ethStandIn as stand_in, signedBy } from './stand-ins'
-import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { EthereumApp } from './wallet-apps'
 
 const ADDRESS = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
 const PAYEE = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
@@ -79,14 +81,15 @@ describe('addresses', () => {
   })
 })
 
-describe.skipIf(!FAKE_BUILT)('the Ethereum wallet, with the fake maki', () => {
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('the Ethereum wallet, with the fake maki', () => {
   let fake: { port: number; proc: ChildProcess }
-  let maki: MakiClient
+  let maki: EthereumApp
   let said = ''
   beforeAll(async () => {
-    fake = await startFake()
+    fake = await startFake(['--app', join(APP_FIXTURES, 'ethereum.maki')])
     fake.proc.stdout!.on('data', (d: Buffer) => (said += d.toString()))
-    maki = new MakiClient(await TcpTransport.open(fake.port))
+    const client = new MakiClient(await TcpTransport.open(fake.port))
+    maki = new EthereumApp((app, message, timeoutMs) => client.appMessage(app, message, timeoutMs))
   })
   afterAll(() => fake?.proc.kill())
 
@@ -120,9 +123,9 @@ describe.skipIf(!FAKE_BUILT)('the Ethereum wallet, with the fake maki', () => {
     expect(toHex(fields[5]).toLowerCase()).toBe(USDC.contract.toLowerCase())
     expect(fields[6].length).toBe(0)
     expect(toHex(fields[7])).toBe(transferData(PAYEE, 1_500_000n))
-    // what maki showed its owner: how much of the token, in its own units
+    // what the app showed maki's owner: how much of the token, in its own units
     expect(said).toMatch(
-      /maki shows: Send tokens\s+1\.5 USDC\s+0x70997970C51812dc3A010C7d01b50e0d17dc79C8/
+      /Ethereum shows \[Send tokens\] 1\.5 USDC 0x70997970C51812dc3A010C7d01b50e0d17dc79C8/
     )
   })
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Link } from '@shared/link'
 import { CURRENCIES, type Currency } from '@shared/prices'
+import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
 import { PricesContext, useFreshPrices } from './prices-state'
@@ -15,8 +16,11 @@ function savedCurrency(): Currency | null {
   }
 }
 
-/** maki's wallets: Bitcoin and Ethereum, here and for wallet software and sites. */
-export function Wallets({ link }: { link: Link }): React.JSX.Element {
+/**
+ * maki's wallets: Bitcoin and Ethereum, here and for wallet software and sites. Each is an app
+ * from the maki store, which a maki has only if its owner adds it.
+ */
+export function Wallets({ link, apps }: { link: Link; apps: Apps }): React.JSX.Element {
   const [currency, setCurrency] = useState<Currency | null>(savedCurrency)
   const prices = useFreshPrices(currency)
   const choose = (c: Currency | null): void => {
@@ -34,7 +38,7 @@ export function Wallets({ link }: { link: Link }): React.JSX.Element {
       <PageHeader
         label="wallets"
         title="Wallets"
-        lede="Keys on maki, from its recovery phrase, behind its PIN. Here you see what they hold and make payments; wallet software and sites can too. maki shows you each one, the payments, change and fees spelled out, and signs only when you say so."
+        lede="Keys on maki, from its recovery phrase, behind its PIN, for the wallet apps you add from the maki store. Here you see what they hold and make payments; wallet software and sites can too. The app shows you each one on maki, the payments, change and fees spelled out, and maki signs only when you say so."
         actions={
           <label
             className="flex items-center gap-2 font-mono text-[0.68rem] text-overlay1"
@@ -57,8 +61,8 @@ export function Wallets({ link }: { link: Link }): React.JSX.Element {
         }
       />
       <PricesContext.Provider value={{ currency, prices }}>
-        <Bitcoin link={link} />
-        <Ethereum link={link} />
+        <Bitcoin link={link} apps={apps} />
+        <Ethereum link={link} apps={apps} />
       </PricesContext.Provider>
     </div>
   )

@@ -5,7 +5,7 @@
  * No Node or DOM imports here: this module runs in the renderer, in the main process and in tests.
  */
 
-export const PROTOCOL_VERSION = 2
+export const PROTOCOL_VERSION = 3
 export const MAX_FRAME = 8192
 
 export const Kind = {
@@ -22,24 +22,6 @@ export const Kind = {
   BACKUP_GET: 0x20,
   /** a piece of a backup to restore; the last is answered once the owner decides */
   BACKUP_PUT: 0x21,
-  /** the Bitcoin account for wallet software, once the owner agrees */
-  BTC_ACCOUNT: 0x30,
-  /** an address, put on maki's screen for the owner to compare */
-  BTC_ADDRESS: 0x31,
-  /** a piece of a PSBT to sign; the last is answered once the owner decides */
-  BTC_SIGN: 0x32,
-  /** a piece of the PSBT maki signed */
-  BTC_SIGNED: 0x33,
-  /** the Ethereum account's address, once the owner lets the site connect */
-  ETH_ACCOUNT: 0x40,
-  /** a piece of an Ethereum transaction to sign; the last is answered once the owner decides */
-  ETH_SIGN_TX: 0x41,
-  /** a piece of the transaction maki signed */
-  ETH_SIGNED: 0x42,
-  /** a message to sign (EIP-191), answered once the owner decides */
-  ETH_SIGN_MESSAGE: 0x43,
-  /** a piece of typed data to sign (EIP-712, JSON); the last is answered, with the signature, once the owner decides */
-  ETH_SIGN_TYPED: 0x44,
   /** the apps installed on maki, one per request */
   APP_LIST: 0x50,
   /** a piece of a .maki bundle to install; the last is answered once the owner decides */
@@ -76,18 +58,6 @@ export const Approval = [
 ] as const
 /** Pieces of a backup are at most this big. */
 export const BACKUP_PIECE = 4096
-/** Pieces of a PSBT, either way. */
-export const PSBT_PIECE = 4096
-/** The biggest PSBT maki takes in. */
-export const MAX_PSBT = 512 * 1024
-/** Pieces of an Ethereum transaction, either way. */
-export const TX_PIECE = 4096
-/** The biggest Ethereum transaction maki takes in. */
-export const MAX_TX = 128 * 1024
-/** The longest message maki signs. */
-export const MAX_MESSAGE = 4096
-/** The most typed data (EIP-712 JSON, UTF-8) maki takes in, in pieces of TX_PIECE. */
-export const MAX_TYPED = 64 * 1024
 /** Pieces of a .maki bundle. */
 export const APP_PIECE = 4096
 /** The biggest bundle maki takes. */
@@ -98,10 +68,10 @@ export const MAX_APP_MESSAGE = 4096
 export const STORE_PIECE = 4096
 /** The biggest store record maki takes. */
 export const MAX_STORE_RECORD = 64 * 1024
-/** Bitcoin itself, or the test networks (testnet and signet share keys and addresses). */
+/** Bitcoin itself, or the test networks (testnet and signet share keys and addresses), for the Bitcoin app (wallet-apps.ts). */
 export const Network = { BITCOIN: 0, TESTNET: 1 } as const
 export type NetworkValue = (typeof Network)[keyof typeof Network]
-/** maki's Bitcoin accounts: native SegWit (BIP84) and taproot (BIP86). */
+/** The Bitcoin app's accounts: native SegWit (BIP84) and taproot (BIP86). */
 export const BtcAccount = { SEGWIT: 0, TAPROOT: 1 } as const
 export type BtcAccountValue = (typeof BtcAccount)[keyof typeof BtcAccount]
 export type ApprovalValue = (typeof Approval)[number]

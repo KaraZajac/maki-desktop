@@ -16,7 +16,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { serveBridge } from '../../src/main/bridge'
 import { readNativeMessages, runNativeHost, writeNativeMessage } from '../../src/main/native-host'
 import { Link } from '../../src/shared/link'
-import { expectedTotp, FAKE_BUILT, SECRET_B32, startFake, TcpTransport } from '../../src/shared/test-support'
+import {
+  APP_FIXTURES,
+  expectedTotp,
+  FAKE_BUILT,
+  SECRET_B32,
+  startFake,
+  TcpTransport
+} from '../../src/shared/test-support'
 
 const PAGE = 'https://github.com/login'
 const ADDRESS = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
@@ -31,7 +38,14 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
   let scratch: string | undefined
 
   beforeAll(async () => {
-    fake = await startFake(['--clock-verified', '--totp', `github.com=${SECRET_B32}`])
+    // maki's Ethereum app installed, for the page's provider
+    fake = await startFake([
+      '--clock-verified',
+      '--totp',
+      `github.com=${SECRET_B32}`,
+      '--app',
+      join(APP_FIXTURES, 'ethereum.maki')
+    ])
     link = new Link(async () => {
       throw new Error('offline')
     })

@@ -17,17 +17,8 @@ import {
   TimeStateValue,
   BACKUP_PIECE,
   MAX_APP_MESSAGE,
-  MAX_MESSAGE,
-  MAX_PSBT,
   MAX_STORE_RECORD,
-  MAX_TX,
-  MAX_TYPED,
-  BtcAccount,
-  type BtcAccountValue,
-  type NetworkValue,
-  PSBT_PIECE,
   STORE_PIECE,
-  TX_PIECE,
   Writer,
   type Packet
 } from './protocol'
@@ -172,6 +163,8 @@ export class MakiClient {
 
   /** How long a request waits for the owner to press a button on maki. */
   static readonly APPROVAL_TIMEOUT_MS = 90_000
+  /** How long an install waits: maki gives the owner five minutes to go through an app. */
+  static readonly INSTALL_TIMEOUT_MS = 330_000
 
   /** Ask maki for the login saved for `site`; the owner approves on maki's screen. */
   async getLogin(site: string): Promise<{ approval: ApprovalValue; username: string; password: string }> {
@@ -301,7 +294,7 @@ export class MakiClient {
       const piece = bundle.subarray(offset, offset + APP_PIECE)
       const last = offset + piece.length >= bundle.length
       const body = new Writer().u32(bundle.length).u32(offset).bytes16(piece).finish()
-      const r = new Reader((await this.request(Kind.APP_INSTALL, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
+      const r = new Reader((await this.request(Kind.APP_INSTALL, body, last ? MakiClient.INSTALL_TIMEOUT_MS : 10_000)).body)
       const done = r.u8() === 1
       const approval = Approval[r.u8()] ?? 'unavailable'
       const reason = r.str8()
@@ -324,12 +317,17 @@ export class MakiClient {
    * A message for the app with this ID (it needs the link permission), and its answer: 'approved'
    * with the app's answer, or why there's none ('denied': the app didn't answer; 'no match': no
    * such app; 'unavailable': another app is open on maki; 'refused': no link permission). The app
-   * may ask the owner first, so this can take as long as they do.
+   * may ask the owner first, so this can take as long as they do: `timeoutMs` for one that shows
+   * them a transaction (the wallets, in wallet-apps.ts).
    */
-  async appMessage(id: string, message: Uint8Array): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
+  async appMessage(
+    id: string,
+    message: Uint8Array,
+    timeoutMs = MakiClient.APPROVAL_TIMEOUT_MS
+  ): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
     if (message.length > MAX_APP_MESSAGE) throw new Error(`messages to apps are at most ${MAX_APP_MESSAGE} bytes`)
     const body = new Writer().str8(id).bytes16(message).finish()
-    const r = new Reader((await this.request(Kind.APP_MESSAGE, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const r = new Reader((await this.request(Kind.APP_MESSAGE, body, timeoutMs)).body)
     const status = Approval[r.u8()] ?? 'unavailable'
     const answer = r.bytes16()
     r.end()
@@ -356,182 +354,6 @@ export class MakiClient {
       offset += piece.length
       if (offset >= record.length) return { status: 'unavailable', reason: '', state }
     }
-  }
-
-  /** How long signing waits: maki gives the owner five minutes to go through a transaction. */
-  static readonly SIGN_TIMEOUT_MS = 330_000
-
-  /** The Bitcoin account (zpub and output descriptor), once the owner agrees on maki. */
-  async btcAccount(
-    network: NetworkValue,
-    account: BtcAccountValue = BtcAccount.SEGWIT
-  ): Promise<{ approval: ApprovalValue; zpub: string; descriptor: string }> {
-    const body = new Writer().u8(network).u8(account).finish()
-    const r = new Reader((await this.request(Kind.BTC_ACCOUNT, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
-    const out = { approval: Approval[r.u8()] ?? 'unavailable', zpub: r.str8(), descriptor: r.str8() }
-    r.end()
-    return out
-  }
-
-  /**
-   * Put an address on maki's screen for the owner to compare with this computer's: 'approved'
-   * if they said it matches, 'denied' if it doesn't. `address` is maki's, either way.
-   */
-  async btcAddress(
-    network: NetworkValue,
-    change: boolean,
-    index: number,
-    account: BtcAccountValue = BtcAccount.SEGWIT
-  ): Promise<{ approval: ApprovalValue; address: string }> {
-    const body = new Writer().u8(network).u8(change ? 1 : 0).u32(index).u8(account).finish()
-    const r = new Reader((await this.request(Kind.BTC_ADDRESS, body, MakiClient.APPROVAL_TIMEOUT_MS * 2)).body)
-    const out = { approval: Approval[r.u8()] ?? 'unavailable', address: r.str8() }
-    r.end()
-    return out
-  }
-
-  /**
-   * Sign a PSBT: maki checks it, the owner goes through it on maki's screen, and it comes back
-   * with a signature for each input. Refused ones come back with maki's reason.
-   */
-  async btcSign(
-    network: NetworkValue,
-    psbt: Uint8Array
-  ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
-    if (psbt.length === 0 || psbt.length > MAX_PSBT) {
-      return { approval: 'refused', reason: `a PSBT maki takes is 1 byte to ${MAX_PSBT / 1024} KiB`, signed: null }
-    }
-    let total = 0
-    for (let offset = 0; offset < psbt.length; ) {
-      const piece = psbt.subarray(offset, offset + PSBT_PIECE)
-      const last = offset + piece.length >= psbt.length
-      const body = new Writer().u8(network).u32(psbt.length).u32(offset).bytes16(piece).finish()
-      const r = new Reader((await this.request(Kind.BTC_SIGN, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
-      const done = r.u8() === 1
-      const approval = Approval[r.u8()] ?? 'unavailable'
-      total = r.u32()
-      const reason = r.str8()
-      r.end()
-      if (done && approval !== 'approved') return { approval, reason, signed: null }
-      if (done) break
-      if (last) return { approval: 'unavailable', reason: '', signed: null }
-      offset += piece.length
-    }
-    // the signed PSBT, piece by piece
-    const signed = new Uint8Array(total)
-    for (let offset = 0; offset < total; ) {
-      const r = new Reader((await this.request(Kind.BTC_SIGNED, new Writer().u32(offset).finish())).body)
-      const status = Approval[r.u8()] ?? 'unavailable'
-      const size = r.u32()
-      const at = r.u32()
-      const piece = r.bytes16()
-      r.end()
-      if (status !== 'approved' || size !== total || at !== offset || piece.length === 0 || offset + piece.length > total) {
-        return { approval: 'unavailable', reason: '', signed: null }
-      }
-      signed.set(piece, offset)
-      offset += piece.length
-    }
-    return { approval: 'approved', reason: '', signed }
-  }
-
-  /** The Ethereum account's address (EIP-55), once the owner lets `site` connect on maki. */
-  async ethAccount(site: string, index = 0): Promise<{ approval: ApprovalValue; address: string }> {
-    const body = new Writer().str8(site).u32(index).finish()
-    const r = new Reader((await this.request(Kind.ETH_ACCOUNT, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
-    const out = { approval: Approval[r.u8()] ?? 'unavailable', address: r.str8() }
-    r.end()
-    return out
-  }
-
-  /** Sign a message (EIP-191 personal_sign) once the owner has read it: r, s, v (65 bytes). */
-  async ethSignMessage(site: string, message: Uint8Array, index = 0): Promise<{ approval: ApprovalValue; signature: Uint8Array }> {
-    if (message.length > MAX_MESSAGE) return { approval: 'refused', signature: new Uint8Array() }
-    const body = new Writer().str8(site).u32(index).bytes16(message).finish()
-    const r = new Reader((await this.request(Kind.ETH_SIGN_MESSAGE, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
-    const out = { approval: Approval[r.u8()] ?? 'unavailable', signature: r.bytes16() }
-    r.end()
-    return out
-  }
-
-  /**
-   * Sign an Ethereum transaction (unsigned EIP-1559 or EIP-155 bytes): maki shows the owner what
-   * it does, and it comes back signed, ready for eth_sendRawTransaction. Refused ones come back
-   * with maki's reason.
-   */
-  async ethSignTransaction(
-    site: string,
-    unsigned: Uint8Array,
-    index = 0
-  ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
-    if (unsigned.length === 0 || unsigned.length > MAX_TX) {
-      return { approval: 'refused', reason: `a transaction maki takes is 1 byte to ${MAX_TX / 1024} KiB`, signed: null }
-    }
-    let total = 0
-    for (let offset = 0; offset < unsigned.length; ) {
-      const piece = unsigned.subarray(offset, offset + TX_PIECE)
-      const last = offset + piece.length >= unsigned.length
-      const body = new Writer().str8(site).u32(index).u32(unsigned.length).u32(offset).bytes16(piece).finish()
-      const r = new Reader((await this.request(Kind.ETH_SIGN_TX, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
-      const done = r.u8() === 1
-      const approval = Approval[r.u8()] ?? 'unavailable'
-      total = r.u32()
-      const reason = r.str8()
-      r.end()
-      if (done && approval !== 'approved') return { approval, reason, signed: null }
-      if (done) break
-      if (last) return { approval: 'unavailable', reason: '', signed: null }
-      offset += piece.length
-    }
-    const signed = new Uint8Array(total)
-    for (let offset = 0; offset < total; ) {
-      const r = new Reader((await this.request(Kind.ETH_SIGNED, new Writer().u32(offset).finish())).body)
-      const status = Approval[r.u8()] ?? 'unavailable'
-      const size = r.u32()
-      const at = r.u32()
-      const piece = r.bytes16()
-      r.end()
-      if (status !== 'approved' || size !== total || at !== offset || piece.length === 0 || offset + piece.length > total) {
-        return { approval: 'unavailable', reason: '', signed: null }
-      }
-      signed.set(piece, offset)
-      offset += piece.length
-    }
-    return { approval: 'approved', reason: '', signed }
-  }
-
-  /**
-   * Sign typed data (EIP-712: the JSON eth_signTypedData_v4 takes): maki reads it itself, shows
-   * the owner what it says, and signs it: r, s, v (65 bytes). Refused ones come back with maki's
-   * reason.
-   */
-  async ethSignTypedData(
-    site: string,
-    json: string,
-    index = 0
-  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
-    const bytes = new TextEncoder().encode(json)
-    if (bytes.length === 0 || bytes.length > MAX_TYPED) {
-      return { approval: 'refused', reason: `typed data maki takes is 1 byte to ${MAX_TYPED / 1024} KiB`, signature: null }
-    }
-    for (let offset = 0; offset < bytes.length; ) {
-      const piece = bytes.subarray(offset, offset + TX_PIECE)
-      const last = offset + piece.length >= bytes.length
-      const body = new Writer().str8(site).u32(index).u32(bytes.length).u32(offset).bytes16(piece).finish()
-      const r = new Reader((await this.request(Kind.ETH_SIGN_TYPED, body, last ? MakiClient.SIGN_TIMEOUT_MS : 10_000)).body)
-      const done = r.u8() === 1
-      const approval = Approval[r.u8()] ?? 'unavailable'
-      const signature = r.bytes16()
-      const reason = r.str8()
-      r.end()
-      if (done && approval === 'approved') {
-        return signature.length === 65 ? { approval, reason, signature } : { approval: 'unavailable', reason: '', signature: null }
-      }
-      if (done) return { approval, reason, signature: null }
-      if (last) return { approval: 'unavailable', reason: '', signature: null }
-      offset += piece.length
-    }
-    return { approval: 'unavailable', reason: '', signature: null }
   }
 
   /** The host's own clock. Refused (false) once the badge holds a verified time. */

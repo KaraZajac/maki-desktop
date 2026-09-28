@@ -8,12 +8,12 @@ maki's roll for what to do and the green of the nori for what's done.
 
 > **Status: early.** Links over USB (Web Serial) or to a fake maki for development, syncs verified
 > time, runs from the tray, relays logins and TOTP codes between the browser extension and maki,
-> keeps maki's encrypted backups, is a wallet for maki's Bitcoin and Ethereum accounts, has maki
+> keeps maki's encrypted backups, is a wallet with maki's Bitcoin and Ethereum apps, has maki
 > sign Bitcoin transactions for wallet software, and gives sites maki's Ethereum account and its
 > Nostr key through the extension. Tested end to end against
-> the fake maki (the firmware's own protocol and wallet code on a socket), including in real
-> Chromium and Firefox. The firmware runs in the emulator, which has no USB; nothing has run on a
-> badge yet. Linux AppImage builds; nothing is signed.
+> the fake maki (the firmware's own protocol, app host and apps on a socket), including in real
+> Chromium and Firefox. The firmware runs on a DC34 badge, linked over USB with its clock set
+> through Roughtime, and in the emulator. Linux AppImage builds; nothing is signed.
 
 ## What it does today
 
@@ -33,7 +33,9 @@ maki's roll for what to do and the green of the nori for what's done.
 - **Keeps backups.** On link, hourly, and soon after a login is saved, maki hands over its logins
   and codes encrypted with a key from its recovery phrase, and they're kept in the app's folder.
   "Restore to maki" sends the latest back; maki asks before adding anything.
-- **Is a wallet.** The Wallets page holds each of maki's accounts: Bitcoin (native SegWit and
+- **Is a wallet.** maki's wallets are apps from the maki store, Bitcoin and Ethereum, for those
+  who want them: maki keeps the keys, the app shows you what you sign on maki's screen, and the
+  Wallets page offers the app when maki hasn't it. The page holds each account: Bitcoin (native SegWit and
   taproot, mainnet and testnet4; balance, coins and activity from mempool.space; a fresh address
   as a QR code, checked on maki; sending at the fee you choose, and speeding up one that's
   waiting) and Ethereum (what it holds on six networks, the tokens maki knows included; sending
@@ -42,12 +44,13 @@ maki's roll for what to do and the green of the nori for what's done.
 - **Works with Bitcoin wallet software.** Get one of maki's accounts, native SegWit (BIP84) or
   taproot (BIP86), as an output descriptor for Sparrow or Bitcoin Core as a watch-only wallet;
   check an address on maki's screen before giving it out; and
-  have maki sign a transaction (a PSBT file, or pasted base64 or hex). maki refuses anything that
-  isn't its own wallet's, goes through every payment, the change and the fee with you, and signs
-  only when you say so. The signed PSBT goes back to the wallet software to broadcast.
+  have maki sign a transaction (a PSBT file, or pasted base64 or hex). maki's Bitcoin app refuses
+  anything that isn't its own wallet's, goes through every payment, the change and the fee with
+  you, and maki signs only when you say so. The signed PSBT goes back to the wallet software to
+  broadcast.
 - **Gives sites an Ethereum account.** The extension puts an EIP-1193 provider in pages
-  (`window.ethereum` when no other wallet has it, and announced the EIP-6963 way). A site
-  connects once you allow it on maki; messages (`personal_sign`), typed data
+  (`window.ethereum` when no other wallet has it, and announced the EIP-6963 way), which maki's
+  Ethereum app answers. A site connects once you allow it on maki; messages (`personal_sign`), typed data
   (`eth_signTypedData_v4`, EIP-712: permits spelled out, anything else field by field) and
   transactions are shown on maki and signed there. This app fills in nonce, gas and fees from
   the network, builds the transaction (EIP-1559), and broadcasts what maki signed; reads go to
@@ -131,7 +134,8 @@ MAKI_BROWSERS=1 npx vitest run extension/src/real-browsers.test.ts
 MAKI_AGE=/path/to/age npm test     # age-plugin-maki with the real age (or age on the PATH)
 MAKI_E2E=1 npx vitest run src/e2e
                      # the app itself, offscreen, pressed through: the Wallets page sends from
-                     # each account (and speeds one up), the Apps page installs and removes
+                     # each account (and speeds one up), and offers the Bitcoin app to a maki
+                     # without it; the Apps page installs and removes
 ```
 
 The real-browser test uses Playwright's Chromium from `~/.cache/ms-playwright` (or
@@ -186,6 +190,7 @@ src/shared/psbt.ts       PSBTs as wallet software hands them over: binary, base6
 src/shared/ethereum.ts   the EIP-1193 methods sites call, answered from maki and the network
 src/shared/btc-wallet.ts the Bitcoin wallet: descriptors, the gap-limit scan, PSBTs maki reads
 src/shared/eth-wallet.ts the Ethereum wallet: holdings on each network, sends through maki
+src/shared/wallet-apps.ts maki's wallet apps, Bitcoin and Ethereum: their messages, over APP_MESSAGE
 src/shared/tokens.ts     the tokens maki knows by contract (the firmware's table, kept in step)
 src/shared/polite.ts     asking a public server politely: a few at a time, and waiting when told
 src/shared/rlp.ts        RLP, and the unsigned EIP-1559 transactions maki signs

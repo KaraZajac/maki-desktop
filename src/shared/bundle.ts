@@ -35,7 +35,13 @@ export const Permissions = [
     warning: "It can type anything into your computer while it's open, commands included."
   },
   { id: 5, name: 'camera', title: 'Use the camera', warning: "It can see what the camera sees while it's open." },
-  { id: 6, name: 'motion', title: 'Sense motion', warning: 'It can read the accelerometer, which can pick up typing nearby.' }
+  { id: 6, name: 'motion', title: 'Sense motion', warning: 'It can read the accelerometer, which can pick up typing nearby.' },
+  {
+    id: 7,
+    name: 'wallet',
+    title: 'Sign for your wallets',
+    warning: 'It can sign for the accounts named next, once you say yes on maki: it could spend what they hold.'
+  }
 ] as const
 
 export type Permission = (typeof Permissions)[number]
@@ -53,6 +59,8 @@ export interface Manifest {
   memoryKib: number
   backup: boolean
   description: string
+  /** the wallet permission's accounts: BIP32 paths, each a hardened purpose and coin type */
+  wallet: { paths: number[][] } | null
 }
 
 export interface Bundle {
@@ -124,7 +132,8 @@ function readManifest(b: Uint8Array): Manifest {
     storageKib: 0,
     memoryKib: 0,
     backup: false,
-    description: ''
+    description: '',
+    wallet: null
   }
   let at = 0
   while (at < b.length) {
@@ -175,12 +184,64 @@ function readManifest(b: Uint8Array): Manifest {
       case 12:
         m.description = text(v, 'description')
         break
+      case 13:
+        m.wallet = walletField(v)
+        break
       default:
         throw new BundleError("manifest: a field this app doesn't know")
     }
   }
   if (!m.id || !m.name || !m.version) throw new BundleError('manifest: no id, name or version')
   return m
+}
+
+/** Hardened, in a BIP32 path. */
+export const HARDENED = 0x80000000
+
+/** The wallet permission's paths: a curve (1, secp256k1), then each path, its depth and parts. */
+function walletField(v: Uint8Array): { paths: number[][] } {
+  const view = new DataView(v.buffer, v.byteOffset, v.byteLength)
+  if (v[0] !== 1) throw new BundleError("manifest: a wallet curve this app doesn't know")
+  const n = v[1] ?? 0
+  const paths: number[][] = []
+  let at = 2
+  for (let i = 0; i < n; i++) {
+    const depth = v[at] ?? 0
+    if (at + 1 + depth * 4 > v.length) throw new BundleError('manifest: wallet paths cut short')
+    paths.push(Array.from({ length: depth }, (_, k) => view.getUint32(at + 1 + k * 4, true)))
+    at += 1 + depth * 4
+  }
+  if (n === 0 || at !== v.length) throw new BundleError('manifest: wallet paths')
+  return { paths }
+}
+
+/** A path as wallets write it: `m/84'/0'`. */
+export function formatPath(path: number[]): string {
+  return ['m', ...path.map((c) => (c >= HARDENED ? `${c - HARDENED}'` : `${c}`))].join('/')
+}
+
+/**
+ * The coins a wallet's paths reach (SLIP-44, from the coin type, never the app's say-so), each
+ * once, as maki's install screen names them (maki_hd::coin in the firmware).
+ */
+export function walletCoins(paths: number[][]): string[] {
+  const names: Record<number, string> = {
+    0: 'Bitcoin',
+    1: 'test networks',
+    2: 'Litecoin',
+    3: 'Dogecoin',
+    60: 'Ethereum',
+    128: 'Monero',
+    145: 'Bitcoin Cash',
+    501: 'Solana'
+  }
+  const out: string[] = []
+  for (const p of paths) {
+    const type = (p[1] ?? 0) % HARDENED
+    const name = names[type] ?? `coin type ${type}`
+    if (!out.includes(name)) out.push(name)
+  }
+  return out
 }
 
 /** A developer key as people compare it, as maki shows it: six groups of four hex digits. */

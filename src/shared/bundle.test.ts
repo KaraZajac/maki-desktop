@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { BundleError, fingerprint, iconPixels, readBundle } from './bundle'
+import { BundleError, fingerprint, formatPath, iconPixels, readBundle, walletCoins } from './bundle'
 import { APP_FIXTURES, APP_FIXTURES_THERE } from './test-support'
 
 const fixture = (name: string): Uint8Array => new Uint8Array(readFileSync(join(APP_FIXTURES, `${name}.maki`)))
@@ -31,6 +31,19 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
     const px = iconPixels(b.icon!)
     expect(px).toHaveLength(64 * 64)
     expect(px.filter(Boolean).length).toBeGreaterThan(200)
+  })
+
+  it('reads a wallet app’s accounts, naming their coins as maki does', () => {
+    const btc = readBundle(fixture('bitcoin')).manifest
+    expect(btc.api).toBe(3)
+    expect(btc.permissions.map((p) => p.permission.name)).toEqual(['link', 'wallet'])
+    expect(btc.wallet!.paths.map(formatPath)).toEqual(["m/84'/0'", "m/86'/0'", "m/84'/1'", "m/86'/1'"])
+    expect(walletCoins(btc.wallet!.paths)).toEqual(['Bitcoin', 'test networks'])
+    const eth = readBundle(fixture('ethereum')).manifest
+    expect(eth.wallet!.paths.map(formatPath)).toEqual(["m/44'/60'"])
+    expect(walletCoins(eth.wallet!.paths)).toEqual(['Ethereum'])
+    // an app without the permission has no paths
+    expect(readBundle(fixture('dice')).manifest.wallet).toBeNull()
   })
 
   it('turns away what isn’t a whole bundle', () => {

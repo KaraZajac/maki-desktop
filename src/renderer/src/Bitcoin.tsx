@@ -9,8 +9,11 @@ import {
 } from '@shared/protocol'
 import { parseDescriptor, walletKey, type BtcAccountInfo } from '@shared/btc-wallet'
 import { readPsbt, toBase64 } from '@shared/psbt'
+import { BITCOIN_APP } from '@shared/wallet-apps'
+import type { Apps } from './apps-state'
 import { BitcoinWallet, Grouped, said } from './BitcoinWallet'
 import { Button, Card, Glyph, Label, Segmented } from './ui'
+import { WalletAppNeeded } from './WalletAppNeeded'
 
 function saved<T>(key: string, one: T, other: T): T {
   try {
@@ -42,11 +45,11 @@ const accountOf = (d: string): BtcAccountInfo | null => {
 }
 
 /**
- * maki's Bitcoin accounts: a wallet here (balance, receive, send, activity) once maki has shared
- * the account's public key, and for wallet software (Sparrow, Bitcoin Core) the account to watch,
- * addresses to check on maki's screen, and PSBTs for maki to sign.
+ * maki's Bitcoin accounts: a wallet here (balance, receive, send, activity) once maki's Bitcoin
+ * app has shared the account's public key, and for wallet software (Sparrow, Bitcoin Core) the
+ * account to watch, addresses to check on maki's screen, and PSBTs for maki to sign.
  */
-export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
+export function Bitcoin({ link, apps }: { link: Link; apps: Apps }): React.JSX.Element {
   const linked = link.state.linked
   const [network, setNetwork] = useState<NetworkValue>(() =>
     saved('maki.network', Network.BITCOIN, Network.TESTNET)
@@ -141,6 +144,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
           />
         </div>
       </div>
+      <WalletAppNeeded link={link} apps={apps} id={BITCOIN_APP} name="Bitcoin" />
 
       {descriptors === null ? null : info ? (
         <BitcoinWallet

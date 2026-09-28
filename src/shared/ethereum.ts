@@ -164,6 +164,16 @@ function refusal(approval: ApprovalValue, reason = ''): ProviderError {
       return new ProviderError(4100, 'maki is locked: enter its PIN')
     case 'no phrase':
       return new ProviderError(4100, 'maki has no recovery phrase yet')
+    case 'no match':
+      return new ProviderError(
+        4100,
+        'maki’s Ethereum app isn’t installed: add it from the maki store, in maki desktop'
+      )
+    case 'unavailable':
+      return new ProviderError(
+        4100,
+        'maki couldn’t run its Ethereum app: if another app is open on maki, go back to its home screen'
+      )
     case 'refused':
       return new ProviderError(-32603, `maki won't sign it: ${reason}`)
     default:

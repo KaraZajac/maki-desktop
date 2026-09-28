@@ -145,7 +145,7 @@ export default function App(): React.JSX.Element {
             {page === 'apps' && (
               <AppsPage link={link} apps={apps} storeName={storeName} storePrivate={storePrivate} />
             )}
-            {page === 'wallets' && <Wallets link={link} />}
+            {page === 'wallets' && <Wallets link={link} apps={apps} />}
             {page === 'connections' && <Connections link={link} apps={apps} go={go} />}
             {page === 'backups' && <Backups link={link} backup={backup} />}
           </div>

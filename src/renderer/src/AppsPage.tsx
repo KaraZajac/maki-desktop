@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { fingerprint, readBundle, type Bundle } from '@shared/bundle'
+import { fingerprint, formatPath, readBundle, walletCoins, type Bundle } from '@shared/bundle'
 import type { AppSpace, InstalledApp } from '@shared/client'
 import type { Link } from '@shared/link'
 import type { ApprovalValue } from '@shared/protocol'
@@ -673,6 +673,17 @@ function AppSheet({
                     {reason && (
                       <span className="mt-0.5 block text-xs text-overlay1">
                         The developer says: “{reason}”
+                      </span>
+                    )}
+                    {permission.name === 'wallet' && m.wallet && (
+                      <span className="mt-1 block text-xs text-subtext0">
+                        <span className="font-medium text-fg">
+                          {walletCoins(m.wallet.paths).join(', ')}
+                        </span>
+                        , from your recovery phrase:{' '}
+                        <span className="font-mono text-subtext1">
+                          {m.wallet.paths.map(formatPath).join('  ')}
+                        </span>
                       </span>
                     )}
                   </li>

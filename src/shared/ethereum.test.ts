@@ -1,27 +1,39 @@
 /**
- * The Ethereum account against the fake maki, which signs with the firmware's own code
- * (maki-eth) from the BIP39 test phrase: the fixtures the emulated firmware signs too
- * (libs/maki-eth/tests/fixtures in the firmware repo).
+ * The Ethereum account against the fake maki running maki's Ethereum app (the store's, which
+ * reads and signs with the firmware's own code, maki-eth; maki keeps the key, from the BIP39 test
+ * phrase): the fixtures the emulated firmware signs too (libs/maki-eth/tests/fixtures in the
+ * firmware repo).
  */
 import type { ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
-import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { EthereumApp } from './wallet-apps'
 
 const FIXTURES = resolve(__dirname, '../../../xous-core/libs/maki-eth/tests/fixtures')
 const fixture = (name: string): Uint8Array => new Uint8Array(readFileSync(resolve(FIXTURES, name)))
 const HAVE_FIXTURES = existsSync(resolve(FIXTURES, 'abandon-tx-unsigned.bin'))
 
-describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the Ethereum account', () => {
+describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the Ethereum account', () => {
   const fakes: ChildProcess[] = []
-  const client = async (args: string[] = []): Promise<MakiClient> => {
-    const fake = await startFake(args)
+  /** a fake maki with the Ethereum app installed */
+  const client = async (args: string[] = []): Promise<EthereumApp> => {
+    const fake = await startFake(['--app', join(APP_FIXTURES, 'ethereum.maki'), ...args])
     fakes.push(fake.proc)
-    return new MakiClient(await TcpTransport.open(fake.port))
+    const c = new MakiClient(await TcpTransport.open(fake.port))
+    return new EthereumApp((app, message, timeoutMs) => c.appMessage(app, message, timeoutMs))
   }
   afterAll(() => fakes.forEach((p) => p.kill()))
+
+  it('says when maki hasn’t the app', async () => {
+    const fake = await startFake()
+    fakes.push(fake.proc)
+    const c = new MakiClient(await TcpTransport.open(fake.port))
+    const eth = new EthereumApp((app, message, timeoutMs) => c.appMessage(app, message, timeoutMs))
+    expect(await eth.ethAccount('app.example.com')).toEqual({ approval: 'no match', address: '' })
+  })
 
   it('connects a site once the owner agrees', async () => {
     const maki = await client()
@@ -93,7 +105,7 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the Ethereum account', () => {
     const r = await maki.ethSignTransaction('demo.maki', pre155)
     expect(r.approval).toBe('refused')
     expect(r.reason).toMatch(/chain ID/)
-    // sites must be plain hostnames, as for logins
-    await expect(maki.ethAccount('Example.COM')).rejects.toThrow(/bad argument/)
+    // sites must be plain hostnames, as for logins: the app won't show anything else
+    await expect(maki.ethAccount('Example.COM')).rejects.toThrow(/couldn’t read that/)
   })
 })

@@ -1,29 +1,38 @@
 /**
- * maki desktop's Bitcoin wallet against the fake maki (maki's own Bitcoin code, the test phrase's
- * accounts) and a pretend chain: the addresses are the ones BIP84 and BIP86 publish for the test
- * phrase, and a send goes all the way (scan, PSBT, maki's review and signature, broadcast), its
- * signature checked here with noble's own ECDSA and Schnorr.
+ * maki desktop's Bitcoin wallet against the fake maki running maki's Bitcoin app (the store's,
+ * with maki's own Bitcoin code; the test phrase's accounts) and a pretend chain: the addresses
+ * are the ones BIP84 and BIP86 publish for the test phrase, and a send goes all the way (scan,
+ * PSBT, the app's review and maki's signature, broadcast), its signature checked here with
+ * noble's own ECDSA and Schnorr.
  */
 import { hex } from '@scure/base'
 import * as btc from '@scure/btc-signer'
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js'
 import { hash160 } from '@scure/btc-signer/utils.js'
 import type { ChildProcess } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { BtcAccount, Network } from './protocol'
 import { BtcWallet, parseDescriptor, REPLACEABLE, walletKey } from './btc-wallet'
 import { pretendChain } from './stand-ins'
-import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { BitcoinApp } from './wallet-apps'
 
-describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('the Bitcoin wallet, with the fake maki', () => {
   let fake: { port: number; proc: ChildProcess }
   let transport: TcpTransport
-  let client: MakiClient
+  let bitcoin: BitcoinApp
   beforeAll(async () => {
     fake = await startFake(['--clock-verified'])
     transport = await TcpTransport.open(fake.port)
-    client = new MakiClient(transport)
+    const client = new MakiClient(transport)
+    bitcoin = new BitcoinApp((app, message, timeoutMs) => client.appMessage(app, message, timeoutMs))
+    // not installed yet: the wallet hears why
+    expect((await bitcoin.account(Network.BITCOIN)).approval).toBe('no match')
+    const bundle = new Uint8Array(readFileSync(join(APP_FIXTURES, 'bitcoin.maki')))
+    expect(await client.appInstall(bundle)).toEqual({ approval: 'approved', reason: '' })
   })
   afterAll(async () => {
     await transport?.close()
@@ -31,7 +40,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
   })
 
   it('works out the addresses BIP84 and BIP86 publish for the test phrase', async () => {
-    const segwit = await client.btcAccount(Network.BITCOIN, BtcAccount.SEGWIT)
+    const segwit = await bitcoin.account(Network.BITCOIN, BtcAccount.SEGWIT)
     const info = parseDescriptor(segwit.descriptor)
     expect(info).toMatchObject({ kind: 'segwit', network: 'bitcoin', fingerprint: 0x73c5da0a })
     const w = new BtcWallet(info, async () => '')
@@ -40,7 +49,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
     expect(w.keys.address(1, 0).address).toBe('bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el')
 
     const taproot = parseDescriptor(
-      (await client.btcAccount(Network.BITCOIN, BtcAccount.TAPROOT)).descriptor
+      (await bitcoin.account(Network.BITCOIN, BtcAccount.TAPROOT)).descriptor
     )
     const t = new BtcWallet(taproot, async () => '')
     expect(t.keys.address(0, 0).address).toBe(
@@ -56,7 +65,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
     // the key wallet software takes on its own: maki's zpub, worked out from the descriptor
     expect(walletKey(info)).toBe(segwit.zpub)
     expect(walletKey(taproot)).toBe(taproot.xpub)
-    const test = await client.btcAccount(Network.TESTNET, BtcAccount.SEGWIT)
+    const test = await bitcoin.account(Network.TESTNET, BtcAccount.SEGWIT)
     expect(walletKey(parseDescriptor(test.descriptor))).toBe(test.zpub)
     expect(test.zpub.startsWith('vpub')).toBe(true)
 
@@ -68,7 +77,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
     ['taproot', BtcAccount.TAPROOT]
   ] as const) {
     it(`sends from ${kind}: maki signs what the wallet made, and the signature checks out`, async () => {
-      const info = parseDescriptor((await client.btcAccount(Network.BITCOIN, account)).descriptor)
+      const info = parseDescriptor((await bitcoin.account(Network.BITCOIN, account)).descriptor)
       const receive = new BtcWallet(info, async () => '').keys.address(0, 0)
       const chain = pretendChain(receive.address, 100_000)
       const wallet = new BtcWallet(info, chain.esplora)
@@ -85,7 +94,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
       expect(made.fee + made.change + made.sent).toBe(100_000n)
 
       // maki reviews it (the payment, its change as change, the fee) and signs
-      const r = await client.btcSign(Network.BITCOIN, made.psbt)
+      const r = await bitcoin.sign(Network.BITCOIN, made.psbt)
       expect(r.approval, r.reason).toBe('approved')
       await wallet.broadcast(r.signed!)
       const tx = btc.Transaction.fromRaw(hex.decode(chain.broadcast[0]))
@@ -121,7 +130,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
 
   it('looks again only at the addresses that changed', async () => {
     const info = parseDescriptor(
-      (await client.btcAccount(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
+      (await bitcoin.account(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
     )
     const address = new BtcWallet(info, async () => '').keys.address(0, 0).address
     const chain = pretendChain(address, 50_000)
@@ -145,7 +154,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
 
   it('speeds up a payment still waiting for a block: the same coin and payment, more fee from the change', async () => {
     const info = parseDescriptor(
-      (await client.btcAccount(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
+      (await bitcoin.account(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
     )
     const keys = new BtcWallet(info, async () => '').keys
     const coin = keys.address(0, 0)
@@ -153,7 +162,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
     const w = new BtcWallet(info, chain.esplora)
     const payee = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'
     const first = await w.send(await w.scan(), payee, 30_000n, 2)
-    const txid1 = await w.broadcast((await client.btcSign(Network.BITCOIN, first.psbt)).signed!)
+    const txid1 = await w.broadcast((await bitcoin.sign(Network.BITCOIN, first.psbt)).signed!)
 
     // waiting for a block, at about 2 sat/vB, and replaceable
     const waiting = (await w.scan()).activity.find((a) => a.txid === txid1)!
@@ -163,7 +172,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
     const bumped = await w.bump(txid1, 12)
     expect(bumped.was).toBe(first.fee)
     expect(bumped.fee).toBeGreaterThan(first.fee * 5n)
-    const signed = await client.btcSign(Network.BITCOIN, bumped.psbt)
+    const signed = await bitcoin.sign(Network.BITCOIN, bumped.psbt)
     expect(signed.approval).toBe('approved')
     const txid2 = await w.broadcast(signed.signed!)
     expect([chain.chain.waiting(txid1), chain.chain.waiting(txid2)]).toEqual([false, true])
@@ -196,7 +205,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
 
   it('says when there isn’t enough, and what it won’t send to', async () => {
     const info = parseDescriptor(
-      (await client.btcAccount(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
+      (await bitcoin.account(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
     )
     const chain = pretendChain(
       new BtcWallet(info, async () => '').keys.address(0, 0).address,

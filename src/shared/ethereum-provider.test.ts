@@ -1,15 +1,16 @@
 /**
- * The EIP-1193 methods a site calls, against the fake maki (which signs with the firmware's own
- * code) and a stand-in network that records what it's sent.
+ * The EIP-1193 methods a site calls, against the fake maki running maki's Ethereum app (which
+ * signs with the firmware's own code) and a stand-in network that records what it's sent.
  */
 import type { ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { Ethereum, memoryStore, ProviderError, type Rpc } from './ethereum'
 import { toHex } from './rlp'
-import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { EthereumApp } from './wallet-apps'
 
 const FIXTURES = resolve(__dirname, '../../../xous-core/libs/maki-eth/tests/fixtures')
 const fixture = (name: string): Uint8Array => new Uint8Array(readFileSync(resolve(FIXTURES, name)))
@@ -35,19 +36,20 @@ const rejects = async (p: Promise<unknown>, code: number): Promise<void> => {
   await expect(p).rejects.toMatchObject({ code })
 }
 
-describe.skipIf(!FAKE_BUILT || !existsSync(resolve(FIXTURES, 'abandon-tx-unsigned.bin')))(
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !existsSync(resolve(FIXTURES, 'abandon-tx-unsigned.bin')))(
   'the Ethereum provider',
   () => {
     const fakes: ChildProcess[] = []
-    let maki: MakiClient
-    let refusing: MakiClient
+    let maki: EthereumApp
+    let refusing: EthereumApp
     beforeAll(async () => {
       for (const args of [[], ['--deny']]) {
-        const fake = await startFake(args)
+        const fake = await startFake(['--app', join(APP_FIXTURES, 'ethereum.maki'), ...args])
         fakes.push(fake.proc)
         const client = new MakiClient(await TcpTransport.open(fake.port))
-        if (args.length) refusing = client
-        else maki = client
+        const app = new EthereumApp((id, message, timeoutMs) => client.appMessage(id, message, timeoutMs))
+        if (args.length) refusing = app
+        else maki = app
       }
     })
     afterAll(() => fakes.forEach((p) => p.kill()))
@@ -71,6 +73,18 @@ describe.skipIf(!FAKE_BUILT || !existsSync(resolve(FIXTURES, 'abandon-tx-unsigne
       await rejects(eth.request('app.example.com', 'eth_requestAccounts'), 4001)
       const unlinked = new Ethereum(() => null, network({}).rpc, memoryStore())
       await rejects(unlinked.request('app.example.com', 'eth_requestAccounts'), 4900)
+    })
+
+    it('tells a site where to get the app when maki hasn’t it', async () => {
+      const fake = await startFake()
+      fakes.push(fake.proc)
+      const client = new MakiClient(await TcpTransport.open(fake.port))
+      const app = new EthereumApp((id, message, timeoutMs) => client.appMessage(id, message, timeoutMs))
+      const eth = new Ethereum(() => app, network({}).rpc, memoryStore())
+      await expect(eth.request('app.example.com', 'eth_requestAccounts')).rejects.toMatchObject({
+        code: 4100,
+        message: expect.stringMatching(/Ethereum app isn’t installed: add it from the maki store/)
+      })
     })
 
     it('signs messages as the firmware does', async () => {

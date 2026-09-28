@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import type { Link } from '@shared/link'
 import { WALLET_SITE } from '@shared/eth-wallet'
+import { ETHEREUM_APP } from '@shared/wallet-apps'
+import type { Apps } from './apps-state'
 import { EthereumWallet } from './EthereumWallet'
 import { Button, Card, Glyph, Label } from './ui'
+import { WalletAppNeeded } from './WalletAppNeeded'
 
 /**
  * maki's Ethereum account: a wallet here once the owner connects maki desktop to it on maki, and
- * the sites connected to it through the maki extension. Connecting and signing are asked on maki.
+ * the sites connected to it through the maki extension. Connecting and signing are asked on maki,
+ * by its Ethereum app.
  */
-export function Ethereum({ link }: { link: Link }): React.JSX.Element {
+export function Ethereum({ link, apps }: { link: Link; apps: Apps }): React.JSX.Element {
   const linked = link.state.linked
   const [sites, setSites] = useState<{ site: string; address: string; network: string }[] | null>(
     null
@@ -53,6 +57,7 @@ export function Ethereum({ link }: { link: Link }): React.JSX.Element {
           </Button>
         )}
       </div>
+      <WalletAppNeeded link={link} apps={apps} id={ETHEREUM_APP} name="Ethereum" />
 
       {sites === null ? null : mine ? (
         <EthereumWallet key={mine.address} link={link} address={mine.address} />
