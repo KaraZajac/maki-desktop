@@ -12,6 +12,7 @@ import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
 import { forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
+import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
 import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
 import { agentSocketPath, serveAgent, SSH_APP } from './ssh-agent'
@@ -322,6 +323,20 @@ function ipc(): void {
     }
   })
 
+  // age: age-plugin-maki on the PATH, and an identity file for maki's key where the owner says
+  ipcMain.handle('age:status', () => agePluginStatus(launch()))
+  ipcMain.handle('age:install', () => installAgePlugin(launch()))
+  ipcMain.handle('age:save', async (e, text: unknown) => {
+    // only an identity file, as the window makes it from maki's recipient
+    if (typeof text !== 'string' || text.length > 1000 || !/^AGE-PLUGIN-MAKI-1[0-9A-Z]+$/m.test(text)) return null
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = { defaultPath: join(app.getPath('home'), 'maki-age.txt'), title: 'Save your age identity' }
+    const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, text, { mode: 0o600 })
+    return r.filePath
+  })
+
   const btcFile = (): string => join(app.getPath('userData'), 'bitcoin.json')
   ipcMain.handle('btc:load', async () => {
     try {
@@ -394,7 +409,18 @@ function ipc(): void {
   ipcMain.handle('dev:close', () => devSocket?.destroy())
 }
 
-if (process.argv.includes('--native-host')) {
+if (process.argv.includes('--age-plugin-maki')) {
+  // started by age, through the age-plugin-maki script: the plugin, speaking age's protocol on
+  // stdio and asking maki's Age app through the tray app. Only its stanzas reach stdout.
+  console.log = console.info = console.debug = console.error
+  app.dock?.hide()
+  void runAgePlugin(process.argv, {
+    input: process.stdin,
+    output: process.stdout,
+    error: (line) => process.stderr.write(`${line}\n`),
+    ask: askOver(socketPath())
+  }).then((code) => app.exit(code))
+} else if (process.argv.includes('--native-host')) {
   // started by a browser for the maki extension: relay to the tray app, starting it if needed.
   // Before the single-instance lock, which the tray app holds. stdout carries only framed
   // messages to the browser, so anything logged goes to stderr.

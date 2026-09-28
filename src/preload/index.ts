@@ -73,6 +73,13 @@ const api = {
     load: (): Promise<string[]> => ipcRenderer.invoke('btc:load'),
     save: (descriptors: string[]): Promise<void> => ipcRenderer.invoke('btc:save', descriptors)
   },
+  age: {
+    /** whether age-plugin-maki is on the PATH, starting this app */
+    status: (): Promise<import('../shared/age').AgePluginStatus> => ipcRenderer.invoke('age:status'),
+    install: (): Promise<import('../shared/age').AgePluginStatus> => ipcRenderer.invoke('age:install'),
+    /** a save dialog for the identity file; where it went, or null */
+    save: (text: string): Promise<string | null> => ipcRenderer.invoke('age:save', text)
+  },
   /** what the coins are worth in `currency` (CoinGecko), when the owner asks to see it */
   prices: async (currency: import('../shared/prices').Currency): Promise<import('../shared/prices').Prices> => {
     const r = (await ipcRenderer.invoke('prices:get', currency)) as { prices: Record<string, number> } | { error: string }

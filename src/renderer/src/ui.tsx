@@ -191,6 +191,13 @@ const glyphs: Record<string, ReactNode> = {
       <path d="M16 17H7V8" />
     </>
   ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2.5" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      <path d="M12 15v2" />
+    </>
+  ),
   eye: (
     <>
       <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />

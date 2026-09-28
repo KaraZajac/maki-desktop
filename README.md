@@ -67,6 +67,11 @@ maki's roll for what to do and the green of the nori for what's done.
   A `.maki` file installs the same way, marked sideloaded (or `maki install app.maki` from the SDK,
   through this app). Software on this computer can send messages to apps that may talk to it (the
   link permission), through the local socket.
+- **Decrypts age files with maki's key.** With maki's Age app installed, maki keeps an age key:
+  its recipient is an ordinary `age1…` one, so anyone encrypts to it with age as it is. The
+  Connections page installs `age-plugin-maki` (in `~/.local/bin`, this app in plugin mode) and
+  saves an identity file naming maki's key; `age -d -i maki-age.txt file.age` then asks maki,
+  which asks you on its screen before it hands over the file's key.
 - **Is an SSH agent for maki's SSH app.** ssh and git talk to it (`SSH_AUTH_SOCK`, which the
   Connections page shows once the app is installed), and it hands each request to the app on maki, which
   reads what's to be signed, asks you, and signs. The agent holds no keys: `ssh-add -L` shows the
@@ -123,6 +128,7 @@ npm test             # unit tests, plus integration tests against the fake maki 
 MAKI_LIVE=1 npm test # also a real sync through the real Roughtime servers
 MAKI_BROWSERS=1 npx vitest run extension/src/real-browsers.test.ts
                      # the extension in headless Chromium and Firefox, in throwaway profiles
+MAKI_AGE=/path/to/age npm test     # age-plugin-maki with the real age (or age on the PATH)
 MAKI_E2E=1 npx vitest run src/e2e
                      # the app itself, offscreen, pressed through: the Wallets page sends from
                      # each account (and speeds one up), the Apps page installs and removes

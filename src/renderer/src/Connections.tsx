@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AGE_APP, identityFile, recipientOf, type AgePluginStatus } from '@shared/age'
 import { SSH_APP, type BrowserStatus } from '@shared/bridge-types'
 import type { Link } from '@shared/link'
 import type { Apps } from './apps-state'
@@ -31,7 +32,7 @@ export function Connections({
       <PageHeader
         label="connections"
         title="Connections"
-        lede="Browsers, ssh and git reach maki through maki desktop, which holds the link: they ask, and maki asks you on its own screen."
+        lede="Browsers, ssh, git and age reach maki through maki desktop, which holds the link: they ask, and maki asks you on its own screen."
       />
 
       <Card>
@@ -139,6 +140,8 @@ export function Connections({
         </div>
       </Card>
 
+      <Age link={link} apps={apps} go={go} />
+
       <Card>
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-surface1 bg-crust p-2.5 text-peach">
@@ -164,5 +167,153 @@ export function Connections({
         </div>
       </Card>
     </div>
+  )
+}
+
+/** age: maki's age key, age-plugin-maki where age finds it, and the identity file that names it. */
+function Age({
+  link,
+  apps,
+  go
+}: {
+  link: Link
+  apps: Apps
+  go: (page: Page) => void
+}): React.JSX.Element {
+  const installed = apps.apps?.find((a) => a.id === AGE_APP)
+  const linked = link.state.linked
+  const [plugin, setPlugin] = useState<AgePluginStatus | null>(null)
+  const [recipient, setRecipient] = useState<Uint8Array | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    void window.maki.age.status().then(setPlugin)
+  }, [])
+  // the recipient, from maki's Age app (it starts out of sight to answer)
+  useEffect(() => {
+    if (!installed || !linked) return
+    link.appMessage(AGE_APP, Uint8Array.of(1)).then(
+      (r) => {
+        if (r.status === 'approved' && r.answer[0] === 0 && r.answer.length === 33)
+          setRecipient(r.answer.slice(1))
+        else
+          setProblem(
+            r.answer[0] === 3 ? 'maki is locked: enter its PIN' : `maki’s Age app: ${r.status}`
+          )
+      },
+      (e: Error) => setProblem(e.message)
+    )
+  }, [link, installed, linked])
+  const r = recipient ? recipientOf(recipient) : null
+
+  return (
+    <Card>
+      <div className="flex items-start gap-4">
+        <div className="rounded-xl border border-surface1 bg-crust p-2.5 text-peach">
+          <Glyph name="lock" className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <Label>age</Label>
+          {!installed ? (
+            <div className="mt-2 flex items-center justify-between gap-4">
+              <p className="text-sm text-subtext1">
+                With maki’s Age app installed, maki keeps an age key from your recovery phrase:
+                anyone encrypts files to it with age, and decrypting one asks you on maki.
+              </p>
+              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
+                Get it
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-subtext1">
+                maki keeps an age key. Anyone encrypts files to it with age, to its recipient;
+                decrypting one asks you on maki first, through age-plugin-maki.
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <code className="selectable min-w-0 flex-1 truncate rounded-lg border border-surface0 bg-crust px-3 py-2 font-mono text-xs text-green">
+                  {r ?? (linked ? 'asking maki…' : 'plug maki in to see its recipient')}
+                </code>
+                <Button
+                  small
+                  disabled={!r}
+                  onClick={async () => {
+                    await window.maki.copy(r!)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <ul className="mt-4 divide-y divide-surface0 rounded-xl border border-surface0 bg-crust/40">
+                <li className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="min-w-0 text-sm text-fg">
+                    age-plugin-maki
+                    {plugin && (
+                      <span className="ml-2 font-mono text-[0.68rem] text-overlay1">
+                        {plugin.path}
+                      </span>
+                    )}
+                  </span>
+                  {plugin?.installed ? (
+                    <Badge kind="built">
+                      <Glyph name="check" className="h-3 w-3" /> installed
+                    </Badge>
+                  ) : (
+                    <Button
+                      small
+                      kind="ghost"
+                      onClick={async () => {
+                        try {
+                          setPlugin(await window.maki.age.install())
+                          link.note('age-plugin-maki installed: age can ask maki to decrypt')
+                        } catch (e) {
+                          setProblem((e as Error).message)
+                        }
+                      }}
+                    >
+                      Install
+                    </Button>
+                  )}
+                </li>
+                <li className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-sm text-fg">
+                    Your identity file, which names maki’s key
+                  </span>
+                  <Button
+                    small
+                    kind="ghost"
+                    glyph="download"
+                    disabled={!recipient}
+                    onClick={async () => {
+                      const path = await window.maki.age.save(identityFile(recipient!))
+                      if (path) link.note(`age identity saved to ${path}`)
+                    }}
+                  >
+                    Save…
+                  </Button>
+                </li>
+              </ul>
+              {plugin && plugin.installed && !plugin.onPath && (
+                <p className="mt-2 text-xs text-yellow">
+                  Its folder isn’t on your PATH, where age looks for plugins: add it.
+                </p>
+              )}
+              <p className="mt-3 text-xs leading-relaxed text-overlay1">
+                <code className="font-mono text-subtext0">
+                  age -r {r ? `${r.slice(0, 12)}…` : 'age1…'} -o notes.age notes.txt
+                </code>{' '}
+                encrypts;{' '}
+                <code className="font-mono text-subtext0">age -d -i maki-age.txt notes.age</code>{' '}
+                decrypts, once you say so on maki. The identity file holds nothing secret: it names
+                maki’s key.
+              </p>
+              {problem && <p className="mt-2 text-sm text-yellow">{problem}</p>}
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
   )
 }
