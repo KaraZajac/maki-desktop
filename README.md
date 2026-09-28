@@ -8,8 +8,9 @@ maki's roll for what to do and the green of the nori for what's done.
 
 > **Status: early.** Links over USB (Web Serial) or to a fake maki for development, syncs verified
 > time, runs from the tray, relays logins and TOTP codes between the browser extension and maki,
-> keeps maki's encrypted backups, has maki sign Bitcoin transactions, and gives sites maki's
-> Ethereum account through the extension. Tested end to end against
+> keeps maki's encrypted backups, is a wallet for maki's Bitcoin and Ethereum accounts, has maki
+> sign Bitcoin transactions for wallet software, and gives sites maki's Ethereum account and its
+> Nostr key through the extension. Tested end to end against
 > the fake maki (the firmware's own protocol and wallet code on a socket), including in real
 > Chromium and Firefox. The firmware runs in the emulator, which has no USB; nothing has run on a
 > badge yet. Linux AppImage builds; nothing is signed.
@@ -32,6 +33,12 @@ maki's roll for what to do and the green of the nori for what's done.
 - **Keeps backups.** On link, hourly, and soon after a login is saved, maki hands over its logins
   and codes encrypted with a key from its recovery phrase, and they're kept in the app's folder.
   "Restore to maki" sends the latest back; maki asks before adding anything.
+- **Is a wallet.** The Wallets page holds each of maki's accounts: Bitcoin (native SegWit and
+  taproot, mainnet and testnet4; balance, coins and activity from mempool.space; a fresh address
+  as a QR code, checked on maki; sending at the fee you choose, and speeding up one that's
+  waiting) and Ethereum (what it holds on six networks, the tokens maki knows included; sending
+  a coin or a token, to an address or an ENS name). maki shows every payment and signs it.
+  Values in money if you pick a currency (CoinGecko, asked the same question for everyone).
 - **Works with Bitcoin wallet software.** Get one of maki's accounts, native SegWit (BIP84) or
   taproot (BIP86), as an output descriptor for Sparrow or Bitcoin Core as a watch-only wallet;
   check an address on maki's screen before giving it out; and
@@ -47,6 +54,9 @@ maki's roll for what to do and the green of the nori for what's done.
   public servers for Ethereum, Base, Optimism, Arbitrum, Polygon and Sepolia. Typed data for
   another network than the site is on, the older typed-data methods and `eth_sign` are
   refused.
+- **Gives sites a Nostr key.** With maki's Nostr app installed, the extension puts
+  `window.nostr` (NIP-07) in pages when no other signer has: maki asks before a site first sees
+  the key, and shows each event (the site, its kind, how it begins) before signing it.
 - **Installs apps on maki, from the maki store.** The Apps page shows maki's room for apps as a
   bar, a segment for each app (its bundle and the storage it asks for) and what's free, with how
   many more apps it has room for; what's installed; and the maki store, its apps in a grid by
