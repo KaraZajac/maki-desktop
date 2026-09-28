@@ -60,7 +60,7 @@ describe('background', () => {
     expect(await reply).toMatchObject({ ok: true, approval: 'approved', username: 'kara' })
   })
 
-  it.each(['http://example.com/', 'file:///home/kara/login.html', 'about:blank', 'chrome-extension://abc/popup.html'])(
+  it.each(['http://example.com/', 'file:///home/me/login.html', 'about:blank', 'chrome-extension://abc/popup.html'])(
     'refuses %s without asking maki',
     async (url) => {
       expect(await b.fromPage({ type: 'getTotp' }, url).reply).toEqual({ ok: false, error: 'maki only works on https pages' })
