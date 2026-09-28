@@ -1,5 +1,5 @@
 /**
- * The maki store from this side (ARCHITECTURE.md in the BAOKEY repo, "The store"): its files,
+ * The maki store from this side (ARCHITECTURE.md in the maki repo, "The store"): its files,
  * fetched from wherever it's published, checked the way maki checks them (libs/maki-store in the
  * firmware repo; keep the two in step), so this window shows only what the store signed; and
  * the store's newest root and revocation list, handed to maki. maki checks all of it again
@@ -237,6 +237,12 @@ export interface StoreApp {
   path: string
   /** 64x64 in maki_icons form, or null */
   icon: Uint32Array | null
+  /** WebAssembly, or machine code for maki's processor */
+  kind: 'wasm' | 'native'
+  /** where the store lists it: Tools, Games, ... */
+  category: string | null
+  /** what the store built it from: a Git repository, a whole commit ID, the app's directory */
+  source: { repo: string; commit: string; path: string } | null
 }
 
 export interface Index {
@@ -270,6 +276,15 @@ function storeApp(e: Record<string, unknown>): StoreApp | null {
     if (!known || typeof reason !== 'string') return null
     permissions.push({ permission: known, reason })
   }
+  const kind = e.kind === undefined ? 'wasm' : e.kind
+  if (kind !== 'wasm' && kind !== 'native') return null
+  const category = typeof e.category === 'string' && e.category.length <= 32 ? e.category : null
+  const s = e.source as Record<string, unknown> | undefined
+  const source =
+    s && typeof s === 'object' && typeof s.repo === 'string' && /^https:\/\/[^\s]+$/.test(s.repo) &&
+    typeof s.commit === 'string' && /^[0-9a-f]{40}$/.test(s.commit) && typeof s.path === 'string'
+      ? { repo: s.repo, commit: s.commit, path: s.path }
+      : null
   let icon: Uint32Array | null = null
   if (typeof e.icon === 'string') {
     const raw = fromBase64(e.icon)
@@ -291,8 +306,18 @@ function storeApp(e: Record<string, unknown>): StoreApp | null {
     bytes,
     sha256: hash,
     path,
-    icon
+    icon,
+    kind,
+    category,
+    source
   }
+}
+
+/** Where to read an app's source: the directory at the commit the store built, on GitHub. */
+export function sourcePage(source: NonNullable<StoreApp['source']>): string {
+  const repo = source.repo.replace(/\.git$/, '').replace(/\/$/, '')
+  if (!/^https:\/\/github\.com\//.test(repo)) return repo
+  return `${repo}/tree/${source.commit}${source.path ? `/${source.path}` : ''}`
 }
 
 /** The index, if `root`'s catalogue key signed it and it hasn't expired (`nowS`: unix seconds). */

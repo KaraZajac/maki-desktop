@@ -69,3 +69,7 @@ export const APP_FIXTURES_THERE = existsSync(APP_FIXTURES)
 /** The development maki store: libs/maki-store/dev-store in the firmware repo. */
 export const DEV_STORE = resolve(__dirname, '../../../xous-core/libs/maki-store/dev-store')
 export const DEV_STORE_THERE = existsSync(DEV_STORE)
+
+/** The maki store as its repository publishes it (KaraZajac/maki-apps), cloned beside this one. */
+export const MAKI_STORE = resolve(__dirname, '../../../apps/store')
+export const MAKI_STORE_THERE = existsSync(MAKI_STORE)

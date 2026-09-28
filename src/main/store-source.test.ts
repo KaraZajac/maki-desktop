@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { storeSource, storeWhere } from './store-source'
+import { STORE, storeName, storeSource, storeToken, storeWhere } from './store-source'
 
 describe('the store source', () => {
   const dir = mkdtempSync(join(tmpdir(), 'maki-store-'))
@@ -27,8 +27,37 @@ describe('the store source', () => {
     expect(() => storeSource('ftp://store.example')).toThrow(/https/)
   })
 
-  it('is set by MAKI_STORE, and nowhere otherwise', () => {
-    expect(storeWhere({})).toBeNull()
+  it('is the maki store, or MAKI_STORE', () => {
+    expect(storeWhere({})).toBe(STORE)
     expect(storeWhere({ MAKI_STORE: ' https://store.example ' })).toBe('https://store.example')
+    expect(storeToken({})).toBeNull()
+    expect(storeToken({ MAKI_STORE_TOKEN: ' t0ken ' })).toBe('t0ken')
+  })
+
+  it('goes by its repository, host or folder', () => {
+    expect(storeName(STORE)).toBe('KaraZajac/maki-apps')
+    expect(storeName('https://maki.example/store/')).toBe('maki.example')
+    expect(storeName('/home/me/maki-apps/store')).toBe('/home/me/maki-apps/store')
+  })
+
+  it('sends its token to GitHub\'s file server only', async () => {
+    const seen: { url: string; auth: string | null }[] = []
+    const real = globalThis.fetch
+    globalThis.fetch = (async (url: URL, init: RequestInit) => {
+      seen.push({ url: String(url), auth: new Headers(init.headers).get('authorization') })
+      return new Response(new Uint8Array([7]))
+    }) as typeof fetch
+    try {
+      await storeSource(STORE, 'secret').get('index.json')
+      await storeSource('https://store.example/', 'secret').get('index.json')
+      await storeSource('http://localhost:8080/', 'secret').get('index.json')
+    } finally {
+      globalThis.fetch = real
+    }
+    expect(seen).toEqual([
+      { url: `${STORE}index.json`, auth: 'token secret' },
+      { url: 'https://store.example/index.json', auth: null },
+      { url: 'http://localhost:8080/index.json', auth: null }
+    ])
   })
 })

@@ -17,13 +17,14 @@ import {
   memoryKeeper,
   replaces,
   revoked,
+  sourcePage,
   Store,
   StoreError,
   trustFirst,
   type Root,
   type StoreSource
 } from './store'
-import { DEV_STORE, DEV_STORE_THERE } from './test-support'
+import { DEV_STORE, DEV_STORE_THERE, MAKI_STORE, MAKI_STORE_THERE } from './test-support'
 /** After the development store was made, and long before anything in it expires. */
 const NOW = new Date(1_790_600_000_000)
 
@@ -31,6 +32,30 @@ const NOW = new Date(1_790_600_000_000)
 function changed(source: StoreSource, change: (path: string, bytes: Uint8Array | null) => Uint8Array | null): StoreSource {
   return { get: async (path) => change(path, await source.get(path)) }
 }
+
+describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
+  it('checks out from the root this app carries, with each app’s kind, category and source', async () => {
+    const store = new Store(storeSource(MAKI_STORE), memoryKeeper(), () => NOW)
+    await store.refresh()
+    expect(store.problem).toBeNull()
+    const apps = store.index!.apps
+    expect(apps.map((a) => [a.name, a.kind, a.category])).toEqual([
+      ['Dice', 'wasm', 'Games'],
+      ['Pomodoro', 'native', 'Productivity'],
+      ['Sensors', 'wasm', 'Tools'],
+      ['SSH', 'wasm', 'Security'],
+      ['Tally', 'wasm', 'Tools']
+    ])
+    const pomodoro = apps.find((a) => a.name === 'Pomodoro')!
+    expect(pomodoro.source?.repo).toBe('https://github.com/KaraZajac/maki-firmware')
+    expect(pomodoro.source?.commit).toMatch(/^[0-9a-f]{40}$/)
+    expect(sourcePage(pomodoro.source!)).toBe(
+      `https://github.com/KaraZajac/maki-firmware/tree/${pomodoro.source!.commit}/sdk/examples/pomodoro`
+    )
+    expect(store.revocations?.entries).toEqual([])
+    expect((await store.bundle(pomodoro)).manifest.kind).toBe('native')
+  })
+})
 
 describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
   const source = (): StoreSource => storeSource(DEV_STORE)
