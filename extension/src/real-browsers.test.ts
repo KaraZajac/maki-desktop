@@ -9,7 +9,7 @@
  * MAKI_CHROMIUM and MAKI_FIREFOX point at other browser binaries.
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server as HttpServer } from 'node:http'
 import type { AddressInfo, Server } from 'node:net'
 import { homedir, tmpdir, userInfo } from 'node:os'
@@ -80,7 +80,8 @@ addEventListener('load', () => setTimeout(() => run().catch((e) => report('faile
 </script>`
 
 describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !== 'linux')('the extension in real browsers', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'maki-b-'))
+  // made when the tests run, not when they're only listed (and skipped)
+  let dir = ''
   let fake: { port: number; proc: ChildProcess }
   let link: Link
   let bridge: Server
@@ -89,9 +90,11 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
   let reports: ((r: Record<string, string>) => void)[] = []
   const browsers: ChildProcess[] = []
   // the host the browsers start: the real app, in native-host mode
-  const launcher = join(dir, 'maki-native-host')
+  let launcher = ''
 
   beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'maki-b-'))
+    launcher = join(dir, 'maki-native-host')
     execFileSync('npm', ['run', '-s', 'build'], { cwd: DESKTOP, stdio: 'ignore' })
     execFileSync('npm', ['run', '-s', 'build:extension'], { cwd: DESKTOP, stdio: 'ignore' })
     // 127.0.0.1 rather than localhost: an entry for a name without a dot covers nothing
@@ -130,6 +133,7 @@ describe.skipIf(!process.env.MAKI_BROWSERS || !FAKE_BUILT || process.platform !=
     bridge?.close()
     link?.drop()
     fake?.proc.kill()
+    if (dir) rmSync(dir, { recursive: true, force: true })
   })
 
   const nextReport = (): Promise<Record<string, string>> =>

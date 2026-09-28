@@ -5,7 +5,7 @@
  * running the firmware's protocol logic.
  */
 import type { ChildProcess } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import type { Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,6 +28,7 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
   let host: Promise<void>
   const toHost = new PassThrough()
   const fromHost = new PassThrough()
+  let scratch: string | undefined
 
   beforeAll(async () => {
     fake = await startFake(['--clock-verified', '--totp', `github.com=${SECRET_B32}`])
@@ -36,7 +37,8 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
     })
     link.autoSync = false
     expect(await link.attach(await TcpTransport.open(fake.port), 'fake maki')).toBe(true)
-    const sock = join(mkdtempSync(join(tmpdir(), 'maki-ext-')), 'bridge.sock')
+    scratch = mkdtempSync(join(tmpdir(), 'maki-ext-'))
+    const sock = join(scratch, 'bridge.sock')
     server = await serveBridge((r) => link.fromBrowser(r), sock)
     host = runNativeHost({ socketPath: sock, input: toHost, output: fromHost })
 
@@ -70,6 +72,7 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
     link?.drop()
     server?.close()
     fake?.proc.kill()
+    if (scratch) rmSync(scratch, { recursive: true, force: true })
   })
 
   const page = (html: string): void => {

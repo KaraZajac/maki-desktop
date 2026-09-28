@@ -3,10 +3,11 @@
  * socket and the link, to the firmware's real protocol logic in the fake maki, and back.
  */
 import type { ChildProcess } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { connect, type Server } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { tmpdir, userInfo } from 'node:os'
+import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Link } from '../shared/link'
@@ -82,6 +83,7 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
     link?.drop()
     server?.close()
     fake?.proc.kill()
+    rmSync(dirname(sock), { recursive: true, force: true })
   })
 
   it('saves and fills a login, gives a code, and reports status', async () => {
@@ -119,21 +121,23 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
     await host
   })
 
-  it.skipIf(!APP_FIXTURES_THERE)('installs an app for `maki install`, straight on the socket', async () => {
-    const ask = async (request: object): Promise<Record<string, unknown>> => {
-      const s = connect(sock)
-      s.setEncoding('utf8')
-      s.write(JSON.stringify(request) + '\n')
-      const line = await new Promise<string>((ok) => {
-        let got = ''
-        s.on('data', (d: string) => {
-          got += d
-          if (got.includes('\n')) ok(got.slice(0, got.indexOf('\n')))
-        })
+  /** One request on the socket, as `maki install` or a script sends it: its answer. */
+  const ask = async (request: object): Promise<Record<string, unknown>> => {
+    const s = connect(sock)
+    s.setEncoding('utf8')
+    s.write(JSON.stringify(request) + '\n')
+    const line = await new Promise<string>((ok) => {
+      let got = ''
+      s.on('data', (d: string) => {
+        got += d
+        if (got.includes('\n')) ok(got.slice(0, got.indexOf('\n')))
       })
-      s.end()
-      return JSON.parse(line) as Record<string, unknown>
-    }
+    })
+    s.end()
+    return JSON.parse(line) as Record<string, unknown>
+  }
+
+  it.skipIf(!APP_FIXTURES_THERE)('installs an app for `maki install`, straight on the socket', async () => {
     expect(await ask({ id: 1, type: 'install', path: join(APP_FIXTURES, 'dice.maki') })).toMatchObject({
       ok: true,
       type: 'install',
@@ -157,6 +161,35 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
       [9, { app: 'com.leviathan.maki.ssh', data: Buffer.alloc(4097).toString('base64') }]
     ] as const) {
       expect(await ask({ id, type: 'appMessage', ...bad })).toEqual({ id, ok: false, error: 'malformed request' })
+    }
+  })
+
+  it.skipIf(!APP_FIXTURES_THERE)('sets the Status app’s sign from a script, as its README says', async () => {
+    expect(await ask({ id: 1, type: 'install', path: join(APP_FIXTURES, 'status.maki') })).toMatchObject({ ok: true, approval: 'approved' })
+    const say = async (text: string): Promise<string> => {
+      const r = await ask({ id: 2, type: 'appMessage', app: 'com.leviathan.maki.status', data: Buffer.from(text).toString('base64') })
+      expect(r).toMatchObject({ ok: true, status: 'approved' })
+      return Buffer.from(r.data as string, 'base64').toString()
+    }
+    // maki starts it out of sight to answer, and it keeps what it was told for next time
+    expect(await say('On a call')).toBe('ok')
+    expect(await say('')).toBe('On a call')
+    expect(await say('Back at 3')).toBe('ok')
+    expect(await say('')).toBe('Back at 3')
+
+    // and the README's script, word for word, on a socket where it looks for one
+    const readme = readFileSync(join(APP_FIXTURES, '../../../../sdk/examples/status/README.md'), 'utf8')
+    const script = /```sh\n([\s\S]*?)```/.exec(readme)![1]
+    const dir = mkdtempSync(join(tmpdir(), 'maki-status-'))
+    const there = await serveBridge(async (r) => link.fromBrowser(await forWindow(r)), join(dir, `maki-${userInfo().uid}.sock`))
+    try {
+      const out = await new Promise<string>((ok, fail) =>
+        execFile('bash', ['-c', script], { env: { ...process.env, XDG_RUNTIME_DIR: dir } }, (e, stdout) => (e ? fail(e) : ok(stdout)))
+      )
+      expect(out.trim().split('\n')).toEqual(['ok', 'ok', 'Back at 3'])
+    } finally {
+      there.close()
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 
