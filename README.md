@@ -114,7 +114,8 @@ MAKI_LIVE=1 npm test # also a real sync through the real Roughtime servers
 MAKI_BROWSERS=1 npx vitest run extension/src/real-browsers.test.ts
                      # the extension in headless Chromium and Firefox, in throwaway profiles
 MAKI_E2E=1 npx vitest run src/e2e
-                     # the app itself, offscreen: the Wallets page sends from each account
+                     # the app itself, offscreen, pressed through: the Wallets page sends from
+                     # each account (and speeds one up), the Apps page installs and removes
 ```
 
 The real-browser test uses Playwright's Chromium from `~/.cache/ms-playwright` (or
