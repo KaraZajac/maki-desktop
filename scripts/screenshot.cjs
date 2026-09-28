@@ -3,7 +3,8 @@
 // nothing to capture, so this uses a hidden offscreen window on the normal one.)
 //
 //   npm run build && npx electron scripts/screenshot.cjs OUT.png [--fake] [--size WxH]
-//       [--click TEXT | --fill PLACEHOLDER=TEXT | --choose VALUE | --wait MS | --until TEXT]...
+//       [--click TEXT | --fill PLACEHOLDER=TEXT | --choose VALUE | --wait MS | --until TEXT |
+//        --gone TEXT]...
 //       [--scroll TEXT]
 //       [--dump FILE]
 //
@@ -12,7 +13,8 @@
 // TEXT (and waits for the fake to approve), --fill types TEXT into the field whose placeholder is
 // PLACEHOLDER, --choose picks VALUE in the first list that has it, --wait waits MS (for the
 // network, say), --until waits for the page to say TEXT (two
-// minutes at most; if it never does, the capture is made and the exit code is 1). --scroll brings
+// minutes at most; if it never does, the capture is made and the exit code is 1), --gone for it to
+// stop saying TEXT (the same way). --scroll brings
 // the section whose heading includes TEXT to the top before the capture; --size WIDTHxHEIGHT sizes
 // the window first (a tall one shows a whole page); --dump writes the page's text to FILE.
 const { app, BrowserWindow } = require('electron')
@@ -26,7 +28,9 @@ const after = (flag) => argv.flatMap((a, i) => (a === flag && argv[i + 1] ? [arg
 const scroll = after('--scroll')[0]
 const size = after('--size')[0]?.split('x').map(Number)
 const steps = argv.flatMap((a, i) =>
-  ['--click', '--fill', '--choose', '--wait', '--until'].includes(a) && argv[i + 1] ? [[a, argv[i + 1]]] : []
+  ['--click', '--fill', '--choose', '--wait', '--until', '--gone'].includes(a) && argv[i + 1]
+    ? [[a, argv[i + 1]]]
+    : []
 )
 const dump = after('--dump')[0]
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -53,9 +57,10 @@ app.whenReady().then(async () => {
   for (const [step, arg] of steps) {
     if (step === '--wait') {
       await wait(Number(arg))
-    } else if (step === '--until') {
+    } else if (step === '--until' || step === '--gone') {
       const until = Date.now() + 120_000
-      while (!(await run(`document.body.innerText.includes(${JSON.stringify(arg)})`))) {
+      const want = step === '--until'
+      while ((await run(`document.body.innerText.includes(${JSON.stringify(arg)})`)) !== want) {
         if (Date.now() > until) {
           missing = arg
           break
@@ -97,7 +102,9 @@ app.whenReady().then(async () => {
   writeFileSync(out, (await win.webContents.capturePage()).toPNG())
   if (dump) writeFileSync(dump, await run('document.body.innerText'))
   if (missing !== null) {
-    console.error(`the page never said ${JSON.stringify(missing)}`)
+    console.error(
+      `the page never ${steps.some(([s, a]) => s === '--gone' && a === missing) ? 'stopped saying' : 'said'} ${JSON.stringify(missing)}`
+    )
     app.exit(1)
     return
   }

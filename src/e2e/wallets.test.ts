@@ -13,10 +13,10 @@ import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { hex } from '@scure/base'
 import * as btc from '@scure/btc-signer'
 import { hash160 } from '@scure/btc-signer/utils.js'
-import { execFile, execFileSync, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import type { ChildProcess } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BtcWallet, parseDescriptor } from '../shared/btc-wallet'
 import { MakiClient } from '../shared/client'
@@ -32,21 +32,20 @@ import {
 } from '../shared/stand-ins'
 import { FAKE_BUILT, startFake, TcpTransport } from '../shared/test-support'
 import { tokensOn } from '../shared/tokens'
+import { build, drive as driveApp, E2E } from './drive'
 
-const DESKTOP = resolve(__dirname, '../..')
-const ELECTRON = join(DESKTOP, 'node_modules/electron/dist/electron')
 const ACCOUNT = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
 /** Where the stand-in's maki.eth points. */
 const PAYEE_ETH = MAKI_ETH
 /** BIP173's own example address: somewhere to send that isn't the account's. */
 const PAYEE_BTC = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'
 
-describe.skipIf(!process.env.MAKI_E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
+describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
   let fake: { port: number; proc: ChildProcess }
   let home = ''
 
   beforeAll(async () => {
-    execFileSync('npm', ['run', '-s', 'build'], { cwd: DESKTOP, stdio: 'ignore' })
+    build()
     fake = await startFake()
     home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
   }, 180_000)
@@ -55,54 +54,8 @@ describe.skipIf(!process.env.MAKI_E2E || !FAKE_BUILT)('the Wallets page, end to 
     if (home) rmSync(home, { recursive: true, force: true })
   })
 
-  /** The app, clicked through `steps`; what its page said at the end. */
-  const drive = (steps: string[], env: Record<string, string>): Promise<string> => {
-    const page = join(home, 'page.png')
-    const text = join(home, 'page.txt')
-    const wayland = process.env.WAYLAND_DISPLAY
-    return new Promise((ok, fail) =>
-      execFile(
-        ELECTRON,
-        [
-          join(DESKTOP, 'scripts/screenshot.cjs'),
-          page,
-          '--fake',
-          '--size',
-          '1080x1600',
-          ...steps,
-          '--dump',
-          text
-        ],
-        {
-          cwd: DESKTOP,
-          env: {
-            ...process.env,
-            // its settings, sockets and anything else it keeps, in here
-            HOME: home,
-            XDG_CONFIG_HOME: join(home, '.config'),
-            XDG_RUNTIME_DIR: home,
-            // the display, wherever it was: its name alone is relative to the runtime directory
-            ...(wayland && !wayland.startsWith('/') && process.env.XDG_RUNTIME_DIR
-              ? { WAYLAND_DISPLAY: join(process.env.XDG_RUNTIME_DIR, wayland) }
-              : {}),
-            MAKI_FAKE_PORT: String(fake.port),
-            ...env
-          },
-          timeout: 170_000
-        },
-        (e, _out, err) => {
-          let said = ''
-          try {
-            said = readFileSync(text, 'utf8')
-          } catch {
-            // nothing to read: it didn't get that far
-          }
-          if (e) fail(new Error(`${err}\n--- the page said:\n${said}`))
-          else ok(said)
-        }
-      )
-    )
-  }
+  const drive = (steps: string[], env: Record<string, string>): Promise<string> =>
+    driveApp(home, fake.port, steps, env)
 
   it('adds the Bitcoin account, shows its coin, and sends from it: maki signs, the chain gets it', async () => {
     // the account's first receiving address holds 50,000 satoshis
