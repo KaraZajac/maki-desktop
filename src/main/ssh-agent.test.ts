@@ -3,9 +3,9 @@
  * fake maki running maki's own SSH app (the SDK's example, as maki runs it).
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { connect, type Server } from 'node:net'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { connect, createServer, type Server } from 'node:net'
+import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from '../shared/client'
@@ -13,6 +13,21 @@ import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport }
 import { serveAgent, SSH_APP } from './ssh-agent'
 
 const OPENSSH = spawnSync('ssh-keygen', ['-?']).error === undefined && spawnSync('ssh-add', ['-h']).error === undefined
+const GIT = spawnSync('git', ['--version']).error === undefined
+/** sshd, to sign in to: it must be run by its absolute path */
+const SSHD = ['/usr/sbin/sshd', '/usr/bin/sshd'].find((p) => existsSync(p))
+
+/** A free port on this computer. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer()
+    s.once('error', reject)
+    s.listen(0, '127.0.0.1', () => {
+      const port = (s.address() as { port: number }).port
+      s.close(() => resolve(port))
+    })
+  })
+}
 
 /**
  * A tool run to the end, without blocking: the agent answering it runs in this same process.
@@ -105,6 +120,92 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !OPENSSH)("maki desktop's 
     // not for another namespace
     const other = await run('ssh-keygen', ['-Y', 'check-novalidate', '-n', 'file', '-s', join(dir, 'commit.sig')], env(), commit)
     expect(other.status).not.toBe(0)
+  })
+
+  it.skipIf(!GIT)('signs a git commit, which git verifies', async () => {
+    const key = (await run('ssh-add', ['-L'], env())).stdout.trim()
+    const repo = join(dir, 'repo')
+    writeFileSync(join(dir, 'allowed_signers'), `maki@example.com namespaces="git" ${key}\n`)
+    // git with no settings but these: nothing of the computer's own
+    const gitEnv = {
+      ...env(),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: join(dir, 'gitconfig'),
+      GIT_AUTHOR_NAME: 'maki',
+      GIT_AUTHOR_EMAIL: 'maki@example.com',
+      GIT_COMMITTER_NAME: 'maki',
+      GIT_COMMITTER_EMAIL: 'maki@example.com'
+    }
+    const git = (...args: string[]): ReturnType<typeof run> => run('git', ['-C', repo, ...args], gitEnv)
+    expect((await run('git', ['init', '-q', repo], gitEnv)).status).toBe(0)
+    for (const [k, v] of [
+      ['gpg.format', 'ssh'],
+      ['user.signingkey', `key::${key}`],
+      ['gpg.ssh.allowedSignersFile', join(dir, 'allowed_signers')]
+    ]) {
+      expect((await git('config', k, v)).status).toBe(0)
+    }
+    const commit = await git('commit', '-q', '-S', '--allow-empty', '-m', 'signed on maki')
+    expect(commit.status, commit.stderr).toBe(0)
+    const verify = await git('verify-commit', 'HEAD')
+    expect(verify.status, verify.stderr).toBe(0)
+    expect(verify.stderr).toMatch(/Good "git" signature for maki@example.com with ED25519 key SHA256:/)
+  })
+
+  it.skipIf(!SSHD)('signs in over ssh, with the key on maki', async () => {
+    // an sshd of this test's own, run as this user: it takes only this user, with maki's key
+    const key = (await run('ssh-add', ['-L'], env())).stdout
+    writeFileSync(join(dir, 'authorized_keys'), key)
+    // maki's key named outright: ssh finds ~/.ssh from the user database, not HOME, and without
+    // an identity of its own to offer it would reach for the computer's keys
+    writeFileSync(join(dir, 'maki.pub'), key)
+    const hostKey = await run('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', join(dir, 'host_key')], env())
+    expect(hostKey.status, hostKey.stderr).toBe(0)
+    const port = await freePort()
+    const config = [
+      `Port ${port}`,
+      'ListenAddress 127.0.0.1',
+      `HostKey ${join(dir, 'host_key')}`,
+      `PidFile ${join(dir, 'sshd.pid')}`,
+      `AuthorizedKeysFile ${join(dir, 'authorized_keys')}`,
+      'StrictModes no',
+      'UsePAM no',
+      'PasswordAuthentication no',
+      'KbdInteractiveAuthentication no',
+      'PubkeyAuthentication yes',
+      'LogLevel ERROR'
+    ]
+    writeFileSync(join(dir, 'sshd_config'), config.join('\n') + '\n')
+    const sshd = spawn(SSHD!, ['-D', '-e', '-f', join(dir, 'sshd_config')], { env: env() })
+    let sshdSaid = ''
+    sshd.stderr.on('data', (d: Buffer) => (sshdSaid += d.toString()))
+    try {
+      // until it listens
+      for (let i = 0; i < 50; i++) {
+        const up = await new Promise<boolean>((resolve) => {
+          const s = connect(port, '127.0.0.1', () => (s.destroy(), resolve(true)))
+          s.on('error', () => resolve(false))
+        })
+        if (up) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      const options = [
+        ['BatchMode', 'yes'],
+        ['StrictHostKeyChecking', 'accept-new'],
+        ['UserKnownHostsFile', join(dir, 'known_hosts')],
+        ['GlobalKnownHostsFile', '/dev/null'],
+        ['IdentityAgent', sock],
+        ['IdentityFile', join(dir, 'maki.pub')],
+        ['IdentitiesOnly', 'yes'],
+        ['PreferredAuthentications', 'publickey']
+      ].flatMap(([k, v]) => ['-o', `${k}=${v}`])
+      const target = `${userInfo().username}@127.0.0.1`
+      const login = await run('ssh', ['-F', '/dev/null', '-p', String(port), ...options, target, 'echo signed in with maki'], env())
+      expect(login.status, `${login.stderr}\n${sshdSaid}`).toBe(0)
+      expect(login.stdout).toBe('signed in with maki\n')
+    } finally {
+      sshd.kill()
+    }
   })
 
   it('fails what the app refuses, and anything when maki is away', async () => {
