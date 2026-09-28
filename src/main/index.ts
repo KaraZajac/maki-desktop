@@ -242,9 +242,11 @@ function ipc(): void {
     // only the networks maki desktop knows: the renderer can't send this process anywhere else
     const network = NETWORKS.find((n) => n.rpc === url)
     if (!network) return { error: { code: 4901, message: 'unknown network' } }
-    // its servers in turn: the next when one can't be reached, not when one answers "no"
+    // its servers in turn: the next when one can't be reached, not when one answers "no";
+    // MAKI_ETH_RPC (tests) is a server to use instead, for every network
     let unreachable = ''
-    for (const server of [network.rpc, ...network.fallbacks]) {
+    const servers = process.env['MAKI_ETH_RPC'] ? [process.env['MAKI_ETH_RPC']] : [network.rpc, ...network.fallbacks]
+    for (const server of servers) {
       try {
         const res = await fetch(server, {
           method: 'POST',
@@ -267,12 +269,13 @@ function ipc(): void {
   const ESPLORA = { bitcoin: 'https://mempool.space/api', test: 'https://mempool.space/testnet4/api' }
   const ESPLORA_PATH = /^\/(address\/[a-zA-Z0-9]{14,90}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
   // a wallet's first look can be a hundred requests, and mempool.space turns away bursts (and
-  // then stops answering for a while): two a second, and a long wait when it asks for one
-  const esplora = polite((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }), {
-    atOnce: 2,
-    perSecond: 2,
-    wait: 5000
-  })
+  // then stops answering for a while): two a second, and a long wait when it asks for one.
+  // MAKI_ESPLORA (tests, your own server) is an Esplora API to use instead, for both networks.
+  const ownEsplora = process.env['MAKI_ESPLORA']
+  const esplora = polite(
+    (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
+    ownEsplora ? { atOnce: 4 } : { atOnce: 2, perSecond: 2, wait: 5000 }
+  )
   ipcMain.handle('btc:esplora', async (_e, network: unknown, path: unknown, body?: unknown) => {
     try {
       if (network !== 'bitcoin' && network !== 'test') throw new Error('which network?')
@@ -280,7 +283,7 @@ function ipc(): void {
       if (!post && (typeof path !== 'string' || !ESPLORA_PATH.test(path))) throw new Error('not something the wallet asks')
       let res: Response
       try {
-        res = await esplora(`${ESPLORA[network]}${path}`, {
+        res = await esplora(`${ownEsplora ?? ESPLORA[network]}${path}`, {
           method: post ? 'POST' : 'GET',
           body: post ? (body as string) : undefined,
           headers: post ? { 'content-type': 'text/plain' } : undefined
@@ -347,7 +350,8 @@ function ipc(): void {
   ipcMain.handle('dev:open', (e, host: string, port: number) => {
     devSocket?.destroy()
     return new Promise<void>((resolve, reject) => {
-      const socket = connect(port, host)
+      // MAKI_FAKE_PORT: a fake maki somewhere other than 7878 (tests start theirs on any free port)
+      const socket = connect(Number(process.env['MAKI_FAKE_PORT']) || port, host)
       devSocket = socket
       socket.once('connect', () => resolve())
       socket.once('error', reject)

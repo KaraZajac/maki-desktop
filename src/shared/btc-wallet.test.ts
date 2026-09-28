@@ -12,58 +12,9 @@ import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { BtcAccount, Network } from './protocol'
-import { BtcWallet, parseDescriptor, walletKey, type Esplora } from './btc-wallet'
+import { BtcWallet, parseDescriptor, walletKey } from './btc-wallet'
+import { pretendChain } from './stand-ins'
 import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
-
-/** A chain that holds one coin: `value` satoshis to `address`, in a transaction of its own. */
-function pretendChain(address: string, value: number, network = btc.NETWORK) {
-  const funding = new btc.Transaction({ allowUnknownInputs: true })
-  funding.addInput({ txid: '11'.repeat(32), index: 0, finalScriptSig: new Uint8Array() })
-  funding.addOutputAddress(address, BigInt(value), network)
-  const raw = funding.hex
-  const txid = funding.id
-  const broadcast: string[] = []
-  const empty = { funded_txo_sum: 0, spent_txo_sum: 0, tx_count: 0 }
-  const esplora: Esplora = async (_network, path, body) => {
-    if (path === '/tx' && body) {
-      broadcast.push(body)
-      return btc.Transaction.fromRaw(hex.decode(body)).id
-    }
-    if (path === `/tx/${txid}/hex`) return raw
-    if (path === '/v1/fees/recommended')
-      return JSON.stringify({
-        fastestFee: 9,
-        halfHourFee: 5,
-        hourFee: 3,
-        economyFee: 2,
-        minimumFee: 1
-      })
-    const m = /^\/address\/([^/]+)(\/utxo|\/txs)?$/.exec(path)
-    if (!m) throw new Error(`the pretend chain has no ${path}`)
-    const ours = m[1] === address
-    if (m[2] === '/utxo')
-      return JSON.stringify(ours ? [{ txid, vout: 0, value, status: { confirmed: true } }] : [])
-    if (m[2] === '/txs')
-      return JSON.stringify(
-        ours
-          ? [
-              {
-                txid,
-                fee: 0,
-                status: { confirmed: true, block_time: 1_790_000_000 },
-                vin: [{ prevout: null }],
-                vout: [{ scriptpubkey_address: address, value }]
-              }
-            ]
-          : []
-      )
-    return JSON.stringify({
-      chain_stats: ours ? { funded_txo_sum: value, spent_txo_sum: 0, tx_count: 1 } : empty,
-      mempool_stats: empty
-    })
-  }
-  return { esplora, broadcast, txid }
-}
 
 describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
   let fake: { port: number; proc: ChildProcess }

@@ -113,6 +113,8 @@ npm test             # unit tests, plus integration tests against the fake maki 
 MAKI_LIVE=1 npm test # also a real sync through the real Roughtime servers
 MAKI_BROWSERS=1 npx vitest run extension/src/real-browsers.test.ts
                      # the extension in headless Chromium and Firefox, in throwaway profiles
+MAKI_E2E=1 npx vitest run src/e2e
+                     # the app itself, offscreen: the Wallets page sends from each account
 ```
 
 The real-browser test uses Playwright's Chromium from `~/.cache/ms-playwright` (or
@@ -132,18 +134,29 @@ Tests look for it at `../xous-core/target/debug/examples/fake_maki` (the maki ch
 at `$MAKI_FAKE`.
 
 The maki store comes from its repository, `KaraZajac/maki-apps` (its `store/` folder, on GitHub's
-file server). While that repository is private, give the app a GitHub token that can read it, which
-it sends to GitHub's file server and nowhere else; `MAKI_STORE` points it at another copy of the
-store, a folder or an https address:
+file server). `MAKI_STORE` points the app at another copy of the store, a folder or an https
+address; a copy in a private GitHub repository needs a GitHub token that can read it, which the app
+sends to GitHub's file server and nowhere else:
 
 ```sh
-MAKI_STORE_TOKEN=$(gh auth token) npm run dev
 MAKI_STORE=../apps/store npm run dev          # a clone of maki-apps beside this one
+MAKI_STORE_TOKEN=$(gh auth token) MAKI_STORE=https://raw.githubusercontent.com/you/private-copy/main/store/ npm run dev
+```
+
+The wallets read the networks through public servers: mempool.space's Esplora API for Bitcoin, and
+each Ethereum network's public JSON-RPC servers. For tests, or your own servers:
+
+```sh
+MAKI_ESPLORA=http://127.0.0.1:3002/api npm run dev   # an Esplora API (your own node's), both networks
+MAKI_ETH_RPC=http://127.0.0.1:8545 npm run dev        # one JSON-RPC server, for every network
+MAKI_FAKE_PORT=7879 npm run dev                       # the fake maki on another port
 ```
 
 To look at the UI without a window appearing: `npm run build && npx electron scripts/screenshot.cjs
-out.png [--fake] [--click TEXT]... [--scroll TEXT] [--size WxH]`, e.g. `--fake --click Wallets
---click "Get the account"`, or `--fake --click Apps --size 1080x1500` for the whole Apps page.
+out.png [--fake] [--size WxH] [--click TEXT | --fill PLACEHOLDER=TEXT | --wait MS | --until TEXT]...
+[--scroll TEXT] [--dump FILE]`, e.g. `--fake --click Wallets --click "Add from maki" --until BTC`,
+or `--fake --click Apps --size 1080x1500` for the whole Apps page. The steps run in order; the
+script's header says what each does. The end-to-end tests drive the app with it.
 
 ## Layout
 
@@ -154,6 +167,10 @@ src/shared/link.ts       the link: probe, heartbeat, auto sync, drop; browser re
 src/shared/bridge-types.ts  what the extension may ask, checked field by field
 src/shared/psbt.ts       PSBTs as wallet software hands them over: binary, base64, hex
 src/shared/ethereum.ts   the EIP-1193 methods sites call, answered from maki and the network
+src/shared/btc-wallet.ts the Bitcoin wallet: descriptors, the gap-limit scan, PSBTs maki reads
+src/shared/eth-wallet.ts the Ethereum wallet: holdings on each network, sends through maki
+src/shared/tokens.ts     the tokens maki knows by contract (the firmware's table, kept in step)
+src/shared/polite.ts     asking a public server politely: a few at a time, and waiting when told
 src/shared/rlp.ts        RLP, and the unsigned EIP-1559 transactions maki signs
 extension/src/inpage.ts  the page's Ethereum provider (the page's own world, EIP-6963)
 src/main/                tray, window, Roughtime UDP relay, start-at-login, dev TCP transport
