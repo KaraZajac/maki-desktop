@@ -100,6 +100,7 @@ export function AppsPage({
   const [chosen, setChosen] = useState<Chosen | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
+  // installing and removing need maki; looking at a bundle or the store doesn't
   const idle = linked && busy === null
   const store = link.store
   const index = store?.index ?? null
@@ -161,7 +162,7 @@ export function AppsPage({
         title="Apps"
         lede="Apps for maki: from the maki store, reviewed and built from their source, or from a .maki file anyone can make. maki shows you each one on its own screen before it installs it."
         actions={
-          <Button kind="ghost" glyph="file" disabled={!idle} onClick={() => void choose()}>
+          <Button kind="ghost" glyph="file" disabled={busy !== null} onClick={() => void choose()}>
             Install from file…
           </Button>
         }
@@ -298,7 +299,7 @@ export function AppsPage({
         storePrivate={storePrivate}
         installed={apps}
         space={space}
-        disabled={!idle}
+        disabled={busy !== null}
         busy={busy}
         choose={(a) => void chooseFromStore(a)}
       />
