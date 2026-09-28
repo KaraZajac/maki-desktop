@@ -126,6 +126,32 @@ describe.skipIf(!FAKE_BUILT)('the Ethereum wallet, with the fake maki', () => {
     )
   })
 
+  it('sends all of a coin: what it holds less the most the fee could be, with those fees', async () => {
+    const net = stand_in()
+    const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
+    await wallet.connect()
+    const { amount, fees } = await wallet.most(NETWORKS[1], PAYEE)
+    // 1 ETH; gas 50,000 and a fifth; the base fee (1 gwei) doubled, and the tip (1 gwei)
+    expect(fees).toEqual({
+      gas: 60_000n,
+      maxFeePerGas: 3_000_000_000n,
+      maxPriorityFeePerGas: 1_000_000_000n
+    })
+    expect(amount).toBe(10n ** 18n - 60_000n * 3_000_000_000n)
+    await wallet.send(NETWORKS[1], PAYEE, amount, null, fees)
+    const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')![2][0] as string
+    const { fields } = signedBy(raw)
+    const n = (b: Uint8Array): bigint => BigInt('0x' + (toHex(b).slice(2) || '0'))
+    // chain, tip, most fee, gas: the value and the gas at the most it costs are all of it
+    expect([n(fields[0]), n(fields[2]), n(fields[3]), n(fields[4])]).toEqual([
+      8453n,
+      1_000_000_000n,
+      3_000_000_000n,
+      60_000n
+    ])
+    expect(n(fields[6]) + n(fields[4]) * n(fields[3])).toBe(10n ** 18n)
+  })
+
   it('sends a coin on another network, and turns away what it can’t send', async () => {
     const net = stand_in()
     const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)

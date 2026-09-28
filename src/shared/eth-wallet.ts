@@ -15,6 +15,13 @@ import { tokensOn, type Token } from './tokens'
 
 export { WALLET_SITE }
 
+/** A transaction's gas limit and fees, in wei. */
+export interface Fees {
+  gas: bigint
+  maxFeePerGas: bigint
+  maxPriorityFeePerGas: bigint
+}
+
 /** So much of a network's coin (`token` null) or of a token. */
 export interface Holding {
   token: Token | null
@@ -158,6 +165,30 @@ export class EthWallet {
   }
 
   /**
+   * The most of the network's coin the account can send to `to`, and the fees that leaves room
+   * for: what it holds, less the gas it might use at the most it might cost (the base fee
+   * doubling, as the provider allows). Send it with those fees, or it may not cover them.
+   */
+  async most(network: EthNetwork, to: string): Promise<{ amount: bigint; fees: Fees }> {
+    const from = await this.account()
+    if (!from) throw new Error('connect maki desktop to the account first')
+    const call = (method: string, params: unknown[]): Promise<unknown> =>
+      this.rpc(network.rpc, method, params)
+    const balance = quantity(await call('eth_getBalance', [from, 'latest']))
+    // the same room over the estimate the provider leaves
+    const gas = (quantity(await call('eth_estimateGas', [{ from, to, value: '0x0' }])) * 6n) / 5n
+    const block = (await call('eth_getBlockByNumber', ['latest', false])) as {
+      baseFeePerGas?: unknown
+    }
+    const maxPriorityFeePerGas = quantity(await call('eth_maxPriorityFeePerGas', []))
+    const maxFeePerGas = quantity(block.baseFeePerGas ?? '0x0') * 2n + maxPriorityFeePerGas
+    const amount = balance - gas * maxFeePerGas
+    if (amount <= 0n)
+      throw new Error(`the account doesn’t hold enough ${network.unit} to pay the fee`)
+    return { amount, fees: { gas, maxFeePerGas, maxPriorityFeePerGas } }
+  }
+
+  /**
    * Send `amount` (in its smallest units) of the network's coin, or of a token, to `to`: maki
    * shows it and signs it, and the network gets it. The transaction's hash.
    */
@@ -165,7 +196,8 @@ export class EthWallet {
     network: EthNetwork,
     to: string,
     amount: bigint,
-    token: Token | null
+    token: Token | null,
+    fees?: Fees
   ): Promise<string> {
     const from = await this.account()
     if (!from) throw new Error('connect maki desktop to the account first')
@@ -176,9 +208,17 @@ export class EthWallet {
     await this.eth.request(WALLET_SITE, 'wallet_switchEthereumChain', [
       { chainId: toQuantity(network.chainId) }
     ])
-    const tx = token
-      ? { from, to: token.contract, value: '0x0', data: transferData(to, amount) }
-      : { from, to, value: toQuantity(amount) }
+    const tx = {
+      ...(token
+        ? { from, to: token.contract, value: '0x0', data: transferData(to, amount) }
+        : { from, to, value: toQuantity(amount) }),
+      // fees fixed beforehand (all of a coin), rather than the provider's own
+      ...(fees && {
+        gas: toQuantity(fees.gas),
+        maxFeePerGas: toQuantity(fees.maxFeePerGas),
+        maxPriorityFeePerGas: toQuantity(fees.maxPriorityFeePerGas)
+      })
+    }
     return (await this.eth.request(WALLET_SITE, 'eth_sendTransaction', [tx])) as string
   }
 }

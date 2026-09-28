@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Link } from '@shared/link'
 import type { EthNetwork } from '@shared/ethereum'
-import { isAddress, isEnsName, type Holding, type NetworkHoldings } from '@shared/eth-wallet'
+import {
+  isAddress,
+  isEnsName,
+  type Fees,
+  type Holding,
+  type NetworkHoldings
+} from '@shared/eth-wallet'
 import { money, worth } from '@shared/prices'
 import { usePrices } from './prices-state'
 import { parseUnits, units, type Token } from '@shared/tokens'
@@ -153,6 +159,7 @@ export function EthereumWallet({
       {panel === 'send' && all && (
         <Send
           link={link}
+          account={address}
           holdings={some}
           linked={linked}
           sent={() => setTimeout(() => void look(), 4000)}
@@ -248,12 +255,14 @@ export function EthereumWallet({
 
 function Send({
   link,
+  account,
   holdings,
   linked,
   sent,
   close
 }: {
   link: Link
+  account: string
   holdings: NetworkHoldings[]
   linked: boolean
   sent: () => void
@@ -273,9 +282,12 @@ function Send({
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [done, setDone] = useState<{ hash: string; what: string; network: EthNetwork } | null>(null)
+  // all of a coin: the amount, and the fees it leaves room for, which the send keeps to
+  const [allOf, setAllOf] = useState<{ amount: bigint; fees: Fees } | null>(null)
 
   // another network: its coin, to start with
   useEffect(() => setAsset('coin'), [chain])
+  useEffect(() => setAllOf(null), [chain, asset])
 
   const amount = parseUnits(amountText, decimals)
   const typed = to.trim()
@@ -313,7 +325,8 @@ function Send({
     setBusy(true)
     setProblem(null)
     try {
-      const hash = await link.ethWallet.send(network, address, amount!, token)
+      const fees = !token && allOf?.amount === amount ? allOf.fees : undefined
+      const hash = await link.ethWallet.send(network, address, amount!, token, fees)
       if (name) link.note(`${name} was ${address} when it was paid`)
       const what = `${units(amount!, decimals)} ${symbol}`
       link.note(`sent ${what} on ${network.name}: ${hash}`)
@@ -421,22 +434,39 @@ function Send({
             inputMode="decimal"
             value={amountText}
             disabled={busy}
-            onChange={(e) => setAmountText(e.target.value)}
+            onChange={(e) => {
+              setAmountText(e.target.value)
+              setAllOf(null)
+            }}
           />
           {holding && (
             <div className="mt-1.5 flex items-center justify-between text-xs text-overlay1">
               <span>
                 has {units(holding.amount, decimals)} {symbol}
               </span>
-              {token && (
-                <button
-                  className="font-mono text-peach hover:text-yellow"
-                  disabled={busy}
-                  onClick={() => setAmountText(units(holding.amount, decimals))}
-                >
-                  all of it
-                </button>
-              )}
+              <button
+                className="font-mono text-peach hover:text-yellow"
+                disabled={busy}
+                onClick={async () => {
+                  if (token) {
+                    setAmountText(units(holding.amount, decimals))
+                    return
+                  }
+                  // the coin pays the fee too: what's left once the most it could be is set aside
+                  try {
+                    const most = await link.ethWallet.most(
+                      network,
+                      isAddress(address) ? address : account
+                    )
+                    setAmountText(units(most.amount, 18))
+                    setAllOf(most)
+                  } catch (e) {
+                    setProblem((e as Error).message)
+                  }
+                }}
+              >
+                all of it
+              </button>
             </div>
           )}
         </div>
