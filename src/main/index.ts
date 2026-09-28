@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { fromBase64, toBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { polite } from '../shared/polite'
+import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
 import { forWindow, serveBridge, socketPath } from './bridge'
@@ -300,6 +301,27 @@ function ipc(): void {
       return { error: (e as Error).message }
     }
   })
+  // what the coins are worth, if the owner asks to see it: CoinGecko, the same question for
+  // everyone (every coin and token maki knows), at most once a minute a currency
+  const priced = new Map<Currency, { at: number; prices: Prices }>()
+  ipcMain.handle('prices:get', async (_e, currency: unknown) => {
+    try {
+      if (!CURRENCIES.includes(currency as Currency)) throw new Error('which currency?')
+      const c = currency as Currency
+      const kept = priced.get(c)
+      if (kept && Date.now() - kept.at < 60_000) return { prices: kept.prices }
+      const res = await fetch(pricesUrl(c), { signal: AbortSignal.timeout(15_000) }).catch(() => {
+        throw new Error('CoinGecko can’t be reached')
+      })
+      if (!res.ok) throw new Error(res.status === 429 ? 'CoinGecko is busy: prices in a minute' : `CoinGecko answered ${res.status}`)
+      const prices = readPrices(await res.json(), c)
+      priced.set(c, { at: Date.now(), prices })
+      return { prices }
+    } catch (e) {
+      return { error: (e as Error).message }
+    }
+  })
+
   const btcFile = (): string => join(app.getPath('userData'), 'bitcoin.json')
   ipcMain.handle('btc:load', async () => {
     try {

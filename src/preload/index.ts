@@ -73,6 +73,12 @@ const api = {
     load: (): Promise<string[]> => ipcRenderer.invoke('btc:load'),
     save: (descriptors: string[]): Promise<void> => ipcRenderer.invoke('btc:save', descriptors)
   },
+  /** what the coins are worth in `currency` (CoinGecko), when the owner asks to see it */
+  prices: async (currency: import('../shared/prices').Currency): Promise<import('../shared/prices').Prices> => {
+    const r = (await ipcRenderer.invoke('prices:get', currency)) as { prices: Record<string, number> } | { error: string }
+    if ('error' in r) throw new Error(r.error)
+    return r.prices
+  },
   /** opens an https page in the browser */
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open:external', url),
   ethereum: {

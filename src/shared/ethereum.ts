@@ -19,6 +19,8 @@ export interface EthNetwork {
   fallbacks: string[]
   /** where to read an address's activity or a transaction, on the web */
   explorer: string
+  /** a network for testing, whose coin is worth nothing */
+  test?: boolean
 }
 
 /**
@@ -72,7 +74,8 @@ export const NETWORKS: EthNetwork[] = [
     unit: 'ETH',
     rpc: 'https://ethereum-sepolia-rpc.publicnode.com',
     fallbacks: [],
-    explorer: 'https://sepolia.etherscan.io'
+    explorer: 'https://sepolia.etherscan.io',
+    test: true
   }
 ]
 

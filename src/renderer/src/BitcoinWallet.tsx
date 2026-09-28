@@ -12,6 +12,8 @@ import {
 } from '@shared/btc-wallet'
 import { parseUnits, units } from '@shared/tokens'
 import { Qr } from './Qr'
+import { money, worth } from '@shared/prices'
+import { usePrices } from './prices-state'
 import { ago, Badge, Button, Field, Glyph, Segmented } from './ui'
 
 /** What each account last looked like, so coming back to the page shows it straight away. */
@@ -125,6 +127,12 @@ export function BitcoinWallet({
   const state = seen?.state ?? null
   const balance = state ? state.confirmed + state.pending : null
   const shown = state ? (all ? state.activity : state.activity.slice(0, 6)) : []
+  const { currency, prices } = usePrices()
+  const test = info.network !== 'bitcoin'
+  const inMoney = (sats: bigint): string | null => {
+    const v = currency && worth(prices, 'BTC', sats, 8, test)
+    return v !== null && v !== undefined && currency ? money(v, currency) : null
+  }
 
   return (
     <div>
@@ -145,6 +153,11 @@ export function BitcoinWallet({
                   {btcAmount(balance)}
                 </span>
                 <span className="ml-2 text-base text-overlay1">{unit}</span>
+                {inMoney(balance) && (
+                  <span className="ml-3 font-sans text-base text-subtext0">
+                    ≈ {inMoney(balance)}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -441,6 +454,11 @@ function Send({
   sent: () => void
   close: () => void
 }): React.JSX.Element {
+  const { currency, prices } = usePrices()
+  const inMoney = (sats: bigint): string | null => {
+    const v = currency && worth(prices, 'BTC', sats, 8, unit !== 'BTC')
+    return v !== null && v !== undefined && currency ? money(v, currency) : null
+  }
   const [to, setTo] = useState('')
   const [amountText, setAmountText] = useState('')
   const [everything, setEverything] = useState(false)
@@ -623,11 +641,15 @@ function Send({
               <div>
                 <span className="inline-block w-16 text-overlay1">pays</span>
                 {btcAmount(p.sent)} {unit}
+                {inMoney(p.sent) && <span className="text-overlay0"> ≈ {inMoney(p.sent)}</span>}
               </div>
               <div>
                 <span className="inline-block w-16 text-overlay1">fee</span>
                 {satoshis(p.fee)}
-                <span className="text-overlay0"> · {p.vbytes} vB</span>
+                <span className="text-overlay0">
+                  {' '}
+                  · {p.vbytes} vB{inMoney(p.fee) && ` ≈ ${inMoney(p.fee)}`}
+                </span>
               </div>
               {p.change > 0n && (
                 <div>

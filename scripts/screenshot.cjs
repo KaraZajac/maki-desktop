@@ -3,13 +3,15 @@
 // nothing to capture, so this uses a hidden offscreen window on the normal one.)
 //
 //   npm run build && npx electron scripts/screenshot.cjs OUT.png [--fake] [--size WxH]
-//       [--click TEXT | --fill PLACEHOLDER=TEXT | --wait MS | --until TEXT]... [--scroll TEXT]
+//       [--click TEXT | --fill PLACEHOLDER=TEXT | --choose VALUE | --wait MS | --until TEXT]...
+//       [--scroll TEXT]
 //       [--dump FILE]
 //
 // --fake connects to a fake maki on 127.0.0.1:7878 first (start it beforehand; MAKI_FAKE_PORT for
 // another port). Then the steps, in order: --click presses the first button whose text includes
 // TEXT (and waits for the fake to approve), --fill types TEXT into the field whose placeholder is
-// PLACEHOLDER, --wait waits MS (for the network, say), --until waits for the page to say TEXT (two
+// PLACEHOLDER, --choose picks VALUE in the first list that has it, --wait waits MS (for the
+// network, say), --until waits for the page to say TEXT (two
 // minutes at most; if it never does, the capture is made and the exit code is 1). --scroll brings
 // the section whose heading includes TEXT to the top before the capture; --size WIDTHxHEIGHT sizes
 // the window first (a tall one shows a whole page); --dump writes the page's text to FILE.
@@ -24,7 +26,7 @@ const after = (flag) => argv.flatMap((a, i) => (a === flag && argv[i + 1] ? [arg
 const scroll = after('--scroll')[0]
 const size = after('--size')[0]?.split('x').map(Number)
 const steps = argv.flatMap((a, i) =>
-  ['--click', '--fill', '--wait', '--until'].includes(a) && argv[i + 1] ? [[a, argv[i + 1]]] : []
+  ['--click', '--fill', '--choose', '--wait', '--until'].includes(a) && argv[i + 1] ? [[a, argv[i + 1]]] : []
 )
 const dump = after('--dump')[0]
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -61,6 +63,14 @@ app.whenReady().then(async () => {
         await wait(250)
       }
       if (missing !== null) break
+    } else if (step === '--choose') {
+      await run(`(() => {
+        const select = [...document.querySelectorAll('select')].find((s) => [...s.options].some((o) => o.value === ${JSON.stringify(arg)}))
+        if (!select) return
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, ${JSON.stringify(arg)})
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })()`)
+      await wait(300)
     } else if (step === '--click') {
       await run(
         `[...document.querySelectorAll('button')].find((b) => b.textContent.includes(${JSON.stringify(arg)}))?.click()`

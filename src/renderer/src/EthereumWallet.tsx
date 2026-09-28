@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Link } from '@shared/link'
 import type { EthNetwork } from '@shared/ethereum'
-import { isAddress, type NetworkHoldings } from '@shared/eth-wallet'
+import { isAddress, type Holding, type NetworkHoldings } from '@shared/eth-wallet'
+import { money, worth } from '@shared/prices'
+import { usePrices } from './prices-state'
 import { parseUnits, units, type Token } from '@shared/tokens'
 import { Qr } from './Qr'
 import { ago, Button, Field, Glyph, readable, Segmented } from './ui'
@@ -48,6 +50,29 @@ export function EthereumWallet({
   }, [address])
 
   const all = seen?.holdings ?? null
+  const { currency, prices } = usePrices()
+  const worthOf = (h: Holding, n: NetworkHoldings): number | null =>
+    worth(
+      prices,
+      h.token ? h.token.symbol : n.network.unit,
+      h.amount,
+      h.token ? h.token.decimals : 18,
+      n.network.test
+    )
+  const value = (h: Holding, n: NetworkHoldings): string | null => {
+    const v = worthOf(h, n)
+    return v !== null && currency ? money(v, currency) : null
+  }
+  // a network's holdings together, of those with a price
+  const total = (n: NetworkHoldings): string | null => {
+    const vs = n.holdings.map((h) => worthOf(h, n)).filter((v): v is number => v !== null)
+    return vs.length > 1 && currency
+      ? money(
+          vs.reduce((a, b) => a + b, 0),
+          currency
+        )
+      : null
+  }
   const some = all?.filter((n) => n.holdings.some((h) => h.amount > 0n)) ?? []
   const none =
     all?.filter((n) => n.problem === null && !n.holdings.some((h) => h.amount > 0n)) ?? []
@@ -154,6 +179,11 @@ export function EthereumWallet({
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-[0.72rem] font-bold text-subtext1">
                         {n.network.name}
+                        {total(n) !== null && (
+                          <span className="ml-2 font-sans font-normal text-overlay1">
+                            ≈ {total(n)}
+                          </span>
+                        )}
                       </span>
                       <button
                         className="rounded-md p-1 text-overlay1 transition-colors hover:bg-surface0 hover:text-fg"
@@ -181,6 +211,11 @@ export function EthereumWallet({
                               {readable(h.amount, h.token ? h.token.decimals : 18)}
                             </span>
                             <span className="text-xs text-overlay1">
+                              {value(h, n) !== null && (
+                                <span className="mr-2 font-sans text-subtext0">
+                                  ≈ {value(h, n)}
+                                </span>
+                              )}
                               {h.token ? h.token.symbol : n.network.unit}
                             </span>
                           </li>
