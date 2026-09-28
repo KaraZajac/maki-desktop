@@ -41,11 +41,17 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     const apps = store.index!.apps
     expect(apps.map((a) => [a.name, a.kind, a.category])).toEqual([
       ['Dice', 'wasm', 'Games'],
+      ['Passphrase', 'wasm', 'Security'],
       ['Pomodoro', 'native', 'Productivity'],
       ['Sensors', 'wasm', 'Tools'],
+      ['Snake', 'wasm', 'Games'],
       ['SSH', 'wasm', 'Security'],
+      ['Status', 'wasm', 'Productivity'],
       ['Tally', 'wasm', 'Tools']
     ])
+    // what they may do, from their manifests, as the store's grid shows it
+    const status = apps.find((a) => a.name === 'Status')!
+    expect((await store.bundle(status)).manifest.permissions.map((p) => p.permission.name)).toEqual(['link'])
     const pomodoro = apps.find((a) => a.name === 'Pomodoro')!
     expect(pomodoro.source?.repo).toBe('https://github.com/KaraZajac/maki-firmware')
     expect(pomodoro.source?.commit).toMatch(/^[0-9a-f]{40}$/)
