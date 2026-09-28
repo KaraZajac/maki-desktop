@@ -34,9 +34,12 @@ export class TcpTransport implements Transport {
   }
 }
 
+/** The name the tests' fake maki goes by (a badge picks a maki roll of its own). */
+export const FAKE_NAME = 'uni'
+
 /** Start a fake maki on a free port; resolves to that port. */
 export async function startFake(args: string[] = []): Promise<{ port: number; proc: ChildProcess }> {
-  const proc = spawn(FAKE, ['127.0.0.1:0', ...args])
+  const proc = spawn(FAKE, ['127.0.0.1:0', '--name', FAKE_NAME, ...args])
   const port = await new Promise<number>((ok, fail) => {
     proc.stdout!.on('data', (d: Buffer) => {
       const m = /listening on 127\.0\.0\.1:(\d+)/.exec(d.toString())

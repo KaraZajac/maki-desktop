@@ -20,6 +20,7 @@ import {
   DEV_STORE_THERE,
   expectedTotp,
   FAKE_BUILT,
+  FAKE_NAME,
   SECRET_B32,
   startFake,
   TcpTransport
@@ -39,7 +40,7 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
 
   it('introduces itself and starts with no clock', async () => {
     const [c, t] = await client()
-    expect(await c.hello()).toEqual({ protocol: 2, name: 'maki', version: '0.2.0-fake' })
+    expect(await c.hello()).toEqual({ protocol: 2, name: FAKE_NAME, version: '0.2.0-fake' })
     expect((await c.status()).timeState).toBe(TimeState.UNSET)
     await t.close()
   })

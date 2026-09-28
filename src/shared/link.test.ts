@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { storeSource } from '../main/store-source'
 import type { Transport } from './client'
-import { DEV_STORE, DEV_STORE_THERE, FAKE_BUILT, startFake, TcpTransport as Tcp } from './test-support'
+import { DEV_STORE, DEV_STORE_THERE, FAKE_BUILT, FAKE_NAME, startFake, TcpTransport as Tcp } from './test-support'
 import { Link, PROBE_TIMEOUT_MS } from './link'
 import { TimeState } from './protocol'
 import { Store } from './store'
@@ -57,7 +57,7 @@ describe.skipIf(!FAKE_BUILT)('linking to the fake maki', () => {
     const link = new Link(noRelay) // Roughtime "offline": falls back to this computer's clock
     const t = await Tcp.open(port)
     expect(await link.attach(t, 'fake maki', { probe: true })).toBe(true)
-    expect(link.state.linked && link.state.hello.name).toBe('maki')
+    expect(link.state.linked && link.state.hello.name).toBe(FAKE_NAME)
     expect(link.report?.verified).toBe(false)
     expect(link.state.linked && link.state.status.timeState).toBe(TimeState.UNVERIFIED)
 

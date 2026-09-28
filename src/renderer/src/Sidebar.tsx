@@ -43,11 +43,11 @@ export function Sidebar({
           <span
             className={`font-mono text-[0.72rem] font-bold ${s.linked ? 'text-green' : 'text-subtext0'}`}
           >
-            {s.linked ? 'linked' : 'looking for maki…'}
+            {s.linked ? s.hello.name : 'looking for maki…'}
           </span>
         </div>
         <div className="mt-1 truncate pl-[1.1rem] font-mono text-[0.64rem] text-overlay1">
-          {s.linked ? `${s.hello.name} ${s.hello.version} · ${s.via}` : 'plug it in'}
+          {s.linked ? `maki ${s.hello.version} · ${s.via}` : 'plug it in'}
         </div>
       </div>
 

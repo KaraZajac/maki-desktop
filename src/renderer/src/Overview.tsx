@@ -18,11 +18,14 @@ function formatClock(utcMs: number, tzOffsetS: number): string {
 function Device({
   time,
   state,
-  linked
+  linked,
+  name
 }: {
   time: string | null
   state: number | null
   linked: boolean
+  /** this maki's own name, on its bar */
+  name: string
 }): React.JSX.Element {
   const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
   const tone =
@@ -86,7 +89,7 @@ function Device({
       {linked ? (
         <g filter="url(#maki-glow)" fill="#f3efe6" fontFamily={mono}>
           <text x="51" y="69" fontSize="9.5" fontWeight="700">
-            maki
+            {name}
           </text>
           <rect x="49" y="73" width="122" height="1" />
           <text
@@ -212,7 +215,12 @@ export function Overview({
       <section className="card relative overflow-hidden p-7">
         <div className="pointer-events-none absolute -top-24 -left-16 h-72 w-72 rounded-full bg-peach/10 blur-3xl" />
         <div className="relative grid grid-cols-[auto_1fr] items-center gap-10">
-          <Device time={time} state={timeState} linked={s.linked} />
+          <Device
+            time={time}
+            state={timeState}
+            linked={s.linked}
+            name={s.linked ? s.hello.name : 'maki'}
+          />
           <div className="min-w-0">
             <div className="flex items-center gap-2.5 font-mono text-[0.72rem] font-bold uppercase tracking-[0.14em]">
               <Dot on={s.linked} />
@@ -221,7 +229,7 @@ export function Overview({
               </span>
               {s.linked && (
                 <span className="text-overlay0 normal-case tracking-normal">
-                  firmware {s.hello.version}
+                  maki {s.hello.version}
                 </span>
               )}
             </div>
