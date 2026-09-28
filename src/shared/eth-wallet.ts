@@ -58,6 +58,32 @@ export function isAddress(s: string): boolean {
   return body === body.toLowerCase() || body === body.toUpperCase() || checksummed(s) === s
 }
 
+/** ENS's registry, the same address on Ethereum and its test networks. */
+export const ENS_REGISTRY = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e'
+const RESOLVER = '0x0178b8bf' // resolver(bytes32)
+const ADDR = '0x3b3b57de' // addr(bytes32)
+
+/**
+ * Whether `s` looks like an ENS name maki desktop resolves: labels of lower-case letters, digits
+ * and hyphens, ending .eth. (Names with other characters need ENSIP-15's normalization, which this
+ * doesn't do, so they aren't taken rather than being resolved wrong.)
+ */
+export const isEnsName = (s: string): boolean => /^([a-z0-9-]+\.)+eth$/.test(s)
+
+/** EIP-137's namehash: the name's node in ENS, as hex. */
+export function namehash(name: string): string {
+  let node: Uint8Array = new Uint8Array(32)
+  if (name) {
+    for (const label of name.split('.').reverse()) {
+      const joined = new Uint8Array(64)
+      joined.set(node)
+      joined.set(keccak_256(new TextEncoder().encode(label)), 32)
+      node = keccak_256(joined)
+    }
+  }
+  return '0x' + Array.from(node, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export class EthWallet {
   constructor(
     private eth: Ethereum,
@@ -111,6 +137,24 @@ export class EthWallet {
         }
       })
     )
+  }
+
+  /**
+   * The address an ENS name points to (its `addr` record, on Ethereum), or null if it points
+   * nowhere. Resolved here: maki shows the address, which it can't tie to the name itself.
+   */
+  async resolve(name: string): Promise<string | null> {
+    if (!isEnsName(name)) throw new Error('that isn’t a name maki desktop can look up')
+    const node = namehash(name).slice(2)
+    const call = async (to: string, data: string): Promise<string> => {
+      const r = await this.rpc(this.networks[0].rpc, 'eth_call', [{ to, data }, 'latest'])
+      return typeof r === 'string' && /^0x([0-9a-fA-F]{64})*$/.test(r) ? r : '0x'
+    }
+    const resolver = await call(ENS_REGISTRY, RESOLVER + node)
+    if (resolver.length < 66 || /^0x0{64}$/.test(resolver)) return null
+    const answer = await call('0x' + resolver.slice(26, 66), ADDR + node)
+    if (answer.length < 66 || /^0x0{64}$/.test(answer)) return null
+    return checksummed('0x' + answer.slice(26, 66))
   }
 
   /**

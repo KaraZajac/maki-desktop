@@ -6,8 +6,16 @@
 import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
-import { Ethereum, memoryStore, NETWORKS } from './ethereum'
-import { checksummed, EthWallet, isAddress, transferData } from './eth-wallet'
+import { Ethereum, memoryStore, NETWORKS, type Rpc } from './ethereum'
+import {
+  checksummed,
+  ENS_REGISTRY,
+  EthWallet,
+  isAddress,
+  isEnsName,
+  namehash,
+  transferData
+} from './eth-wallet'
 import { toHex } from './rlp'
 import { tokensOn } from './tokens'
 import { ethStandIn as stand_in, signedBy } from './stand-ins'
@@ -16,6 +24,48 @@ import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
 const ADDRESS = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
 const PAYEE = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
 const USDC = tokensOn(1n).find((t) => t.symbol === 'USDC')!
+
+describe('ENS names', () => {
+  it('hashes names as EIP-137 does', () => {
+    expect(namehash('')).toBe('0x' + '0'.repeat(64))
+    expect(namehash('eth')).toBe(
+      '0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae'
+    )
+    expect(namehash('foo.eth')).toBe(
+      '0xde9b09fd7c5f901e23a3f19fecc54828e9c848539801e86591bd9801b019f84f'
+    )
+  })
+
+  it('takes only names it can look up without normalizing them', () => {
+    expect(['vitalik.eth', 'a-b.c9.eth'].every(isEnsName)).toBe(true)
+    expect(['Vitalik.eth', 'vitalik.com', 'eth', 'ví.eth', '0x1234.eth '].some(isEnsName)).toBe(
+      false
+    )
+  })
+
+  it('looks a name up: its resolver in the registry, then its address there', async () => {
+    const node = namehash('maki.eth').slice(2)
+    const resolver = '0x' + '42'.repeat(20)
+    const asked: [string, string, string][] = []
+    const rpc: Rpc = async (url, method, params) => {
+      const { to, data } = params[0] as { to: string; data: string }
+      asked.push([url, to.toLowerCase(), data])
+      if (method !== 'eth_call') throw new Error(method)
+      if (to === ENS_REGISTRY && data === '0x0178b8bf' + node)
+        return '0x' + resolver.slice(2).padStart(64, '0')
+      if (to === resolver && data === '0x3b3b57de' + node)
+        return '0x' + PAYEE.slice(2).toLowerCase().padStart(64, '0')
+      return '0x' + '0'.repeat(64)
+    }
+    const wallet = new EthWallet(new Ethereum(() => null, rpc, memoryStore()), rpc)
+    expect(await wallet.resolve('maki.eth')).toBe(PAYEE)
+    // on Ethereum, whatever the network a payment goes on
+    expect(asked.every(([url]) => url === NETWORKS[0].rpc)).toBe(true)
+    // a name with no resolver, or no address, points nowhere
+    expect(await wallet.resolve('nobody.eth')).toBeNull()
+    await expect(wallet.resolve('Maki.eth')).rejects.toThrow('look up')
+  })
+})
 
 describe('addresses', () => {
   it('checks the capitals EIP-55 gives an address', () => {

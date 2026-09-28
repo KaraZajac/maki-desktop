@@ -12,6 +12,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Esplora } from './btc-wallet'
 import { NETWORKS, ProviderError, type Rpc } from './ethereum'
+import { ENS_REGISTRY, namehash } from './eth-wallet'
 import { fromHex, toHex } from './rlp'
 import { tokensOn } from './tokens'
 
@@ -273,6 +274,9 @@ export function signedBy(raw: string): { fields: Uint8Array[]; from: string } {
 }
 
 /** A network that holds 1 of its coin for everyone, and 1.5 USDC on Ethereum; it keeps what it's sent. */
+/** Where the Ethereum stand-in's one ENS name, maki.eth, points. */
+export const MAKI_ETH = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+
 export function ethStandIn(): { rpc: Rpc; sent: [string, string, unknown[]][] } {
   const sent: [string, string, unknown[]][] = []
   const answers: Record<string, unknown> = {
@@ -288,10 +292,17 @@ export function ethStandIn(): { rpc: Rpc; sent: [string, string, unknown[]][] } 
     rpc: async (url, method, params) => {
       sent.push([url, method, params])
       if (method === 'eth_call') {
-        const to = (params[0] as { to: string }).to
+        const { to, data } = params[0] as { to: string; data: string }
+        const word = (hex: string): string =>
+          `0x${hex.replace(/^0x/, '').toLowerCase().padStart(64, '0')}`
+        // ENS, which has one name: the registry's resolver for it, and its address there
+        const node = namehash('maki.eth').slice(2)
+        const resolver = '0x' + '42'.repeat(20)
+        if (to === ENS_REGISTRY && data === `0x0178b8bf${node}`) return word(resolver)
+        if (to === resolver && data === `0x3b3b57de${node}`) return word(MAKI_ETH)
         return to === USDC.contract && url === NETWORKS[0].rpc
-          ? `0x${(1_500_000).toString(16).padStart(64, '0')}`
-          : `0x${'0'.repeat(64)}`
+          ? word((1_500_000).toString(16))
+          : word('0')
       }
       if (!(method in answers)) throw new ProviderError(-32601, `no ${method} here`)
       return answers[method]

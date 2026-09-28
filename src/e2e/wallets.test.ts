@@ -22,14 +22,22 @@ import { BtcWallet, parseDescriptor } from '../shared/btc-wallet'
 import { MakiClient } from '../shared/client'
 import { transferData } from '../shared/eth-wallet'
 import { BtcAccount, Network } from '../shared/protocol'
-import { ethStandIn, pretendChain, serveEsplora, serveEthRpc, signedBy } from '../shared/stand-ins'
+import {
+  ethStandIn,
+  MAKI_ETH,
+  pretendChain,
+  serveEsplora,
+  serveEthRpc,
+  signedBy
+} from '../shared/stand-ins'
 import { FAKE_BUILT, startFake, TcpTransport } from '../shared/test-support'
 import { tokensOn } from '../shared/tokens'
 
 const DESKTOP = resolve(__dirname, '../..')
 const ELECTRON = join(DESKTOP, 'node_modules/electron/dist/electron')
 const ACCOUNT = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
-const PAYEE_ETH = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+/** Where the stand-in's maki.eth points. */
+const PAYEE_ETH = MAKI_ETH
 /** BIP173's own example address: somewhere to send that isn't the account's. */
 const PAYEE_BTC = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'
 
@@ -191,7 +199,10 @@ describe.skipIf(!process.env.MAKI_E2E || !FAKE_BUILT)('the Wallets page, end to 
             '--click',
             'USDC',
             '--fill',
-            `0x…=${PAYEE_ETH}`,
+            // a name, looked up on the stand-in's ENS: maki shows the address it points to
+            '0x… or name.eth=maki.eth',
+            '--until',
+            'the address maki will show you',
             '--fill',
             '0.00=1.25'
           ],

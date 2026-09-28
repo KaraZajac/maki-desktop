@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Link } from '@shared/link'
 import type { EthNetwork } from '@shared/ethereum'
-import { isAddress, type Holding, type NetworkHoldings } from '@shared/eth-wallet'
+import { isAddress, isEnsName, type Holding, type NetworkHoldings } from '@shared/eth-wallet'
 import { money, worth } from '@shared/prices'
 import { usePrices } from './prices-state'
 import { parseUnits, units, type Token } from '@shared/tokens'
@@ -278,14 +278,35 @@ function Send({
   useEffect(() => setAsset('coin'), [chain])
 
   const amount = parseUnits(amountText, decimals)
-  const address = to.trim()
+  const typed = to.trim()
+  // an ENS name, looked up as it's typed: where it points now
+  const name = isEnsName(typed.toLowerCase()) ? typed.toLowerCase() : null
+  const [named, setNamed] = useState<{ name: string; address: string | null } | null>(null)
+  useEffect(() => {
+    if (!name) return
+    let gone = false
+    const soon = setTimeout(() => {
+      link.ethWallet.resolve(name).then(
+        (address) => !gone && setNamed({ name, address }),
+        () => !gone && setNamed({ name, address: null })
+      )
+    }, 400)
+    return () => {
+      gone = true
+      clearTimeout(soon)
+    }
+  }, [link, name])
+  const looked = name && named?.name === name ? named : null
+  const address = name ? (looked?.address ?? '') : typed
   const check = useMemo((): string | null => {
-    if (address && !isAddress(address)) return 'That isn’t an address, or a letter of it is wrong.'
+    if (name && looked && !looked.address) return `${name} doesn’t point to an address.`
+    if (!name && address && !isAddress(address))
+      return 'That isn’t an address, or a letter of it is wrong.'
     if (amountText.trim() && amount === null) return `That isn’t an amount of ${symbol}.`
     if (amount !== null && holding && amount > holding.amount)
       return `The account has ${units(holding.amount, decimals)} ${symbol}.`
     return null
-  }, [address, amountText, amount, holding, decimals, symbol])
+  }, [name, looked, address, amountText, amount, holding, decimals, symbol])
   const ready = !!holding && isAddress(address) && amount !== null && amount > 0n && check === null
 
   const go = async (): Promise<void> => {
@@ -293,6 +314,7 @@ function Send({
     setProblem(null)
     try {
       const hash = await link.ethWallet.send(network, address, amount!, token)
+      if (name) link.note(`${name} was ${address} when it was paid`)
       const what = `${units(amount!, decimals)} ${symbol}`
       link.note(`sent ${what} on ${network.name}: ${hash}`)
       setDone({ hash, what, network })
@@ -374,10 +396,22 @@ function Send({
       <div className="mt-4 grid gap-4 md:grid-cols-[1fr_16rem]">
         <Field
           label="To"
-          placeholder="0x…"
+          placeholder="0x… or name.eth"
           value={to}
           disabled={busy}
           onChange={(e) => setTo(e.target.value)}
+          hint={
+            name ? (
+              looked?.address ? (
+                <>
+                  → <span className="font-mono text-subtext1">{looked.address}</span>, the address
+                  maki will show you
+                </>
+              ) : looked ? null : (
+                'looking it up…'
+              )
+            ) : undefined
+          }
         />
         <div>
           <Field
