@@ -50,6 +50,8 @@ export const Kind = {
   APP_MESSAGE: 0x53,
   /** a piece of a maki store record (a root, a revocation list), which maki checks and keeps */
   STORE_UPDATE: 0x54,
+  /** how much of maki's room for apps is taken, and how many more apps it has room for */
+  APP_SPACE: 0x55,
   REPLY: 0x80,
   ERROR: 0x7f
 } as const

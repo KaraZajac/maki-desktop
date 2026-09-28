@@ -9,6 +9,7 @@ import {
   MakiClient,
   syncTime,
   type Hello,
+  type AppSpace,
   type InstalledApp,
   type Relay,
   type Status,
@@ -247,6 +248,11 @@ export class Link {
     // unlocked since the link came up: now maki can take the store's records
     if (r.status === 'approved' && !this.storeHanded) void this.storeNow()
     return r
+  }
+
+  /** maki's room for apps, and what the ones installed take of it. */
+  async appSpace(): Promise<{ status: ApprovalValue; space: AppSpace | null }> {
+    return this.linkedClient().appSpace()
   }
 
   /** Checks the maki store again, whether or not maki is linked: for the list of its apps. */

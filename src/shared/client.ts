@@ -270,12 +270,26 @@ export class MakiClient {
         fromStore: r.u8() === 1,
         backup: r.u8() === 1,
         used: r.u32(),
-        icon: iconWords(r.bytes16())
+        icon: iconWords(r.bytes16()),
+        bundle: r.u32(),
+        storage: r.u32()
       }
       r.end()
       apps.push(app)
       if (index + 1 >= count) return { status, apps }
     }
+  }
+
+  /**
+   * maki's room for apps, and what the ones installed take of it: their bundles, and the storage
+   * each asks for. 'locked' (and nothing) until its PIN is in.
+   */
+  async appSpace(): Promise<{ status: ApprovalValue; space: AppSpace | null }> {
+    const r = new Reader((await this.request(Kind.APP_SPACE)).body)
+    const status = Approval[r.u8()] ?? 'unavailable'
+    const space: AppSpace = { apps: r.u32(), maxApps: r.u32(), space: r.u32(), taken: r.u32() }
+    r.end()
+    return { status, space: status === 'approved' ? space : null }
   }
 
   /**
@@ -545,6 +559,22 @@ export interface InstalledApp {
   used: number
   /** 64x64 in maki_icons form, or null */
   icon: Uint32Array | null
+  /** bytes its bundle takes on maki */
+  bundle: number
+  /** bytes of storage its manifest asks for, which maki keeps for it whether it's used or not */
+  storage: number
+}
+
+/**
+ * maki's room for apps: at most `maxApps` of them, their bundles and the storage each asks for
+ * within `space` bytes of its encrypted database, which they share with its logins, codes and
+ * passkeys. `taken` is what the `apps` installed take.
+ */
+export interface AppSpace {
+  apps: number
+  maxApps: number
+  space: number
+  taken: number
 }
 
 /** What maki said to a store record, and what it has of the store now. */

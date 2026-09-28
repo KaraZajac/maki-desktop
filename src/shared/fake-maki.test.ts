@@ -163,6 +163,15 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki
     ])
     expect(apps[0].developer).toHaveLength(32)
     expect(apps[0].icon).toHaveLength(128)
+    // what each takes of maki's room for apps: its bundle, and the storage it asks for
+    expect(apps.map((a) => [a.bundle, a.storage])).toEqual([
+      [bundle('dice').length, 1024],
+      [bundle('tally').length, 1024]
+    ])
+    expect(await c.appSpace()).toEqual({
+      status: 'approved',
+      space: { apps: 2, maxApps: 32, space: 2 * 1024 * 1024, taken: apps.reduce((n, a) => n + a.bundle + a.storage, 0) }
+    })
 
     // the same version again, and one changed after it was signed
     const again = await c.appInstall(bundle('dice'))
