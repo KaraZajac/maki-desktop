@@ -40,6 +40,7 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     expect(store.problem).toBeNull()
     const apps = store.index!.apps
     expect(apps.map((a) => [a.name, a.kind, a.category])).toEqual([
+      ['Age', 'wasm', 'Security'],
       ['Dice', 'wasm', 'Games'],
       ['Nostr', 'wasm', 'Social'],
       ['Passphrase', 'wasm', 'Security'],
@@ -48,7 +49,8 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Snake', 'wasm', 'Games'],
       ['SSH', 'wasm', 'Security'],
       ['Status', 'wasm', 'Productivity'],
-      ['Tally', 'wasm', 'Tools']
+      ['Tally', 'wasm', 'Tools'],
+      ['Wi-Fi', 'wasm', 'Tools']
     ])
     // what they may do, from their manifests, as the store's grid shows it
     const status = apps.find((a) => a.name === 'Status')!
