@@ -41,6 +41,7 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     const apps = store.index!.apps
     expect(apps.map((a) => [a.name, a.kind, a.category])).toEqual([
       ['Dice', 'wasm', 'Games'],
+      ['Nostr', 'wasm', 'Social'],
       ['Passphrase', 'wasm', 'Security'],
       ['Pomodoro', 'native', 'Productivity'],
       ['Sensors', 'wasm', 'Tools'],
