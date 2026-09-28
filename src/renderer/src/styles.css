@@ -1,17 +1,128 @@
 @import 'tailwindcss';
 
+/* Catppuccin Mocha, as maki.netslum.io has it, with maki's own colours: the peach of the salmon
+   at the middle of its roll for what to do, and the green of the nori for what's done. (The
+   base is `canvas` so it doesn't collide with Tailwind's text-base.) */
+@theme {
+  --color-canvas: #1e1e2e;
+  --color-mantle: #181825;
+  --color-crust: #11111b;
+  --color-surface0: #313244;
+  --color-surface1: #45475a;
+  --color-surface2: #585b70;
+  --color-overlay0: #6c7086;
+  --color-overlay1: #7f849c;
+  --color-subtext0: #a6adc8;
+  --color-subtext1: #bac2de;
+  --color-fg: #cdd6f4;
+  --color-peach: #fab387;
+  --color-yellow: #f9e2af;
+  --color-rosewater: #f5e0dc;
+  --color-flamingo: #f2cdcd;
+  --color-maroon: #eba0ac;
+  --color-red: #f38ba8;
+  --color-green: #a6e3a1;
+  --color-teal: #94e2d5;
+  --color-sky: #89dceb;
+  --color-sapphire: #74c7ec;
+  --color-blue: #89b4fa;
+  --color-lavender: #b4befe;
+  --color-mauve: #cba6f7;
+  --color-pink: #f5c2e7;
+  --color-salmon: #ff7a59;
+  --color-nori: #1d3a2a;
+  --color-rice: #f3efe6;
+  --color-oled: #0a0a10;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
 html,
 body,
 #root {
   height: 100%;
 }
 
+html {
+  color-scheme: dark;
+  scrollbar-color: var(--color-surface2) transparent;
+}
+
 body {
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* what people copy: addresses, keys, the log */
+code,
+.selectable,
+input,
+textarea {
+  user-select: text;
+}
+
+/* the light over the top of the window, as on the site */
+.glow {
+  background:
+    radial-gradient(60rem 26rem at 40% -12rem, rgb(250 179 135 / 0.13), transparent 70%),
+    radial-gradient(40rem 22rem at 100% 4rem, rgb(166 227 161 / 0.05), transparent 70%);
+}
+
+/* the cards: a little lighter at the top */
+.card {
+  border: 1px solid var(--color-surface0);
+  border-radius: 14px;
+  background: linear-gradient(170deg, rgb(49 50 68 / 0.55), rgb(24 24 37 / 0.55));
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-peach);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface1);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.28s ease-out both;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.breathe {
+  animation: breathe 1.8s ease-in-out infinite;
 }

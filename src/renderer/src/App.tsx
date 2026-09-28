@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import type { BrowserStatus } from '@shared/bridge-types'
 import { ProviderError } from '@shared/ethereum'
 import { Link } from '@shared/link'
-import { TimeState } from '@shared/protocol'
 import { Store } from '@shared/store'
-import { Apps } from './Apps'
-import { Bitcoin } from './Bitcoin'
-import { Ethereum } from './Ethereum'
+import { Activity } from './Activity'
+import { useApps } from './apps-state'
+import { AppsPage } from './AppsPage'
+import { Backups } from './Backups'
+import { Connections } from './Connections'
+import { Overview, type Page } from './Overview'
+import { PAGES, Sidebar } from './Sidebar'
 import { DevTransport } from './transports'
 import { chooseUsb, watchUsb } from './usb'
-
-function formatClock(utcMs: number, tzOffsetS: number): string {
-  return new Date(utcMs + tzOffsetS * 1000).toISOString().slice(11, 19)
-}
+import { Wallets } from './Wallets'
 
 /** Re-render whenever the link changes. */
 function useLink(link: Link): Link {
@@ -26,6 +25,15 @@ function useLink(link: Link): Link {
     () => version.n
   )
   return link
+}
+
+function savedPage(): Page {
+  try {
+    const p = localStorage.getItem('maki.page')
+    return PAGES.some((x) => x.id === p) ? (p as Page) : 'overview'
+  } catch {
+    return 'overview'
+  }
 }
 
 export default function App(): React.JSX.Element {
@@ -45,24 +53,41 @@ export default function App(): React.JSX.Element {
               if (r.error) throw new ProviderError(r.error.code, r.error.message)
               return r.result
             },
-            store: { load: () => window.maki.ethereum.load(), save: (s) => window.maki.ethereum.save(s) }
+            store: {
+              load: () => window.maki.ethereum.load(),
+              save: (s) => window.maki.ethereum.save(s)
+            }
           }
         ),
       []
     )
   )
+  const apps = useApps(link)
+  const [page, setPage] = useState<Page>(savedPage)
+  const go = (p: Page): void => {
+    setPage(p)
+    try {
+      localStorage.setItem('maki.page', p)
+    } catch {
+      // remembered for this session only
+    }
+  }
   const [backup, setBackup] = useState<{ at: number; bytes: number } | null>(null)
   // the latest backup's age: refresh when the link has news (a backup is a line in its log)
   useEffect(() => {
     void window.maki.backups.info().then(setBackup)
   }, [link.log.length])
-  const [startAtLogin, setStartAtLogin] = useState<boolean | null>(null)
   const [, tick] = useState(0)
+  const [storeName, setStoreName] = useState<string | null>(null)
+  // on GitHub with no token: a store that can't be read may just be private
+  const [storePrivate, setStorePrivate] = useState(false)
 
-  // the maki store, when maki desktop knows where it is: its apps to show, and records for maki
+  // the maki store: its apps to show, and records for maki
   useEffect(() => {
-    void window.maki.store.where().then((where) => {
-      if (!where || link.store) return
+    void window.maki.store.where().then(({ where, name, github, token }) => {
+      setStoreName(name)
+      setStorePrivate(github && !token)
+      if (link.store) return
       link.storeWhere = where
       link.store = new Store(
         { get: (path) => window.maki.store.get(path) },
@@ -75,13 +100,6 @@ export default function App(): React.JSX.Element {
   useEffect(() => watchUsb(link), [link])
   useEffect(() => window.maki.onTraySync(() => void link.syncNow()), [link])
   useEffect(() => window.maki.onBrowserRequest((request) => link.fromBrowser(request)), [link])
-  const [browsers, setBrowsers] = useState<BrowserStatus[] | null>(null)
-  useEffect(() => {
-    void window.maki.browsers.status().then(setBrowsers)
-  }, [])
-  useEffect(() => {
-    void window.maki.settings.startAtLogin().then(setStartAtLogin)
-  }, [])
   useEffect(() => {
     const id = setInterval(() => tick((n) => n + 1), 1000)
     return () => clearInterval(id)
@@ -102,195 +120,38 @@ export default function App(): React.JSX.Element {
     }
   }
 
-  const badgeNow = s.linked && s.status.utcMs > 0 ? s.status.utcMs + (Date.now() - s.status.at) : null
-  const drift = badgeNow !== null ? (badgeNow - Date.now()) / 1000 : null
-  const state =
-    timeState === TimeState.VERIFIED
-      ? { label: 'verified', tone: 'text-emerald-400' }
-      : timeState === TimeState.UNVERIFIED
-        ? { label: 'unverified', tone: 'text-amber-400' }
-        : { label: 'not set', tone: 'text-zinc-500' }
+  const updates =
+    link.store?.index?.apps.filter((a) =>
+      apps.apps?.some((i) => i.id === a.id && i.version < a.version)
+    ).length ?? 0
 
   return (
-    <div className="flex h-full flex-col text-zinc-200">
-      <header className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-        <h1 className="text-2xl font-semibold tracking-tight">maki</h1>
-        <span className={`flex items-center gap-2 text-sm ${s.linked ? 'text-emerald-400' : 'text-zinc-500'}`}>
-          <span className={`h-2 w-2 rounded-full ${s.linked ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
-          {s.linked ? `linked · ${s.via}` : 'looking for maki…'}
-        </span>
-      </header>
-
-      <main className="flex-1 space-y-4 overflow-y-auto p-5">
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Device</h2>
-          {s.linked ? (
-            <div className="flex items-baseline justify-between">
-              <p className="text-lg">
-                {s.hello.name} <span className="text-zinc-500">{s.hello.version}</span>
-              </p>
-              <button onClick={() => link.drop('disconnected')} className="text-sm text-zinc-500 hover:text-zinc-300">
-                Disconnect
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="mb-3 text-sm text-zinc-400">Plug maki in. It links by itself once you’ve allowed it here.</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => void chooseUsb(link)}
-                  className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-white"
-                >
-                  Allow maki
-                </button>
-                <button
-                  onClick={() => void connectFake()}
-                  className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500"
-                >
-                  Use fake maki
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Clock</h2>
-          <div className="flex items-baseline justify-between">
-            <span className="font-mono text-3xl tabular-nums">
-              {badgeNow !== null && s.linked ? formatClock(badgeNow, s.status.tzOffsetS) : '--:--:--'}
-            </span>
-            <span className={`text-sm ${state.tone}`}>{state.label}</span>
-          </div>
-          {drift !== null && (
-            <p className="mt-1 text-xs text-zinc-500">
-              {drift >= 0 ? '+' : ''}
-              {drift.toFixed(1)} s from this computer
-            </p>
-          )}
-          <div className="mt-4 flex items-center justify-between">
-            <button
-              disabled={!s.linked || link.syncing}
-              onClick={() => void link.syncNow()}
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-40"
-            >
-              {link.syncing ? 'Syncing…' : 'Sync now'}
-            </button>
-            <label className="flex items-center gap-2 text-sm text-zinc-400">
-              <input
-                type="checkbox"
-                checked={link.autoSync}
-                onChange={(e) => {
-                  link.autoSync = e.target.checked
-                  link.note(`sync when linked: ${e.target.checked ? 'on' : 'off'}`)
-                }}
+    <div className="flex h-full text-fg">
+      <Sidebar link={link} page={page} go={go} updates={updates} />
+      <div className="glow flex min-w-0 flex-1 flex-col">
+        <main className="flex-1 overflow-y-auto">
+          <div key={page} className="mx-auto max-w-5xl px-10 pt-10 pb-12">
+            {page === 'overview' && (
+              <Overview
+                link={link}
+                apps={apps}
+                storeName={storeName}
+                backup={backup}
+                go={go}
+                connectFake={() => void connectFake()}
+                allow={() => void chooseUsb(link)}
               />
-              Sync when linked
-            </label>
+            )}
+            {page === 'apps' && (
+              <AppsPage link={link} apps={apps} storeName={storeName} storePrivate={storePrivate} />
+            )}
+            {page === 'wallets' && <Wallets link={link} />}
+            {page === 'connections' && <Connections link={link} apps={apps} go={go} />}
+            {page === 'backups' && <Backups link={link} backup={backup} />}
           </div>
-          {link.report && (
-            <ul className="mt-4 space-y-1 text-sm">
-              {link.report.servers.map((srv) => (
-                <li key={srv.host} className="flex justify-between">
-                  <span className="text-zinc-400">{srv.host}</span>
-                  <span className={srv.result === 'verified' ? 'text-emerald-400' : 'text-amber-400'}>
-                    {srv.result || 'no answer'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">This computer</h2>
-          <label className="flex items-center justify-between text-sm text-zinc-300">
-            Start maki at login, in the tray
-            <input
-              type="checkbox"
-              disabled={startAtLogin === null}
-              checked={!!startAtLogin}
-              onChange={async (e) => setStartAtLogin(await window.maki.settings.setStartAtLogin(e.target.checked))}
-            />
-          </label>
-          <p className="mt-2 text-xs text-zinc-500">Closing this window keeps maki linked from the tray.</p>
-        </section>
-
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Browsers</h2>
-          {browsers === null ? null : browsers.length === 0 ? (
-            <p className="text-sm text-zinc-400">No supported browser found.</p>
-          ) : (
-            <ul className="space-y-2 text-sm">
-              {browsers.map((b) => (
-                <li key={b.name} className="flex items-center justify-between gap-3">
-                  <span className="text-zinc-300">{b.name}</span>
-                  {b.registered ? (
-                    <span className="text-emerald-400">connected</span>
-                  ) : (
-                    <button
-                      onClick={async () => {
-                        try {
-                          setBrowsers(await window.maki.browsers.register(b.name))
-                          link.note(`${b.name} can reach maki desktop: add the maki extension to finish`)
-                        } catch (e) {
-                          link.note(`${b.name} setup failed: ${(e as Error).message}`)
-                        }
-                      }}
-                      title={b.system ? `${b.name} only looks for browser helpers in a system folder` : undefined}
-                      className="rounded-lg border border-zinc-700 px-3 py-1 text-sm hover:border-zinc-500"
-                    >
-                      {b.system ? 'Set up (asks for admin password)' : 'Set up'}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <Bitcoin link={link} />
-
-        <Ethereum link={link} />
-
-        <Apps link={link} />
-
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Backups</h2>
-          <p className="mb-3 text-sm text-zinc-400">
-            {backup
-              ? `Last backup ${new Date(backup.at).toLocaleString()}, ${Math.max(1, Math.round(backup.bytes / 1024))} KB.`
-              : 'No backup yet.'}{' '}
-            maki's logins and codes, encrypted with a key only its recovery phrase gives: safe to keep anywhere.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              disabled={!s.linked || link.backingUp}
-              onClick={() => void link.backupNow()}
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-40"
-            >
-              {link.backingUp ? 'Backing up…' : 'Back up now'}
-            </button>
-            <button
-              disabled={!s.linked || !backup}
-              onClick={() => void link.restoreLatest()}
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500 disabled:opacity-40"
-            >
-              Restore to maki
-            </button>
-            <button
-              onClick={() => void window.maki.backups.show()}
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:border-zinc-500"
-            >
-              Show folder
-            </button>
-          </div>
-        </section>
-      </main>
-
-      <footer className="h-24 overflow-y-auto border-t border-zinc-800 px-5 py-2 font-mono text-xs text-zinc-500">
-        {link.log.length === 0 ? 'Waiting for maki.' : link.log.map((l, i) => <div key={i}>{l}</div>)}
-      </footer>
+        </main>
+        <Activity link={link} />
+      </div>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 {
   "name": "maki-desktop",
   "version": "0.1.0",
-  "description": "Desktop companion for maki: secure time sync over USB today, the app store next",
+  "description": "Desktop companion for maki: links it over USB, keeps its clock verified and its backups, and brings it apps from the maki store",
   "main": "./out/main/index.js",
   "author": ".leviathan.",
   "license": "BSD-3-Clause",

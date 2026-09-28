@@ -50,14 +50,20 @@ const api = {
     open: (): Promise<{ path: string; data: Uint8Array } | null> => ipcRenderer.invoke('apps:open')
   },
   store: {
-    /** where the maki store is (MAKI_STORE: an address or a folder), or null for none yet */
-    where: (): Promise<string | null> => ipcRenderer.invoke('store:where'),
+    /**
+     * where the maki store is (MAKI_STORE: an address or a folder), its name for people, and
+     * whether it's on GitHub and there's a token to read it (MAKI_STORE_TOKEN) while it's private
+     */
+    where: (): Promise<{ where: string; name: string; github: boolean; token: boolean }> =>
+      ipcRenderer.invoke('store:where'),
     /** a file of the store's by its path in the store, or null if it has none */
     get: (path: string): Promise<Uint8Array | null> => ipcRenderer.invoke('store:get', path),
     load: (): Promise<import('../shared/store').StoreMemory> => ipcRenderer.invoke('store:load'),
     save: (kept: import('../shared/store').StoreMemory): Promise<void> => ipcRenderer.invoke('store:save', kept)
   },
   copy: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:write', text),
+  /** opens an https page in the browser */
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open:external', url),
   ethereum: {
     rpc: (url: string, method: string, params: unknown[]): Promise<{ result?: unknown; error?: { code: number; message: string } }> =>
       ipcRenderer.invoke('eth:rpc', url, method, params),

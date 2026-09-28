@@ -1,8 +1,10 @@
 # maki desktop
 
-The computer's end of [maki](https://github.com/KaraZajac/BAOKEY): a small app that lives in the
-tray, keeps a link to maki over USB, keeps maki's clock right, and connects the maki browser
-extension to maki. The app store will come through here too.
+The computer's end of [maki](https://github.com/KaraZajac/maki): a small app that lives in the
+tray, keeps a link to maki over USB, keeps maki's clock right, connects the maki browser
+extension to maki, and brings it apps from the maki store. It looks like
+[maki.netslum.io](https://maki.netslum.io): Catppuccin Mocha, with the peach of the salmon in
+maki's roll for what to do and the green of the nori for what's done.
 
 > **Status: early.** Links over USB (Web Serial) or to a fake maki for development, syncs verified
 > time, runs from the tray, relays logins and TOTP codes between the browser extension and maki,
@@ -45,13 +47,18 @@ extension to maki. The app store will come through here too.
   public servers for Ethereum, Base, Optimism, Arbitrum, Polygon and Sepolia. Typed data for
   another network than the site is on, the older typed-data methods and `eth_sign` are
   refused.
-- **Installs apps on maki.** The Apps section lists what's installed and installs a `.maki` file
-  (or `maki install app.maki` from the SDK does, through this app): it shows what the bundle is,
-  that it's sideloaded, its developer's key and what it asks to do, and maki goes through the same
-  on its screen and asks. Software on this computer can send messages to apps that may talk to it
-  (the link permission), through the local socket.
-- **Is an SSH agent for maki's SSH app.** ssh and git talk to it (`SSH_AUTH_SOCK`, which the Apps
-  section shows once the app is installed), and it hands each request to the app on maki, which
+- **Installs apps on maki, from the maki store.** The Apps page shows maki's room for apps as a
+  bar, a segment for each app (its bundle and the storage it asks for) and what's free, with how
+  many more apps it has room for; what's installed; and the maki store, its apps in a grid by
+  category, fetched from the store's repository ([KaraZajac/maki-apps](https://github.com/KaraZajac/maki-apps))
+  and checked against the root this app carries, as maki checks it. Choosing one shows what it is,
+  where it's from and the commit the store built it from (a link to the source), its developer's
+  key, what it asks to do, and whether it fits; maki goes through the same on its screen and asks.
+  A `.maki` file installs the same way, marked sideloaded (or `maki install app.maki` from the SDK,
+  through this app). Software on this computer can send messages to apps that may talk to it (the
+  link permission), through the local socket.
+- **Is an SSH agent for maki's SSH app.** ssh and git talk to it (`SSH_AUTH_SOCK`, which the
+  Connections page shows once the app is installed), and it hands each request to the app on maki, which
   reads what's to be signed, asks you, and signs. The agent holds no keys: `ssh-add -L` shows the
   app's public key, for servers' authorized_keys or for git (`git config gpg.format ssh`).
 
@@ -113,7 +120,7 @@ The real-browser test uses Playwright's Chromium from `~/.cache/ms-playwright` (
 HOME, so your own profile and `~/.mozilla` are never touched.
 
 The fake maki is the firmware's real protocol logic on a TCP socket. Build it in the firmware repo
-(`KaraZajac/baokey-firmware`):
+(`KaraZajac/maki-firmware`):
 
 ```sh
 cargo build -p maki-proto --features fake --example fake_maki
@@ -121,12 +128,22 @@ target/debug/examples/fake_maki             # 127.0.0.1:7878; the app's "Use fak
 target/debug/examples/fake_maki --clock-verified   # codes without syncing through Roughtime first
 ```
 
-Tests look for it at `../xous-core/target/debug/examples/fake_maki` (the BAOKEY checkout layout), or
+Tests look for it at `../xous-core/target/debug/examples/fake_maki` (the maki checkout layout), or
 at `$MAKI_FAKE`.
 
+The maki store comes from its repository, `KaraZajac/maki-apps` (its `store/` folder, on GitHub's
+file server). While that repository is private, give the app a GitHub token that can read it, which
+it sends to GitHub's file server and nowhere else; `MAKI_STORE` points it at another copy of the
+store, a folder or an https address:
+
+```sh
+MAKI_STORE_TOKEN=$(gh auth token) npm run dev
+MAKI_STORE=../apps/store npm run dev          # a clone of maki-apps beside this one
+```
+
 To look at the UI without a window appearing: `npm run build && npx electron scripts/screenshot.cjs
-out.png [--fake] [--click TEXT]... [--scroll TEXT]`, e.g. `--fake --click "Get the account"
---scroll Bitcoin`.
+out.png [--fake] [--click TEXT]... [--scroll TEXT] [--size WxH]`, e.g. `--fake --click Wallets
+--click "Get the account"`, or `--fake --click Apps --size 1080x1500` for the whole Apps page.
 
 ## Layout
 
@@ -144,7 +161,8 @@ src/main/bridge.ts       the local socket the native host connects to
 src/main/native-host.ts  --native-host: native messaging on stdio, relayed to the socket
 src/main/browsers.ts     registering the native host with installed browsers
 src/main/ssh-agent.ts    the SSH agent: each request to maki's SSH app, the answer back
-src/renderer/            Web Serial discovery (usb.ts) and the window (Bitcoin.tsx: the wallet)
+src/renderer/            Web Serial discovery (usb.ts) and the window: a page each (Overview, Apps,
+                         Wallets, Connections, Backups), ui.tsx for the pieces they're made of
 extension/               the browser extension: background, content script, field finding
 scripts/icons.py         draws the icons in resources/
 ```

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -12,7 +12,7 @@ import { getStartAtLogin, setStartAtLogin } from './login'
 import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
 import { agentSocketPath, serveAgent, SSH_APP } from './ssh-agent'
-import { storeSource, storeWhere } from './store-source'
+import { onGithub, storeName, storeSource, storeToken, storeWhere } from './store-source'
 
 /**
  * maki's desktop app lives in the tray: the window can close, the link stays. The renderer owns
@@ -59,13 +59,13 @@ async function askWindow(request: BridgeRequest): Promise<BridgeResult> {
 function createWindow(): void {
   win = new BrowserWindow({
     show: !offscreen && !startHidden,
-    width: 480,
-    height: 700,
-    minWidth: 400,
-    minHeight: 560,
+    width: 1080,
+    height: 740,
+    minWidth: 860,
+    minHeight: 600,
     title: 'maki',
     icon: resource('icon.png'),
-    backgroundColor: '#0b0b0f',
+    backgroundColor: '#1e1e2e',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -200,6 +200,10 @@ function ipc(): void {
     return r.filePath
   })
   ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
+  // a page in the browser, such as an app's source: https only
+  ipcMain.handle('open:external', (_e, url: unknown) => {
+    if (typeof url === 'string' && /^https:\/\/[^\s]+$/.test(url)) return shell.openExternal(url)
+  })
 
   // Ethereum: which sites are connected, and each site's network; and the networks' servers
   const ethFile = (): string => join(app.getPath('userData'), 'ethereum.json')
@@ -240,9 +244,11 @@ function ipc(): void {
   // the maki store: where it is, its files (only those), and what this side keeps of it between
   // runs (the newest root it took, and the newest index's version)
   const where = storeWhere()
-  const store = where ? storeSource(where) : null
+  const token = storeToken()
+  const store = storeSource(where, token)
   const storeFile = (): string => join(app.getPath('userData'), 'store.json')
-  ipcMain.handle('store:where', () => where)
+  // whether it may need a token: the renderer says so if the store can't be read
+  ipcMain.handle('store:where', () => ({ where, name: storeName(where), github: onGithub(where), token: token !== null }))
   ipcMain.handle('store:get', (_e, path: unknown) => (store && typeof path === 'string' ? store.get(path) : null))
   ipcMain.handle('store:load', async () => {
     try {

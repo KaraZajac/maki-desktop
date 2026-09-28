@@ -10,8 +10,9 @@ import {
 import { readPsbt, toBase64 } from '@shared/psbt'
 
 const button =
-  'rounded-lg border border-zinc-700 px-3 py-1.5 text-sm hover:border-zinc-500 disabled:opacity-40'
-const heading = 'mb-1 mt-4 text-sm font-medium text-zinc-300'
+  'inline-flex items-center gap-2 rounded-lg border border-surface1 bg-surface0/40 px-3 py-1.5 font-mono text-[0.72rem] font-bold tracking-wide text-subtext1 transition-colors hover:border-surface2 hover:text-fg disabled:pointer-events-none disabled:opacity-40'
+const heading =
+  'mb-2 mt-7 font-mono text-[0.68rem] font-bold uppercase tracking-[0.14em] text-yellow'
 
 function savedNetwork(): NetworkValue {
   try {
@@ -146,10 +147,13 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
   const idle = linked && busy === null
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+    <section className="card p-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Bitcoin</h2>
-        <div className="flex overflow-hidden rounded-lg border border-zinc-700 text-xs">
+        <h2 className="flex items-center gap-2.5 font-mono text-[0.68rem] font-bold uppercase tracking-[0.18em] text-peach">
+          <span className="h-0.5 w-5 rounded bg-peach" />
+          Bitcoin
+        </h2>
+        <div className="flex overflow-hidden rounded-lg border border-surface1 text-xs">
           {[
             [Network.BITCOIN, 'Bitcoin'],
             [Network.TESTNET, 'Testnet']
@@ -157,20 +161,20 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
             <button
               key={label}
               onClick={() => choose(n as NetworkValue)}
-              className={`px-2.5 py-1 ${network === n ? 'bg-zinc-200 text-zinc-900' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`px-2.5 py-1 ${network === n ? 'bg-peach font-bold text-crust' : 'text-subtext0 hover:text-fg'}`}
             >
               {label}
             </button>
           ))}
         </div>
       </div>
-      <p className="mt-2 text-sm text-zinc-400">
+      <p className="mt-2 text-sm text-subtext0">
         Wallet software such as Sparrow or Bitcoin Core keeps track of your coins and builds
         transactions. maki shows you each one and signs it.
       </p>
-      <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+      <div className="mt-2 flex items-center gap-2 text-xs text-overlay1">
         Account
-        <div className="flex overflow-hidden rounded-lg border border-zinc-700">
+        <div className="flex overflow-hidden rounded-lg border border-surface1">
           {[
             [BtcAccount.SEGWIT, 'Native SegWit'],
             [BtcAccount.TAPROOT, 'Taproot']
@@ -178,7 +182,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
             <button
               key={label}
               onClick={() => chooseKind(k as BtcAccountValue)}
-              className={`px-2.5 py-1 ${kind === k ? 'bg-zinc-200 text-zinc-900' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`px-2.5 py-1 ${kind === k ? 'bg-peach font-bold text-crust' : 'text-subtext0 hover:text-fg'}`}
             >
               {label}
             </button>
@@ -190,11 +194,11 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
       <h3 className={heading}>Connect wallet software</h3>
       {account ? (
         <>
-          <p className="mb-2 text-xs text-zinc-500">
+          <p className="mb-2 text-xs text-overlay1">
             Add this to your wallet software as a watch-only wallet. It can see your coins and build
             transactions, but only maki can sign them.
           </p>
-          <code className="block select-all break-all rounded-lg bg-zinc-950 p-2 font-mono text-xs text-zinc-300">
+          <code className="block select-all break-all rounded-lg bg-crust p-2 font-mono text-xs text-subtext1">
             {account.descriptor}
           </code>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -223,19 +227,19 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
       )}
 
       <h3 className={heading}>Check an address</h3>
-      <p className="mb-2 text-xs text-zinc-500">
+      <p className="mb-2 text-xs text-overlay1">
         Before you give out an address, check that maki shows the same one as your wallet software.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={change ? 'change' : 'receive'}
           onChange={(e) => setChange(e.target.value === 'change')}
-          className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
+          className="rounded-lg border border-surface1 bg-mantle px-2 py-1.5 text-sm"
         >
           <option value="receive">Receive</option>
           <option value="change">Change</option>
         </select>
-        <label className="flex items-center gap-1 text-sm text-zinc-400">
+        <label className="flex items-center gap-1 text-sm text-subtext0">
           #
           <input
             type="number"
@@ -245,7 +249,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
             onChange={(e) =>
               setIndex(Math.max(0, Math.min(2147483647, Math.floor(Number(e.target.value) || 0))))
             }
-            className="w-20 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm"
+            className="w-20 rounded-lg border border-surface1 bg-mantle px-2 py-1.5 text-sm"
           />
         </label>
         <button
@@ -265,14 +269,14 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
       </div>
       {shown && (
         <div className="mt-2 text-sm">
-          <code className="block break-all font-mono text-xs text-zinc-300">{shown.address}</code>
+          <code className="block break-all font-mono text-xs text-subtext1">{shown.address}</code>
           <p
             className={
               shown.approval === 'approved'
-                ? 'text-emerald-400'
+                ? 'text-green'
                 : shown.approval === 'denied'
-                  ? 'text-red-400'
-                  : 'text-amber-400'
+                  ? 'text-red'
+                  : 'text-yellow'
             }
           >
             {shown.approval === 'approved'
@@ -306,7 +310,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
         onChange={(e) => setPasted(e.target.value)}
         placeholder="…or paste a PSBT (base64 or hex)"
         rows={2}
-        className="mt-2 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 p-2 font-mono text-xs text-zinc-300 placeholder:text-zinc-600"
+        className="mt-2 w-full resize-none rounded-lg border border-surface0 bg-crust p-2 font-mono text-xs text-subtext1 placeholder:text-overlay0"
       />
       {pasted.trim() !== '' && (
         <button
@@ -319,7 +323,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
       )}
       {signed && (
         <div className="mt-2">
-          <p className="mb-2 text-sm text-emerald-400">
+          <p className="mb-2 text-sm text-green">
             Signed. Load it back into your wallet software to broadcast it.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -338,7 +342,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
           </div>
         </div>
       )}
-      {problem && <p className="mt-2 text-sm text-amber-400">{problem}</p>}
+      {problem && <p className="mt-2 text-sm text-yellow">{problem}</p>}
     </section>
   )
 }

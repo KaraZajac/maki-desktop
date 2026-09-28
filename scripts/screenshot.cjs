@@ -6,7 +6,8 @@
 //
 // --fake connects to a fake maki on 127.0.0.1:7878 first (start it beforehand). --click presses
 // the first button whose text includes TEXT, in order; --scroll brings the section whose heading
-// includes TEXT to the top before the capture.
+// includes TEXT to the top before the capture; --size WIDTHxHEIGHT sizes the window first (a tall
+// one shows a whole page).
 const { app, BrowserWindow } = require('electron')
 const { writeFileSync } = require('node:fs')
 const { join } = require('node:path')
@@ -16,6 +17,7 @@ const fake = process.argv.includes('--fake')
 const after = (flag) => process.argv.flatMap((a, i) => (a === flag && process.argv[i + 1] ? [process.argv[i + 1]] : []))
 const clicks = after('--click')
 const scroll = after('--scroll')[0]
+const size = after('--size')[0]?.split('x').map(Number)
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 process.env.MAKI_OFFSCREEN = '1'
@@ -24,6 +26,11 @@ require(join(__dirname, '../out/main/index.js'))
 app.whenReady().then(async () => {
   await wait(1500)
   const win = BrowserWindow.getAllWindows()[0]
+  if (size) {
+    win.setMinimumSize(1, 1)
+    win.setSize(size[0], size[1])
+    await wait(500)
+  }
   if (fake) {
     await win.webContents.executeJavaScript(
       `[...document.querySelectorAll('button')].find((b) => b.textContent.includes('fake'))?.click()`
