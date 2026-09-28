@@ -30,8 +30,9 @@ extension to maki. The app store will come through here too.
 - **Keeps backups.** On link, hourly, and soon after a login is saved, maki hands over its logins
   and codes encrypted with a key from its recovery phrase, and they're kept in the app's folder.
   "Restore to maki" sends the latest back; maki asks before adding anything.
-- **Works with Bitcoin wallet software.** Get maki's account, an output descriptor, for Sparrow or
-  Bitcoin Core as a watch-only wallet; check an address on maki's screen before giving it out; and
+- **Works with Bitcoin wallet software.** Get one of maki's accounts, native SegWit (BIP84) or
+  taproot (BIP86), as an output descriptor for Sparrow or Bitcoin Core as a watch-only wallet;
+  check an address on maki's screen before giving it out; and
   have maki sign a transaction (a PSBT file, or pasted base64 or hex). maki refuses anything that
   isn't its own wallet's, goes through every payment, the change and the fee with you, and signs
   only when you say so. The signed PSBT goes back to the wallet software to broadcast.

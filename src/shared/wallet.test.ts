@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
-import { Network } from './protocol'
+import { BtcAccount, Network } from './protocol'
 import { readPsbt, toBase64 } from './psbt'
 import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
 
@@ -91,6 +91,32 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES)('the wallet', () => {
     const r = await maki.btcSign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
     expect(r.approval).toBe('approved')
     expect(r.signed).toEqual(fixture('abandon-signed.psbt'))
+  })
+
+  it('has a taproot account too, and signs its coins as the firmware does', async () => {
+    const maki = await client()
+    const a = await maki.btcAccount(Network.BITCOIN, BtcAccount.TAPROOT)
+    // BIP86's test vectors for the test phrase
+    expect(a.zpub).toBe(
+      'xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ'
+    )
+    expect(a.descriptor).toMatch(
+      /^tr\(\[73c5da0a\/86h\/0h\/0h\]xpub6BgBgses.*\/<0;1>\/\*\)#[a-z0-9]{8}$/
+    )
+    expect(
+      (await maki.btcAccount(Network.TESTNET, BtcAccount.TAPROOT)).zpub.startsWith('tpub')
+    ).toBe(true)
+    expect(await maki.btcAddress(Network.BITCOIN, false, 0, BtcAccount.TAPROOT)).toEqual({
+      approval: 'approved',
+      address: 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr'
+    })
+    expect((await maki.btcAddress(Network.BITCOIN, true, 0, BtcAccount.TAPROOT)).address).toBe(
+      'bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7'
+    )
+    // taproot and native SegWit coins alike, from one PSBT request
+    const r = await maki.btcSign(Network.BITCOIN, fixture('abandon-taproot-unsigned.psbt'))
+    expect(r.approval).toBe('approved')
+    expect(r.signed).toEqual(fixture('abandon-taproot-signed.psbt'))
   })
 
   it('takes a PSBT bigger than one piece', async () => {

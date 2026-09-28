@@ -17,7 +17,7 @@ import {
 } from './client'
 import { readBundle } from './bundle'
 import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
-import type { ApprovalValue, NetworkValue } from './protocol'
+import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
 import type { Store, StoreApp } from './store'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
@@ -319,21 +319,29 @@ export class Link {
     return r
   }
 
-  /** The Bitcoin account for wallet software, once the owner agrees on maki. */
-  async btcAccount(network: NetworkValue): Promise<{ zpub: string; descriptor: string } | null> {
+  /** A Bitcoin account for wallet software, once the owner agrees on maki. */
+  async btcAccount(
+    network: NetworkValue,
+    account: BtcAccountValue = BtcAccount.SEGWIT
+  ): Promise<{ zpub: string; descriptor: string } | null> {
     const client = this.linkedClient()
     this.note('sharing the Bitcoin account: approve on maki')
-    const r = await client.btcAccount(network)
+    const r = await client.btcAccount(network, account)
     this.note(r.approval === 'approved' ? 'Bitcoin account shared' : `Bitcoin account: ${r.approval}`)
     return r.approval === 'approved' ? { zpub: r.zpub, descriptor: r.descriptor } : null
   }
 
   /** Put an address on maki's screen; the owner says whether it matches this computer's. */
-  async btcAddress(network: NetworkValue, change: boolean, index: number): Promise<{ approval: ApprovalValue; address: string }> {
+  async btcAddress(
+    network: NetworkValue,
+    change: boolean,
+    index: number,
+    account: BtcAccountValue = BtcAccount.SEGWIT
+  ): Promise<{ approval: ApprovalValue; address: string }> {
     const client = this.linkedClient()
-    const which = `${change ? 'change' : 'receive'} address #${index}`
+    const which = `${account === BtcAccount.TAPROOT ? 'taproot ' : ''}${change ? 'change' : 'receive'} address #${index}`
     this.note(`${which} is on maki's screen: compare it`)
-    const r = await client.btcAddress(network, change, index)
+    const r = await client.btcAddress(network, change, index, account)
     this.note(
       r.approval === 'approved'
         ? `${which} matches maki's`

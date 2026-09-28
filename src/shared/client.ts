@@ -22,6 +22,8 @@ import {
   MAX_STORE_RECORD,
   MAX_TX,
   MAX_TYPED,
+  BtcAccount,
+  type BtcAccountValue,
   type NetworkValue,
   PSBT_PIECE,
   STORE_PIECE,
@@ -346,8 +348,11 @@ export class MakiClient {
   static readonly SIGN_TIMEOUT_MS = 330_000
 
   /** The Bitcoin account (zpub and output descriptor), once the owner agrees on maki. */
-  async btcAccount(network: NetworkValue): Promise<{ approval: ApprovalValue; zpub: string; descriptor: string }> {
-    const body = new Writer().u8(network).finish()
+  async btcAccount(
+    network: NetworkValue,
+    account: BtcAccountValue = BtcAccount.SEGWIT
+  ): Promise<{ approval: ApprovalValue; zpub: string; descriptor: string }> {
+    const body = new Writer().u8(network).u8(account).finish()
     const r = new Reader((await this.request(Kind.BTC_ACCOUNT, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
     const out = { approval: Approval[r.u8()] ?? 'unavailable', zpub: r.str8(), descriptor: r.str8() }
     r.end()
@@ -358,8 +363,13 @@ export class MakiClient {
    * Put an address on maki's screen for the owner to compare with this computer's: 'approved'
    * if they said it matches, 'denied' if it doesn't. `address` is maki's, either way.
    */
-  async btcAddress(network: NetworkValue, change: boolean, index: number): Promise<{ approval: ApprovalValue; address: string }> {
-    const body = new Writer().u8(network).u8(change ? 1 : 0).u32(index).finish()
+  async btcAddress(
+    network: NetworkValue,
+    change: boolean,
+    index: number,
+    account: BtcAccountValue = BtcAccount.SEGWIT
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    const body = new Writer().u8(network).u8(change ? 1 : 0).u32(index).u8(account).finish()
     const r = new Reader((await this.request(Kind.BTC_ADDRESS, body, MakiClient.APPROVAL_TIMEOUT_MS * 2)).body)
     const out = { approval: Approval[r.u8()] ?? 'unavailable', address: r.str8() }
     r.end()

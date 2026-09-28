@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import type { Link } from '@shared/link'
-import { Network, type ApprovalValue, type NetworkValue } from '@shared/protocol'
+import {
+  BtcAccount,
+  Network,
+  type ApprovalValue,
+  type BtcAccountValue,
+  type NetworkValue
+} from '@shared/protocol'
 import { readPsbt, toBase64 } from '@shared/psbt'
 
 const button =
@@ -12,6 +18,14 @@ function savedNetwork(): NetworkValue {
     return localStorage.getItem('maki.network') === '1' ? Network.TESTNET : Network.BITCOIN
   } catch {
     return Network.BITCOIN
+  }
+}
+
+function savedAccount(): BtcAccountValue {
+  try {
+    return localStorage.getItem('maki.btcAccount') === '1' ? BtcAccount.TAPROOT : BtcAccount.SEGWIT
+  } catch {
+    return BtcAccount.SEGWIT
   }
 }
 
@@ -45,6 +59,7 @@ function why(approval: ApprovalValue, reason: string): string {
 export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
   const linked = link.state.linked
   const [network, setNetwork] = useState<NetworkValue>(savedNetwork)
+  const [kind, setKind] = useState<BtcAccountValue>(savedAccount)
   const [busy, setBusy] = useState<'account' | 'address' | 'sign' | null>(null)
   const [account, setAccount] = useState<{ zpub: string; descriptor: string } | null>(null)
   const [change, setChange] = useState(false)
@@ -86,6 +101,27 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
       // remembered for this session only
     }
   }
+
+  const chooseKind = (k: BtcAccountValue): void => {
+    setKind(k)
+    setAccount(null)
+    setShown(null)
+    setProblem(null)
+    try {
+      localStorage.setItem('maki.btcAccount', String(k))
+    } catch {
+      // remembered for this session only
+    }
+  }
+
+  const taproot = kind === BtcAccount.TAPROOT
+  const keyName = taproot
+    ? network === Network.TESTNET
+      ? 'tpub'
+      : 'xpub'
+    : network === Network.TESTNET
+      ? 'vpub'
+      : 'zpub'
 
   const copy = async (label: string, text: string): Promise<void> => {
     await window.maki.copy(text)
@@ -132,6 +168,24 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
         Wallet software such as Sparrow or Bitcoin Core keeps track of your coins and builds
         transactions. maki shows you each one and signs it.
       </p>
+      <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+        Account
+        <div className="flex overflow-hidden rounded-lg border border-zinc-700">
+          {[
+            [BtcAccount.SEGWIT, 'Native SegWit'],
+            [BtcAccount.TAPROOT, 'Taproot']
+          ].map(([k, label]) => (
+            <button
+              key={label}
+              onClick={() => chooseKind(k as BtcAccountValue)}
+              className={`px-2.5 py-1 ${kind === k ? 'bg-zinc-200 text-zinc-900' : 'text-zinc-400 hover:text-zinc-200'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {taproot ? 'BIP86, bc1p… addresses' : 'BIP84, bc1q… addresses'}
+      </div>
 
       <h3 className={heading}>Connect wallet software</h3>
       {account ? (
@@ -148,9 +202,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
               {copied === 'descriptor' ? 'Copied' : 'Copy descriptor'}
             </button>
             <button className={button} onClick={() => void copy('zpub', account.zpub)}>
-              {copied === 'zpub'
-                ? 'Copied'
-                : `Copy ${network === Network.TESTNET ? 'vpub' : 'zpub'}`}
+              {copied === 'zpub' ? 'Copied' : `Copy ${keyName}`}
             </button>
           </div>
         </>
@@ -160,7 +212,7 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
           disabled={!idle}
           onClick={() =>
             void run('account', async () => {
-              const a = await link.btcAccount(network)
+              const a = await link.btcAccount(network, kind)
               if (a) setAccount(a)
               else setProblem('maki didn’t share the account.')
             })
@@ -201,9 +253,9 @@ export function Bitcoin({ link }: { link: Link }): React.JSX.Element {
           disabled={!idle}
           onClick={() =>
             void run('address', async () => {
-              const which = `${change ? 'Change' : 'Receive'} address #${index}`
+              const which = `${taproot ? 'Taproot ' : ''}${change ? (taproot ? 'change' : 'Change') : taproot ? 'receive' : 'Receive'} address #${index}`
               setShown(null)
-              const r = await link.btcAddress(network, change, index)
+              const r = await link.btcAddress(network, change, index, kind)
               setShown({ ...r, which })
             })
           }
