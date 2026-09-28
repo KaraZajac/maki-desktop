@@ -4,6 +4,7 @@ import { CURRENCIES, type Currency } from '@shared/prices'
 import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
+import { Monero } from './Monero'
 import { PricesContext, useFreshPrices } from './prices-state'
 import { PageHeader } from './ui'
 
@@ -17,8 +18,8 @@ function savedCurrency(): Currency | null {
 }
 
 /**
- * maki's wallets: Bitcoin and Ethereum, here and for wallet software and sites. Each is an app
- * from the maki store, which a maki has only if its owner adds it.
+ * maki's wallets: Bitcoin, Ethereum and Monero, here and for wallet software and sites. Each is an
+ * app from the maki store, which a maki has only if its owner adds it.
  */
 export function Wallets({ link, apps }: { link: Link; apps: Apps }): React.JSX.Element {
   const [currency, setCurrency] = useState<Currency | null>(savedCurrency)
@@ -63,6 +64,7 @@ export function Wallets({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
       <PricesContext.Provider value={{ currency, prices }}>
         <Bitcoin link={link} apps={apps} />
         <Ethereum link={link} apps={apps} />
+        <Monero link={link} apps={apps} />
       </PricesContext.Provider>
     </div>
   )

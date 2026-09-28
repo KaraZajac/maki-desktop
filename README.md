@@ -33,14 +33,16 @@ maki's roll for what to do and the green of the nori for what's done.
 - **Keeps backups.** On link, hourly, and soon after a login is saved, maki hands over its logins
   and codes encrypted with a key from its recovery phrase, and they're kept in the app's folder.
   "Restore to maki" sends the latest back; maki asks before adding anything.
-- **Is a wallet.** maki's wallets are apps from the maki store, Bitcoin and Ethereum, for those
-  who want them: maki keeps the keys, the app shows you what you sign on maki's screen, and the
-  Wallets page offers the app when maki hasn't it. The page holds each account: Bitcoin (native SegWit and
-  taproot, mainnet and testnet4; balance, coins and activity from mempool.space; a fresh address
-  as a QR code, checked on maki; sending at the fee you choose, and speeding up one that's
-  waiting) and Ethereum (what it holds on six networks, the tokens maki knows included; sending
-  a coin or a token, to an address or an ENS name). maki shows every payment and signs it.
-  Values in money if you pick a currency (CoinGecko, asked the same question for everyone).
+- **Is a wallet.** maki's wallets are apps from the maki store, Bitcoin, Ethereum and Monero, for
+  those who want them: maki keeps the keys, the app shows you what you sign on maki's screen, and
+  the Wallets page offers the app when maki hasn't it. The page holds each account: Bitcoin
+  (native SegWit and taproot, mainnet and testnet4; balance, coins and activity from
+  mempool.space; a fresh address as a QR code, checked on maki; sending at the fee you choose, and
+  speeding up one that's waiting) and Ethereum (what it holds on six networks, the tokens maki
+  knows included; sending a coin or a token, to an address or an ENS name). maki shows every
+  payment and signs it. And Monero's address and subaddresses, each compared on maki's screen
+  first; its 25-word backup shows on maki alone. Values in money if you pick a currency
+  (CoinGecko, asked the same question for everyone).
 - **Works with Bitcoin wallet software.** Get one of maki's accounts, native SegWit (BIP84) or
   taproot (BIP86), as an output descriptor for Sparrow or Bitcoin Core as a watch-only wallet;
   check an address on maki's screen before giving it out; and

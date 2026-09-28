@@ -42,6 +42,8 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
     const eth = readBundle(fixture('ethereum')).manifest
     expect(eth.wallet!.paths.map(formatPath)).toEqual(["m/44'/60'"])
     expect(walletCoins(eth.wallet!.paths)).toEqual(['Ethereum'])
+    const xmr = readBundle(fixture('monero')).manifest
+    expect([xmr.api, xmr.wallet!.paths.map(formatPath), walletCoins(xmr.wallet!.paths)]).toEqual([4, ["m/44'/128'"], ['Monero']])
     // an app without the permission has no paths
     expect(readBundle(fixture('dice')).manifest.wallet).toBeNull()
   })

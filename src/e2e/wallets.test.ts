@@ -60,7 +60,9 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
       '--app',
       join(APP_FIXTURES, 'bitcoin.maki'),
       '--app',
-      join(APP_FIXTURES, 'ethereum.maki')
+      join(APP_FIXTURES, 'ethereum.maki'),
+      '--app',
+      join(APP_FIXTURES, 'monero.maki')
     ])
     home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
   }, 180_000)
@@ -204,6 +206,42 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
     expect(Number(BigInt('0x' + (hex.encode(fields[0]) || '0')))).toBe(1)
     expect('0x' + hex.encode(fields[5])).toBe(usdc.contract.toLowerCase())
     expect('0x' + hex.encode(fields[7])).toBe(transferData(PAYEE_ETH, 1_250_000n))
+  }, 180_000)
+})
+
+const PRIMARY =
+  '49vDbkSo7eve3J41sBdjvjaBUyz8qHohsQcGtRf63qEUTMBvmA45fpp5pSacMdSg7A3b71RejLzB8EkGbfjp5PELVF2N4Zn'
+
+describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, Monero', () => {
+  let fake: { port: number; proc: ChildProcess }
+  let home = ''
+
+  beforeAll(async () => {
+    build()
+    fake = await startFake(['--app', join(APP_FIXTURES, 'monero.maki')])
+    home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
+  }, 180_000)
+  afterAll(() => {
+    fake?.proc.kill()
+    if (home) rmSync(home, { recursive: true, force: true })
+  })
+
+  it('shows the Monero address once it matches maki’s, and a fresh subaddress', async () => {
+    const said = await driveApp(
+      home,
+      fake.port,
+      [
+        // the test phrase's primary address, as Ledger's Monero app and monero-python make it
+        ...['--click', 'Wallets', '--click', 'Show on maki', '--until', PRIMARY],
+        ...['--click', 'A fresh subaddress', '--until', 'matches maki']
+      ],
+      {}
+    )
+    // then subaddress 1, in its place
+    expect(said).toContain(
+      '8AB7PQPtducdkghYFN2prK3rZ7zPeL9f2REEdqE4WXYbSZr3797Aqti5xAjRsVy4jTdcwMW11GWejQtqk2kNXxj2QZxJwPZ'
+    )
+    expect(said).not.toContain(PRIMARY)
   }, 180_000)
 })
 

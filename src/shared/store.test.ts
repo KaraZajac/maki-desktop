@@ -44,6 +44,7 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Bitcoin', 'wasm', 'Finance'],
       ['Dice', 'wasm', 'Games'],
       ['Ethereum', 'wasm', 'Finance'],
+      ['Monero', 'wasm', 'Finance'],
       ['Nostr', 'wasm', 'Social'],
       ['Passphrase', 'wasm', 'Security'],
       ['Pomodoro', 'native', 'Productivity'],

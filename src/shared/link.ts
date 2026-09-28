@@ -21,7 +21,7 @@ import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from '.
 import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
-import { BitcoinApp, EthereumApp } from './wallet-apps'
+import { BitcoinApp, EthereumApp, MoneroApp, type MoneroNetworkValue } from './wallet-apps'
 import type { Store, StoreApp } from './store'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
@@ -78,6 +78,7 @@ export class Link {
   /** maki's wallets: apps from the maki store, which maki keeps the keys for */
   readonly bitcoin: BitcoinApp
   readonly ethereumApp: EthereumApp
+  readonly monero: MoneroApp
   /** the Ethereum account, for sites through the browser extension */
   readonly ethereum: Ethereum
   /** the same account as a wallet in maki desktop: what it holds, and sending from it */
@@ -94,6 +95,7 @@ export class Link {
     const send = (app: string, message: Uint8Array, timeoutMs?: number) => this.appMessage(app, message, timeoutMs)
     this.bitcoin = new BitcoinApp(send)
     this.ethereumApp = new EthereumApp(send)
+    this.monero = new MoneroApp(send)
     this.ethereum = new Ethereum(() => (this.state.linked ? this.ethereumApp : null), eth.rpc, eth.store)
     this.ethWallet = new EthWallet(this.ethereum, eth.rpc)
     this.nostr = new Nostr(send)
@@ -353,7 +355,7 @@ export class Link {
   }
 
   /** A wallet app's answer that isn't a yes, for the log. */
-  static walletSays(approval: ApprovalValue, wallet: 'Bitcoin' | 'Ethereum'): string {
+  static walletSays(approval: ApprovalValue, wallet: 'Bitcoin' | 'Ethereum' | 'Monero'): string {
     switch (approval) {
       case 'no match':
         return `maki's ${wallet} app isn't installed: add it from the maki store, in Apps`
@@ -381,6 +383,25 @@ export class Link {
         : r.approval === 'denied'
           ? `${which} doesn't match maki's: don't use this computer's copy`
           : `${which}: ${Link.walletSays(r.approval, 'Bitcoin')}`
+    )
+    return r
+  }
+
+  /**
+   * Put a Monero address on maki's screen (account 0's `index`: 0 is the primary address); the
+   * owner says whether it matches this computer's.
+   */
+  async moneroAddress(network: MoneroNetworkValue, index: number): Promise<{ approval: ApprovalValue; address: string }> {
+    this.linkedClient()
+    const which = index === 0 ? 'Monero primary address' : `Monero subaddress #${index}`
+    this.note(`${which} is on maki's screen: compare it`)
+    const r = await this.monero.address(network, 0, index)
+    this.note(
+      r.approval === 'approved'
+        ? `${which} matches maki's`
+        : r.approval === 'denied'
+          ? `${which} doesn't match maki's: don't use this computer's copy`
+          : `${which}: ${Link.walletSays(r.approval, 'Monero')}`
     )
     return r
   }

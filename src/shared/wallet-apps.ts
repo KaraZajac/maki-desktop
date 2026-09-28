@@ -1,10 +1,10 @@
 /**
- * maki's wallets, which are apps from the maki store (the firmware's ARCHITECTURE.md, "Wallets
- * are apps"): Bitcoin and Ethereum, the SDK's examples `bitcoin` and `ethereum`. maki keeps the
- * keys and lets each app sign only for its own accounts; the app reads what it's asked to sign,
- * shows it on maki's screen and signs once the owner says yes. Their messages are in each app's
- * source; the calls here are the ones MakiClient made when the wallets were maki's own, with the
- * same answers, and 'no match' when the app isn't installed.
+ * maki's wallets, which are apps from the maki store (the firmware's ARCHITECTURE.md, "Wallets are
+ * apps"): Bitcoin, Ethereum and Monero, the SDK's examples `bitcoin`, `ethereum` and `monero`. maki
+ * keeps the keys and lets each app sign only for its own accounts; the app reads what it's asked to
+ * sign, shows it on maki's screen and signs once the owner says yes. Their messages are in each
+ * app's source; the calls here are the ones MakiClient made when the wallets were maki's own, with
+ * the same answers, and 'no match' when the app isn't installed.
  *
  * No Node or DOM imports here: this module runs in the renderer and in tests.
  */
@@ -20,6 +20,7 @@ import {
 
 export const BITCOIN_APP = 'com.leviathan.maki.bitcoin'
 export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
+export const MONERO_APP = 'com.leviathan.maki.monero'
 
 /** Talking to an app on maki (Link.appMessage): its answer, if maki has it and it answered. */
 export type AppMessage = (
@@ -340,5 +341,41 @@ export class EthereumApp extends WalletApp {
     } catch {
       return { approval: 'unavailable', reason: '', signature: null }
     }
+  }
+}
+
+/** Monero's networks, as the Monero app numbers them. */
+export const MoneroNetwork = { MONERO: 0, TESTNET: 1, STAGENET: 2 } as const
+export type MoneroNetworkValue = (typeof MoneroNetwork)[keyof typeof MoneroNetwork]
+
+/**
+ * maki's Monero app: the account Ledger's Monero app makes from the same phrase. Its backup
+ * words, the 25 any Monero wallet restores from, are shown on maki alone (the app's menu).
+ */
+export class MoneroApp extends WalletApp {
+  constructor(send: AppMessage) {
+    super(send, MONERO_APP, 'Monero')
+  }
+
+  /**
+   * Put an address on maki's screen for the owner to compare with this computer's: account
+   * `account`'s address `index` (0 and 0: the primary address; any other, a subaddress).
+   * 'approved' if they said it matches, 'denied' if it doesn't; `address` is maki's, either way.
+   */
+  async address(
+    network: MoneroNetworkValue,
+    account = 0,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    const m = new Writer().u8(0x44).u8(network).u32(account).u32(index).finish()
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '' }
+    let address = ''
+    try {
+      address = a.text()
+    } catch {
+      // locked, or no answer: nothing shown
+    }
+    return { approval: a.approval, address }
   }
 }
