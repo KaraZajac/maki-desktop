@@ -3,12 +3,39 @@
   <head>
     <meta charset="utf-8" />
     <style>
-      body { width: 260px; margin: 0; padding: 14px; font: 13px system-ui, sans-serif; color: #e4e4e7; background: #0b0b0f; }
-      h1 { margin: 0 0 8px; font-size: 18px; }
+      /* maki's look: Catppuccin Mocha, the peach of its roll's salmon, the green of its nori */
+      * { box-sizing: border-box; }
+      body {
+        width: 272px;
+        margin: 0;
+        padding: 16px;
+        font: 13px/1.5 system-ui, sans-serif;
+        color: #cdd6f4;
+        background: radial-gradient(18rem 9rem at 30% -4rem, rgb(250 179 135 / 0.14), transparent 70%), #1e1e2e;
+      }
+      header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+      header svg { width: 30px; height: 30px; filter: drop-shadow(0 0 10px rgb(255 122 89 / 0.35)); }
+      h1 { margin: 0; font: 700 18px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: -0.03em; }
+      .state { display: flex; align-items: center; gap: 8px; font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.14em; text-transform: uppercase; color: #7f849c; margin-bottom: 8px; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #6c7086; }
+      .linked .dot { background: #a6e3a1; box-shadow: 0 0 6px rgb(166 227 161 / 0.6); }
+      .linked { color: #a6e3a1; }
+      .off { color: #f9e2af; }
+      .off .dot { background: #f9e2af; }
+      p { margin: 0; color: #bac2de; }
     </style>
   </head>
   <body>
-    <h1>maki</h1>
+    <header>
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="30" fill="#1d3a2a" stroke="#4d8a66" stroke-width="1.2" />
+        <circle cx="32" cy="32" r="25" fill="#f3efe6" />
+        <circle cx="32" cy="32" r="11" fill="#ff7a59" />
+      </svg>
+      <h1>maki</h1>
+    </header>
+    <div id="state" class="state"><span class="dot"></span><span id="word">checking</span></div>
     <p id="status">Checking…</p>
     <script src="popup.js"></script>
   </body>
