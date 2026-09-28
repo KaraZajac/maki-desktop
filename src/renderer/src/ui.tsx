@@ -6,6 +6,8 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { iconPixels } from '@shared/bundle'
 
+export { ago, bytes } from './format'
+
 /** maki's mark: a maki roll seen face on (the nori, the rice, the salmon). */
 export function MakiMark({ className = 'h-9 w-9' }: { className?: string }): React.JSX.Element {
   return (
@@ -392,35 +394,6 @@ export function Toggle({
       />
     </button>
   )
-}
-
-/** A number with at most `places` decimals, none of them trailing zeros. */
-const trim = (n: number, places: number): string => n.toFixed(places).replace(/\.?0+$/, '')
-
-/** Bytes as people read them, in KiB and MiB as maki's own screens have them. */
-export function bytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) {
-    const k = n / 1024
-    return `${k < 10 ? trim(k, 1) : Math.round(k)} KiB`
-  }
-  const m = n / (1024 * 1024)
-  return `${m < 10 ? trim(m, 2) : trim(m, 1)} MiB`
-}
-
-/** How long ago, in words. */
-export function ago(ms: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - ms) / 1000))
-  if (s < 45) return 'just now'
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m} min ago`
-  const h = Math.round(m / 60)
-  if (h < 24) return `${h} h ago`
-  return new Date(ms).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  })
 }
 
 /** The colours apps have in the storage chart, in order: the site's, peach first. */
