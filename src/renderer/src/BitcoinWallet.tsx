@@ -5,6 +5,7 @@ import {
   BtcWallet,
   EXPLORER,
   type BtcAccountInfo,
+  type BtcActivity,
   type BtcPlan,
   type BtcWalletState,
   type FeeRates
@@ -99,6 +100,8 @@ export function BitcoinWallet({
   const [problem, setProblem] = useState<string | null>(null)
   const [panel, setPanel] = useState<'receive' | 'send' | null>(null)
   const [all, setAll] = useState(false)
+  // the waiting payment being sped up, if one is
+  const [bumping, setBumping] = useState<string | null>(null)
 
   const look = async (): Promise<void> => {
     setLooking(true)
@@ -245,40 +248,63 @@ export function BitcoinWallet({
           {shown.map((a) => {
             const incoming = a.net > 0n
             return (
-              <li key={a.txid} className="flex items-center gap-3 py-2.5">
-                <span
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                    incoming ? 'bg-green/10 text-green' : 'bg-peach/10 text-peach'
-                  }`}
-                >
-                  <Glyph name={incoming ? 'receive' : 'send'} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-subtext1">
-                    {incoming ? 'Received' : a.net === 0n ? 'Moved' : 'Sent'}
+              <li key={a.txid} className="py-2.5">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                      incoming ? 'bg-green/10 text-green' : 'bg-peach/10 text-peach'
+                    }`}
+                  >
+                    <Glyph name={incoming ? 'receive' : 'send'} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-subtext1">
+                      {incoming ? 'Received' : a.net === 0n ? 'Moved' : 'Sent'}
+                    </div>
+                    <div className="truncate font-mono text-[0.68rem] text-overlay0">
+                      {a.txid.slice(0, 10)}…{a.txid.slice(-6)}
+                      {!incoming && a.fee > 0n && ` · fee ${satoshis(a.fee)}`}
+                    </div>
                   </div>
-                  <div className="truncate font-mono text-[0.68rem] text-overlay0">
-                    {a.txid.slice(0, 10)}…{a.txid.slice(-6)}
-                    {!incoming && a.fee > 0n && ` · fee ${satoshis(a.fee)}`}
+                  <div className="text-right">
+                    <div className={`font-mono text-sm ${incoming ? 'text-green' : 'text-fg'}`}>
+                      {incoming ? '+' : a.net < 0n ? '−' : ''}
+                      {btcAmount(a.net < 0n ? -a.net : a.net)} {unit}
+                    </div>
+                    <div className="mt-0.5 flex items-center justify-end gap-2 text-[0.68rem] text-overlay1">
+                      {a.replaceable && (
+                        <button
+                          className="font-mono font-bold text-peach hover:text-yellow"
+                          onClick={() => setBumping(bumping === a.txid ? null : a.txid)}
+                        >
+                          speed up
+                        </button>
+                      )}
+                      {a.time === null ? <Badge kind="warn">waiting</Badge> : ago(a.time * 1000)}
+                    </div>
                   </div>
+                  <button
+                    className="rounded-md p-1.5 text-overlay1 transition-colors hover:bg-surface0 hover:text-fg"
+                    title="See it on mempool.space"
+                    aria-label="See it on mempool.space"
+                    onClick={() => void window.maki.openExternal(`${explorer}/tx/${a.txid}`)}
+                  >
+                    <Glyph name="external" className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-                <div className="text-right">
-                  <div className={`font-mono text-sm ${incoming ? 'text-green' : 'text-fg'}`}>
-                    {incoming ? '+' : a.net < 0n ? '−' : ''}
-                    {btcAmount(a.net < 0n ? -a.net : a.net)} {unit}
-                  </div>
-                  <div className="mt-0.5 text-[0.68rem] text-overlay1">
-                    {a.time === null ? <Badge kind="warn">waiting</Badge> : ago(a.time * 1000)}
-                  </div>
-                </div>
-                <button
-                  className="rounded-md p-1.5 text-overlay1 transition-colors hover:bg-surface0 hover:text-fg"
-                  title="See it on mempool.space"
-                  aria-label="See it on mempool.space"
-                  onClick={() => void window.maki.openExternal(`${explorer}/tx/${a.txid}`)}
-                >
-                  <Glyph name="external" className="h-3.5 w-3.5" />
-                </button>
+                {bumping === a.txid && (
+                  <SpeedUp
+                    link={link}
+                    wallet={wallet}
+                    activity={a}
+                    network={network}
+                    linked={linked}
+                    done={() => {
+                      setBumping(null)
+                      setTimeout(() => void look(), 2500)
+                    }}
+                  />
+                )}
               </li>
             )
           })}
@@ -642,6 +668,98 @@ function Send({
         </p>
       )}
       {problem && <p className="mt-3 text-sm text-yellow">{problem}</p>}
+    </div>
+  )
+}
+
+/**
+ * A payment still waiting for a block, sent again with a higher fee: the same coins and payments,
+ * the extra fee out of its change. maki shows it like any payment.
+ */
+function SpeedUp({
+  link,
+  wallet,
+  activity,
+  network,
+  linked,
+  done
+}: {
+  link: Link
+  wallet: BtcWallet
+  activity: BtcActivity
+  network: NetworkValue
+  linked: boolean
+  done: () => void
+}): React.JSX.Element {
+  const [rates, setRates] = useState<FeeRates | null>(null)
+  const [rate, setRate] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  useEffect(() => {
+    wallet.feeRates().then(
+      (r) => {
+        setRates(r)
+        // the fastest there is, and at least a little more than it paid
+        setRate(String(Math.max(r.fastestFee, Math.ceil((activity.rate ?? 0) + 1))))
+      },
+      () => setRate(String(Math.ceil((activity.rate ?? 1) * 2)))
+    )
+  }, [wallet, activity.rate])
+
+  const go = async (): Promise<void> => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      const { psbt, fee, was } = await wallet.bump(activity.txid, Number(rate))
+      const r = await link.btcSign(network, psbt)
+      if (!r.signed) {
+        setProblem(said(r.approval, r.reason))
+        return
+      }
+      const txid = await wallet.broadcast(r.signed)
+      link.note(`sped up: its fee ${satoshis(was)} → ${satoshis(fee)}, now ${txid}`)
+      done()
+    } catch (e) {
+      setProblem((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rise mt-2.5 ml-11 rounded-lg border border-surface0 bg-crust/40 p-3.5">
+      <p className="text-xs leading-relaxed text-subtext0">
+        Send it again with a higher fee: the same payment, the extra fee out of its change back to
+        you.
+        {activity.rate !== null && ` It pays about ${activity.rate.toFixed(1)} sat/vB now.`}
+        {rates && ` The fastest now is ${rates.fastestFee} sat/vB.`}
+      </p>
+      <div className="mt-2.5 flex flex-wrap items-end gap-3">
+        <Field
+          className="w-40"
+          label="New fee rate"
+          unit="sat/vB"
+          inputMode="decimal"
+          value={rate}
+          disabled={busy}
+          onChange={(e) => setRate(e.target.value)}
+        />
+        <Button
+          small
+          kind="primary"
+          glyph="chip"
+          disabled={!linked || busy || !(Number(rate) > 0)}
+          onClick={() => void go()}
+        >
+          {busy ? 'Go through it on maki…' : linked ? 'Review on maki' : 'Plug maki in'}
+        </Button>
+      </div>
+      {problem && (
+        <p className="mt-2 text-sm text-yellow">
+          {problem[0].toUpperCase() + problem.slice(1)}
+          {problem.endsWith('.') ? '' : '.'}
+        </p>
+      )}
     </div>
   )
 }

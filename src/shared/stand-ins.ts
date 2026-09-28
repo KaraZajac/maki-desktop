@@ -7,6 +7,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { keccak_256 } from '@noble/hashes/sha3.js'
 import { hex } from '@scure/base'
 import * as btc from '@scure/btc-signer'
+import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Esplora } from './btc-wallet'
@@ -16,54 +17,196 @@ import { tokensOn } from './tokens'
 
 const USDC = tokensOn(1n).find((t) => t.symbol === 'USDC')!
 
-/** A chain that holds one coin: `value` satoshis to `address`, in a transaction of its own. */
-export function pretendChain(address: string, value: number, network = btc.NETWORK) {
-  const funding = new btc.Transaction({ allowUnknownInputs: true })
-  funding.addInput({ txid: '11'.repeat(32), index: 0, finalScriptSig: new Uint8Array() })
-  funding.addOutputAddress(address, BigInt(value), network)
-  const raw = funding.hex
-  const txid = funding.id
-  const broadcast: string[] = []
-  const empty = { funded_txo_sum: 0, spent_txo_sum: 0, tx_count: 0 }
-  const esplora: Esplora = async (_network, path, body) => {
-    if (path === '/tx' && body) {
-      broadcast.push(body)
-      return btc.Transaction.fromRaw(hex.decode(body)).id
+/** A transaction's weight; a made-up funding transaction's, which has no witness, from its size. */
+function weight(tx: btc.Transaction): number {
+  try {
+    return tx.weight
+  } catch {
+    return (tx.hex.length / 2) * 4
+  }
+}
+
+/** What the pretend chain's Esplora recommends, sat/vB. */
+export const PRETEND_FEES = {
+  fastestFee: 9,
+  halfHourFee: 5,
+  hourFee: 3,
+  economyFee: 2,
+  minimumFee: 1
+}
+
+/**
+ * A chain as a ledger of transactions, some in blocks and some waiting, answering Esplora's
+ * questions from them: each address's totals, its unspent coins and its transactions (the newest
+ * first, those waiting before them). What's broadcast joins those waiting, replacing any it
+ * spends the same coins as (BIP125), and is kept.
+ */
+export class PretendChain {
+  private entries = new Map<string, { tx: btc.Transaction; confirmed: boolean; time: number }>()
+  readonly broadcast: string[] = []
+
+  constructor(private network = btc.NETWORK) {}
+
+  /** A transaction, in a block or waiting for one; its ID. */
+  add(tx: btc.Transaction, confirmed: boolean, time = 1_790_000_000): string {
+    this.entries.set(tx.id, { tx, confirmed, time })
+    return tx.id
+  }
+
+  /** `value` satoshis to `address`, in a transaction of their own, in a block; its ID. */
+  fund(address: string, value: number, confirmed = true): string {
+    const funding = new btc.Transaction({ allowUnknownInputs: true })
+    // an input of its own, so each funding transaction's ID is different
+    funding.addInput({
+      txid: hex.encode(randomBytes(32)),
+      index: 0,
+      finalScriptSig: new Uint8Array()
+    })
+    funding.addOutputAddress(address, BigInt(value), this.network)
+    return this.add(funding, confirmed)
+  }
+
+  waiting(txid: string): boolean {
+    return this.entries.get(txid)?.confirmed === false
+  }
+
+  private address(script: Uint8Array): string | undefined {
+    try {
+      return btc.Address(this.network).encode(btc.OutScript.decode(script))
+    } catch {
+      return undefined
     }
-    if (path === `/tx/${txid}/hex`) return raw
-    if (path === '/v1/fees/recommended')
-      return JSON.stringify({
-        fastestFee: 9,
-        halfHourFee: 5,
-        hourFee: 3,
-        economyFee: 2,
-        minimumFee: 1
-      })
-    const m = /^\/address\/([^/]+)(\/utxo|\/txs)?$/.exec(path)
-    if (!m) throw new Error(`the pretend chain has no ${path}`)
-    const ours = m[1] === address
-    if (m[2] === '/utxo')
-      return JSON.stringify(ours ? [{ txid, vout: 0, value, status: { confirmed: true } }] : [])
-    if (m[2] === '/txs')
-      return JSON.stringify(
-        ours
-          ? [
-              {
-                txid,
-                fee: 0,
-                status: { confirmed: true, block_time: 1_790_000_000 },
-                vin: [{ prevout: null }],
-                vout: [{ scriptpubkey_address: address, value }]
-              }
-            ]
-          : []
-      )
-    return JSON.stringify({
-      chain_stats: ours ? { funded_txo_sum: value, spent_txo_sum: 0, tx_count: 1 } : empty,
-      mempool_stats: empty
+  }
+
+  private inputs(tx: btc.Transaction): { txid: string; vout: number; sequence: number }[] {
+    return Array.from({ length: tx.inputsLength }, (_, i) => {
+      const input = tx.getInput(i)
+      return {
+        txid: hex.encode(input.txid!),
+        vout: input.index!,
+        sequence: input.sequence ?? 0xffffffff
+      }
     })
   }
-  return { esplora, broadcast, txid }
+
+  private output(txid: string, vout: number): { address?: string; value: number } | null {
+    const e = this.entries.get(txid)
+    if (!e || vout >= e.tx.outputsLength) return null
+    const o = e.tx.getOutput(vout)
+    return { address: this.address(o.script!), value: Number(o.amount!) }
+  }
+
+  private spender(txid: string, vout: number): { confirmed: boolean } | undefined {
+    for (const e of this.entries.values()) {
+      if (this.inputs(e.tx).some((i) => i.txid === txid && i.vout === vout)) return e
+    }
+    return undefined
+  }
+
+  /** The transaction as Esplora describes it. */
+  private describe(txid: string): object {
+    const { tx, confirmed, time } = this.entries.get(txid)!
+    const vin = this.inputs(tx).map((i) => {
+      const prev = this.output(i.txid, i.vout)
+      return { ...i, prevout: prev && { scriptpubkey_address: prev.address, value: prev.value } }
+    })
+    const vout = Array.from({ length: tx.outputsLength }, (_, i) => {
+      const o = tx.getOutput(i)
+      return { scriptpubkey_address: this.address(o.script!), value: Number(o.amount!) }
+    })
+    const into = vin.reduce((n, i) => n + (i.prevout?.value ?? 0), 0)
+    const out = vout.reduce((n, o) => n + o.value, 0)
+    return {
+      txid,
+      fee: vin.every((i) => i.prevout) ? into - out : 0,
+      weight: weight(tx),
+      status: confirmed ? { confirmed: true, block_time: time } : { confirmed: false },
+      vin,
+      vout
+    }
+  }
+
+  readonly esplora: Esplora = async (_network, path, body) => {
+    if (path === '/tx' && body) {
+      const tx = btc.Transaction.fromRaw(hex.decode(body))
+      const spends = this.inputs(tx).map((i) => `${i.txid}:${i.vout}`)
+      // a replacement: what it spends the same coins as, waiting, goes
+      for (const [id, e] of this.entries) {
+        if (!e.confirmed && this.inputs(e.tx).some((i) => spends.includes(`${i.txid}:${i.vout}`)))
+          this.entries.delete(id)
+      }
+      this.broadcast.push(body)
+      return this.add(tx, false)
+    }
+    if (path === '/v1/fees/recommended') return JSON.stringify(PRETEND_FEES)
+    const raw = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(path)
+    if (raw) {
+      const e = this.entries.get(raw[1])
+      if (!e) throw new Error('Transaction not found')
+      return e.tx.hex
+    }
+    const m = /^\/address\/([^/]+)(\/utxo|\/txs)?$/.exec(path)
+    if (!m) throw new Error(`the pretend chain has no ${path}`)
+    const address = m[1]
+    const touching = [...this.entries].filter(
+      ([id, e]) =>
+        Array.from({ length: e.tx.outputsLength }, (_, i) => this.output(id, i)).some(
+          (o) => o?.address === address
+        ) || this.inputs(e.tx).some((i) => this.output(i.txid, i.vout)?.address === address)
+    )
+    if (m[2] === '/utxo') {
+      const coins = touching.flatMap(([id, e]) =>
+        Array.from({ length: e.tx.outputsLength }, (_, vout) => ({
+          vout,
+          o: this.output(id, vout)!
+        }))
+          .filter(({ vout, o }) => o.address === address && !this.spender(id, vout))
+          .map(({ vout, o }) => ({
+            txid: id,
+            vout,
+            value: o.value,
+            status: { confirmed: e.confirmed }
+          }))
+      )
+      return JSON.stringify(coins)
+    }
+    if (m[2] === '/txs') {
+      const order = (e: { confirmed: boolean; time: number }): number =>
+        e.confirmed ? e.time : Infinity
+      return JSON.stringify(
+        touching.sort(([, a], [, b]) => order(b) - order(a)).map(([id]) => this.describe(id))
+      )
+    }
+    const stats = (
+      confirmed: boolean
+    ): { funded_txo_sum: number; spent_txo_sum: number; tx_count: number } => {
+      let funded = 0
+      let spent = 0
+      let count = 0
+      for (const [id, e] of touching) {
+        if (e.confirmed === confirmed) count++
+        for (let vout = 0; vout < e.tx.outputsLength; vout++) {
+          const o = this.output(id, vout)!
+          if (o.address === address && e.confirmed === confirmed) funded += o.value
+        }
+        if (e.confirmed === confirmed) {
+          for (const i of this.inputs(e.tx)) {
+            const prev = this.output(i.txid, i.vout)
+            if (prev?.address === address) spent += prev.value
+          }
+        }
+      }
+      return { funded_txo_sum: funded, spent_txo_sum: spent, tx_count: count }
+    }
+    return JSON.stringify({ chain_stats: stats(true), mempool_stats: stats(false) })
+  }
+}
+
+/** A chain that holds one coin: `value` satoshis to `address`, in a transaction of its own. */
+export function pretendChain(address: string, value: number, network = btc.NETWORK) {
+  const chain = new PretendChain(network)
+  const txid = chain.fund(address, value)
+  return { chain, esplora: chain.esplora, broadcast: chain.broadcast, txid }
 }
 
 type Rlp = Uint8Array | Rlp[]

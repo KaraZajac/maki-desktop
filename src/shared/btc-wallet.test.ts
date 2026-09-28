@@ -12,7 +12,7 @@ import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { BtcAccount, Network } from './protocol'
-import { BtcWallet, parseDescriptor, walletKey } from './btc-wallet'
+import { BtcWallet, parseDescriptor, REPLACEABLE, walletKey } from './btc-wallet'
 import { pretendChain } from './stand-ins'
 import { FAKE_BUILT, startFake, TcpTransport } from './test-support'
 
@@ -90,6 +90,7 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
       await wallet.broadcast(r.signed!)
       const tx = btc.Transaction.fromRaw(hex.decode(chain.broadcast[0]))
       expect(tx.inputsLength).toBe(1)
+      expect(tx.getInput(0).sequence).toBe(REPLACEABLE)
       expect(tx.getInput(0).txid && hex.encode(tx.getInput(0).txid!)).toBe(chain.txid)
       expect(tx.getOutput(0).amount).toBe(30_000n)
       expect(tx.getOutput(1).script).toEqual(state.change.script)
@@ -140,6 +141,57 @@ describe.skipIf(!FAKE_BUILT)('the Bitcoin wallet, with the fake maki', () => {
     expect(again).toEqual(first)
     // its stats, and the gap after it: nothing it already had
     expect(asked.some((p) => p.endsWith('/txs') || p.endsWith('/utxo'))).toBe(false)
+  })
+
+  it('speeds up a payment still waiting for a block: the same coin and payment, more fee from the change', async () => {
+    const info = parseDescriptor(
+      (await client.btcAccount(Network.BITCOIN, BtcAccount.SEGWIT)).descriptor
+    )
+    const keys = new BtcWallet(info, async () => '').keys
+    const coin = keys.address(0, 0)
+    const chain = pretendChain(coin.address, 100_000)
+    const w = new BtcWallet(info, chain.esplora)
+    const payee = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'
+    const first = await w.send(await w.scan(), payee, 30_000n, 2)
+    const txid1 = await w.broadcast((await client.btcSign(Network.BITCOIN, first.psbt)).signed!)
+
+    // waiting for a block, at about 2 sat/vB, and replaceable
+    const waiting = (await w.scan()).activity.find((a) => a.txid === txid1)!
+    expect(waiting).toMatchObject({ time: null, replaceable: true, net: -(30_000n + first.fee) })
+    expect(waiting.rate).toBeCloseTo(2, 0)
+    // again at 12 sat/vB: maki signs it like any payment, and it takes the first one's place
+    const bumped = await w.bump(txid1, 12)
+    expect(bumped.was).toBe(first.fee)
+    expect(bumped.fee).toBeGreaterThan(first.fee * 5n)
+    const signed = await client.btcSign(Network.BITCOIN, bumped.psbt)
+    expect(signed.approval).toBe('approved')
+    const txid2 = await w.broadcast(signed.signed!)
+    expect([chain.chain.waiting(txid1), chain.chain.waiting(txid2)]).toEqual([false, true])
+
+    const tx = btc.Transaction.fromRaw(hex.decode(chain.broadcast[1]))
+    expect(hex.encode(tx.getInput(0).txid!)).toBe(chain.txid)
+    expect(tx.getInput(0).sequence).toBe(REPLACEABLE)
+    expect(btc.Address(btc.NETWORK).encode(btc.OutScript.decode(tx.getOutput(0).script!))).toBe(
+      payee
+    )
+    expect(tx.getOutput(0).amount).toBe(30_000n)
+    // the change pays the difference
+    expect(tx.getOutput(1).amount).toBe(first.change - (bumped.fee - first.fee))
+    expect(btc.Address(btc.NETWORK).encode(btc.OutScript.decode(tx.getOutput(1).script!))).toBe(
+      keys.address(1, 0).address
+    )
+    const [sig, pub] = tx.getInput(0).finalScriptWitness!
+    const code = btc.OutScript.encode({ type: 'pkh', hash: hash160(pub) })
+    const digest = tx.preimageWitnessV0(0, code, btc.SigHash.ALL, 100_000n)
+    expect(secp256k1.verify(sig.slice(0, -1), digest, pub, { prehash: false, format: 'der' })).toBe(
+      true
+    )
+
+    // the next look has the new one and not the old; what's in a block can't be sped up
+    const after = (await w.scan()).activity.map((a) => a.txid)
+    expect(after).toContain(txid2)
+    expect(after).not.toContain(txid1)
+    await expect(w.bump(chain.txid, 20)).rejects.toThrow('waiting for a block')
   })
 
   it('says when there isn’t enough, and what it won’t send to', async () => {

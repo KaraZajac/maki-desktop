@@ -37,6 +37,11 @@ const HARDENED = 0x80000000
 export const GAP = 20
 /** Change smaller than this isn't worth an output: it goes to the fee. */
 export const DUST = 546n
+/**
+ * Each input's sequence: replaceable (BIP125), as wallets make them now, so a payment stuck at
+ * too low a fee can be sent again with a higher one.
+ */
+export const REPLACEABLE = 0xfffffffd
 
 const VERSIONS = {
   bitcoin: { private: 0x0488ade4, public: 0x0488b21e },
@@ -145,6 +150,10 @@ export interface BtcActivity {
   fee: bigint
   /** unix seconds, once it's in a block */
   time: number | null
+  /** its fee a virtual byte, if Esplora said how big it is */
+  rate: number | null
+  /** still waiting for a block, paid from the account's own coins, and replaceable: it can be sped up */
+  replaceable: boolean
 }
 
 export interface BtcWalletState {
@@ -167,8 +176,14 @@ interface Stats {
 interface EsploraTx {
   txid: string
   fee: number
+  weight?: number
   status: { confirmed: boolean; block_time?: number }
-  vin: { prevout: { scriptpubkey_address?: string; value: number } | null }[]
+  vin: {
+    txid?: string
+    vout?: number
+    sequence?: number
+    prevout: { scriptpubkey_address?: string; value: number } | null
+  }[]
   vout: { scriptpubkey_address?: string; value: number }[]
 }
 
@@ -208,6 +223,10 @@ const outputVb = (script: Uint8Array): number => 9 + script.length
 export class BtcWallet {
   readonly keys: BtcKeys
   /** each used address as the last look found it, to look again only at those that changed */
+  /** the account's used addresses, as the last look found them */
+  private ours = new Map<string, BtcAddress>()
+  /** its payments still waiting for a block that can be sped up, as Esplora describes them */
+  private waiting = new Map<string, EsploraTx>()
   private known = new Map<
     string,
     { count: number; waiting: number; utxos: Utxo[]; txs: EsploraTx[] }
@@ -301,6 +320,7 @@ export class BtcWallet {
         for (const tx of known.txs) seen.set(tx.txid, tx)
       })
     )
+    const waiting = new Map<string, EsploraTx>()
     const activity = [...seen.values()]
       .map((tx) => {
         const came = tx.vout
@@ -311,15 +331,32 @@ export class BtcWallet {
             (i) => i.prevout?.scriptpubkey_address && ours.has(i.prevout.scriptpubkey_address)
           )
           .reduce((n, i) => n + BigInt(i.prevout!.value), 0n)
+        const mine = tx.vin.every(
+          (i) =>
+            i.txid &&
+            i.vout !== undefined &&
+            i.prevout?.scriptpubkey_address &&
+            ours.has(i.prevout.scriptpubkey_address)
+        )
+        const replaceable =
+          !tx.status.confirmed &&
+          tx.vin.length > 0 &&
+          mine &&
+          tx.vin.some((i) => (i.sequence ?? 0xffffffff) < 0xfffffffe)
+        if (replaceable) waiting.set(tx.txid, tx)
         return {
           txid: tx.txid,
           net: came - went,
           fee: BigInt(tx.fee),
-          time: tx.status.confirmed ? (tx.status.block_time ?? null) : null
+          time: tx.status.confirmed ? (tx.status.block_time ?? null) : null,
+          rate: tx.weight ? tx.fee / Math.ceil(tx.weight / 4) : null,
+          replaceable
         }
       })
       // the newest first, those not yet in a block before them
       .sort((a, b) => (b.time ?? Infinity) - (a.time ?? Infinity))
+    this.ours = ours
+    this.waiting = waiting
     return {
       confirmed,
       pending,
@@ -431,49 +468,114 @@ export class BtcWallet {
       fee: paid,
       change
     } = this.plan(state, address, amount, feeRate)
-    const kind = this.keys.info.kind
-
     const tx = new btc.Transaction()
-    for (const c of chosen) {
-      const a = c.address
-      const der = this.keys.derivation(a)
-      if (kind === 'segwit') {
-        // maki takes no amount on a PSBT's word: the whole transaction the coin comes from
-        const raw = hex.decode((await this.get(`/tx/${c.txid}/hex`)).trim())
-        tx.addInput({
-          txid: c.txid,
-          index: c.vout,
-          nonWitnessUtxo: btc.RawTx.decode(raw),
-          witnessUtxo: { script: a.script, amount: c.value },
-          bip32Derivation: [[a.publicKey, der]]
-        })
-      } else {
-        const xOnly = a.publicKey.slice(1)
-        tx.addInput({
-          txid: c.txid,
-          index: c.vout,
-          witnessUtxo: { script: a.script, amount: c.value },
-          tapInternalKey: xOnly,
-          tapBip32Derivation: [[xOnly, { hashes: [], der }]]
-        })
-      }
-    }
+    for (const c of chosen) await this.spend(tx, c)
     tx.addOutput({ script: to, amount: sent })
-    if (change > 0n) {
-      const a = state.change
-      const der = this.keys.derivation(a)
-      tx.addOutput(
-        kind === 'segwit'
-          ? { script: a.script, amount: change, bip32Derivation: [[a.publicKey, der]] }
-          : {
-              script: a.script,
-              amount: change,
-              tapInternalKey: a.publicKey.slice(1),
-              tapBip32Derivation: [[a.publicKey.slice(1), { hashes: [], der }]]
-            }
-      )
-    }
+    if (change > 0n) this.giveBack(tx, state.change, change)
     return { psbt: tx.toPSBT(), sent, fee: paid, change }
+  }
+
+  /** A coin of the account's as an input, the way maki reads them, replaceable. */
+  private async spend(
+    tx: btc.Transaction,
+    c: { txid: string; vout: number; value: bigint; address: BtcAddress }
+  ): Promise<void> {
+    const a = c.address
+    const der = this.keys.derivation(a)
+    if (this.keys.info.kind === 'segwit') {
+      // maki takes no amount on a PSBT's word: the whole transaction the coin comes from
+      const raw = hex.decode((await this.get(`/tx/${c.txid}/hex`)).trim())
+      tx.addInput({
+        txid: c.txid,
+        index: c.vout,
+        sequence: REPLACEABLE,
+        nonWitnessUtxo: btc.RawTx.decode(raw),
+        witnessUtxo: { script: a.script, amount: c.value },
+        bip32Derivation: [[a.publicKey, der]]
+      })
+    } else {
+      const xOnly = a.publicKey.slice(1)
+      tx.addInput({
+        txid: c.txid,
+        index: c.vout,
+        sequence: REPLACEABLE,
+        witnessUtxo: { script: a.script, amount: c.value },
+        tapInternalKey: xOnly,
+        tapBip32Derivation: [[xOnly, { hashes: [], der }]]
+      })
+    }
+  }
+
+  /** Change to one of the account's change addresses, marked as change so maki shows it so. */
+  private giveBack(tx: btc.Transaction, a: BtcAddress, amount: bigint): void {
+    const der = this.keys.derivation(a)
+    tx.addOutput(
+      this.keys.info.kind === 'segwit'
+        ? { script: a.script, amount, bip32Derivation: [[a.publicKey, der]] }
+        : {
+            script: a.script,
+            amount,
+            tapInternalKey: a.publicKey.slice(1),
+            tapBip32Derivation: [[a.publicKey.slice(1), { hashes: [], der }]]
+          }
+    )
+  }
+
+  /**
+   * A payment of the account's still waiting for a block, again at `feeRate` sat/vB (BIP125): the
+   * same coins and the same payments, the extra fee out of its change (all of it, if what's left
+   * isn't worth an output). maki shows it like any other. Throws if it can't be: in a block
+   * already, not the account's own, no change to pay from, or not enough.
+   */
+  async bump(
+    txid: string,
+    feeRate: number
+  ): Promise<{ psbt: Uint8Array; fee: bigint; was: bigint; change: bigint }> {
+    const tx = this.waiting.get(txid)
+    if (!tx)
+      throw new Error('only a payment of this account’s still waiting for a block can be sped up')
+    if (!(feeRate > 0)) throw new Error('the fee rate must be more than nothing')
+    const network = btc.Address(this.keys.network)
+    const outputs = tx.vout.map((o) => {
+      if (!o.scriptpubkey_address) throw new Error('it has an output maki desktop can’t read')
+      return {
+        script: btc.OutScript.encode(network.decode(o.scriptpubkey_address)),
+        value: BigInt(o.value),
+        ours: this.ours.get(o.scriptpubkey_address)
+      }
+    })
+    // the change: the last output to one of the account's change addresses
+    const back = outputs.map((o) => o.ours?.chain === 1).lastIndexOf(true)
+    if (back < 0) throw new Error('it has no change to pay a higher fee from')
+    const size =
+      OVERHEAD_VB +
+      tx.vin.length * INPUT_VB[this.keys.info.kind] +
+      outputs.reduce((n, o) => n + outputVb(o.script), 0)
+    const was = BigInt(tx.fee)
+    // more than it paid, by at least the network's relay fee (1 sat/vB) for its own size
+    const fee = BigInt(Math.max(Math.ceil(size * feeRate), Number(was) + Math.ceil(size)))
+    let change = outputs[back].value - (fee - was)
+    if (change < 0n) throw new Error('its change isn’t enough for that fee')
+    let paid = fee
+    if (change < DUST) {
+      paid += change
+      change = 0n
+    }
+
+    const t = new btc.Transaction()
+    for (const i of tx.vin) {
+      await this.spend(t, {
+        txid: i.txid!,
+        vout: i.vout!,
+        value: BigInt(i.prevout!.value),
+        address: this.ours.get(i.prevout!.scriptpubkey_address!)!
+      })
+    }
+    outputs.forEach((o, n) => {
+      if (n !== back) t.addOutput({ script: o.script, amount: o.value })
+      else if (change > 0n) this.giveBack(t, o.ours!, change)
+    })
+    return { psbt: t.toPSBT(), fee: paid, was, change }
   }
 
   /** maki's signed PSBT, finished and broadcast; its transaction ID. */

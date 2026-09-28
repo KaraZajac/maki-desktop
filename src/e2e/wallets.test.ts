@@ -120,17 +120,29 @@ describe.skipIf(!process.env.MAKI_E2E || !FAKE_BUILT)('the Wallets page, end to 
             '--until',
             'back to you'
           ],
-          ...['--click', 'Review on maki', '--until', 'Sent 0.0002 BTC']
+          ...['--click', 'Review on maki', '--until', 'Sent 0.0002 BTC'],
+          // then, while it waits for a block, again at the fastest rate there is
+          ...[
+            '--click',
+            'Done',
+            '--until',
+            'speed up',
+            '--click',
+            'speed up',
+            '--until',
+            'Send it again with a higher fee'
+          ],
+          ...['--click', 'Review on maki', '--until', 'sped up']
         ],
         { MAKI_ESPLORA: esplora.url }
       )
-      expect(said).toContain('Sent 0.0002 BTC')
+      expect(said).toMatch(/sped up: its fee 703 sats → 1,265 sats/)
     } finally {
       esplora.close()
     }
 
     // what reached the chain: the coin, spent to the payee, the rest back to the account's change
-    expect(chain.broadcast).toHaveLength(1)
+    expect(chain.broadcast).toHaveLength(2)
     const tx = btc.Transaction.fromRaw(hex.decode(chain.broadcast[0]))
     expect(hex.encode(tx.getInput(0).txid!)).toBe(chain.txid)
     const pay = tx.getOutput(0)
@@ -151,6 +163,19 @@ describe.skipIf(!process.env.MAKI_E2E || !FAKE_BUILT)('the Wallets page, end to 
     expect(secp256k1.verify(sig.slice(0, -1), digest, pub, { prehash: false, format: 'der' })).toBe(
       true
     )
+
+    // and sped up: the same coin and payment, at 9 sat/vB (1,265 sats), the difference out of the
+    // change; it took the first one's place
+    const again = btc.Transaction.fromRaw(hex.decode(chain.broadcast[1]))
+    expect(hex.encode(again.getInput(0).txid!)).toBe(chain.txid)
+    expect(again.getOutput(0).amount).toBe(20_000n)
+    expect(again.getOutput(1).amount).toBe(change.amount! - (1_265n - 703n))
+    expect([chain.chain.waiting(tx.id), chain.chain.waiting(again.id)]).toEqual([false, true])
+    const [sig2, pub2] = again.getInput(0).finalScriptWitness!
+    const digest2 = again.preimageWitnessV0(0, code, btc.SigHash.ALL, 50_000n)
+    expect(
+      secp256k1.verify(sig2.slice(0, -1), digest2, pub2, { prehash: false, format: 'der' })
+    ).toBe(true)
   }, 180_000)
 
   it('connects to the Ethereum account, shows what it holds, and sends a token: maki spells it out and signs', async () => {
