@@ -1,6 +1,7 @@
 /**
  * maki's wallets, which are apps from the maki store (the firmware's ARCHITECTURE.md, "Wallets are
- * apps"): Bitcoin, Ethereum and Monero, the SDK's examples `bitcoin`, `ethereum` and `monero`. maki
+ * apps"): Bitcoin, Ethereum, Monero and Solana, the SDK's examples `bitcoin`, `ethereum`, `monero` and
+ * `solana`. maki
  * keeps the keys and lets each app sign only for its own accounts; the app reads what it's asked to
  * sign, shows it on maki's screen and signs once the owner says yes. Their messages are in each
  * app's source; the calls here are the ones MakiClient made when the wallets were maki's own, with
@@ -18,10 +19,12 @@ import {
   Writer
 } from './protocol'
 import { Writer as XmrWriter } from './monero/transaction'
+import { base58 } from '@scure/base'
 
 export const BITCOIN_APP = 'com.leviathan.maki.bitcoin'
 export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
 export const MONERO_APP = 'com.leviathan.maki.monero'
+export const SOLANA_APP = 'com.leviathan.maki.solana'
 
 /** Talking to an app on maki (Link.appMessage): its answer, if maki has it and it answered. */
 export type AppMessage = (
@@ -470,5 +473,77 @@ export class MoneroApp extends WalletApp {
     return signed
       ? { approval: 'approved', reason: '', signed }
       : { approval: 'unavailable', reason: '', signed: null }
+  }
+}
+
+/**
+ * maki's Solana app: its account (m/44'/501'/index'/0', as Phantom has it), and signatures over
+ * what the app reads and shows the owner itself, a transaction's message or a message.
+ */
+export class SolanaApp extends WalletApp {
+  constructor(send: AppMessage) {
+    super(send, SOLANA_APP, 'Solana')
+  }
+
+  private static head(kind: number, index: number, site: string): Uint8Array {
+    return new Writer().u8(kind).u32(index).str8(site).finish()
+  }
+
+  /** The account's address (its key, base58), once the owner lets `site` connect on maki. */
+  async solAccount(
+    site: string,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; address: string }> {
+    const a = await this.ask(SolanaApp.head(0x41, index, site), SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', address: '' }
+    if (a.approval !== 'approved') return { approval: a.approval, reason: a.reason(), address: '' }
+    try {
+      return { approval: a.approval, reason: '', address: base58.encode(a.fixed(32)) }
+    } catch {
+      return { approval: 'unavailable', reason: '', address: '' }
+    }
+  }
+
+  private async signature(
+    kind: number,
+    site: string,
+    bytes: Uint8Array,
+    index: number
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    const m = Uint8Array.from([...SolanaApp.head(kind, index, site), ...bytes])
+    if (bytes.length === 0 || m.length > MAX_APP_MESSAGE) {
+      return { approval: 'refused', reason: 'bigger than maki takes', signature: null }
+    }
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', signature: null }
+    if (a.approval !== 'approved')
+      return { approval: a.approval, reason: a.reason(), signature: null }
+    try {
+      return { approval: a.approval, reason: '', signature: a.fixed(64) }
+    } catch {
+      return { approval: 'unavailable', reason: '', signature: null }
+    }
+  }
+
+  /**
+   * Sign a transaction's message: the app reads it (legacy or version 0), shows the owner what it
+   * sends and to whom, and the most its fee can be, and signs: 64 bytes, for the transaction's slot
+   * for this account. Refused ones come back with the app's reason.
+   */
+  solSignTransaction(
+    site: string,
+    message: Uint8Array,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    return this.signature(0x54, site, message, index)
+  }
+
+  /** Sign a message (signMessage, Sign In With Solana) once the owner has read it on maki. */
+  solSignMessage(
+    site: string,
+    message: Uint8Array,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    return this.signature(0x4d, site, message, index)
   }
 }

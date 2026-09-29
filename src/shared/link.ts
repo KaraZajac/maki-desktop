@@ -21,7 +21,9 @@ import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from '.
 import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
-import { BitcoinApp, EthereumApp, MoneroApp, type MoneroNetworkValue, type MoneroOutput } from './wallet-apps'
+import { BitcoinApp, EthereumApp, MoneroApp, SolanaApp, type MoneroNetworkValue, type MoneroOutput } from './wallet-apps'
+import { memorySolStore, Solana, type SolRpc, type SolStore } from './solana'
+import { SolWallet } from './sol-wallet'
 import type { Store, StoreApp } from './store'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
@@ -85,12 +87,18 @@ export class Link {
   readonly ethWallet: EthWallet
   /** Nostr for sites, through maki's Nostr app */
   readonly nostr: Nostr
+  readonly solanaApp: SolanaApp
+  /** the Solana account, for sites through the browser extension */
+  readonly solana: Solana
+  /** the same account as a wallet in maki desktop */
+  readonly solWallet: SolWallet
 
   constructor(
     private relay: Relay,
     private now: () => Date = () => new Date(),
     private backups: BackupStore | null = null,
-    eth: { rpc: Rpc; store: EthStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memoryStore() }
+    eth: { rpc: Rpc; store: EthStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memoryStore() },
+    sol: { rpc: SolRpc; store: SolStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memorySolStore() }
   ) {
     const send = (app: string, message: Uint8Array, timeoutMs?: number) => this.appMessage(app, message, timeoutMs)
     this.bitcoin = new BitcoinApp(send)
@@ -99,6 +107,9 @@ export class Link {
     this.ethereum = new Ethereum(() => (this.state.linked ? this.ethereumApp : null), eth.rpc, eth.store)
     this.ethWallet = new EthWallet(this.ethereum, eth.rpc)
     this.nostr = new Nostr(send)
+    this.solanaApp = new SolanaApp(send)
+    this.solana = new Solana(() => (this.state.linked ? this.solanaApp : null), sol.rpc, sol.store)
+    this.solWallet = new SolWallet(this.solana, sol.rpc)
   }
 
   subscribe(listener: () => void): () => void {
@@ -488,6 +499,7 @@ export class Link {
       return { type: 'status', linked: this.state.linked, timeState: this.state.linked ? this.state.status.timeState : null }
     }
     if (request.type === 'eth') return this.fromSite(request.site, request.method, request.params)
+    if (request.type === 'sol') return this.fromSolSite(request.site, request.method, request.params)
     if (request.type === 'nostr') {
       // a page's promise rejects with the reason, as NIP-07 pages expect: nothing is thrown past here
       try {
@@ -557,6 +569,30 @@ export class Link {
       const error = e instanceof ProviderError ? { code: e.code, message: e.message } : { code: -32603, message: (e as Error).message }
       if (asks) this.note(`${site}: ${error.message}`)
       return { type: 'eth', error }
+    }
+  }
+
+  /** Solana requests that need the owner, and so a line in the log. */
+  private static readonly SOL_ASKS: Record<string, string> = {
+    connect: 'wants to connect to your Solana account',
+    signTransaction: 'wants a Solana transaction signed',
+    signAndSendTransaction: 'sent a Solana transaction',
+    signMessage: 'wants a message signed'
+  }
+
+  /** A request from a site's Solana wallet (the extension's). Its errors go back to the page as they are. */
+  private async fromSolSite(site: string, method: string, params: unknown[]): Promise<BridgeResult> {
+    const quiet = method === 'connect' && (params[0] as { silent?: unknown } | undefined)?.silent === true
+    const asks = quiet ? undefined : Link.SOL_ASKS[method]
+    if (asks) this.note(`${site} ${asks}: approve on maki`)
+    try {
+      const result = await this.solana.request(site, method, params)
+      if (asks) this.note(`${site}: ${method === 'signAndSendTransaction' ? `sent, ${(result as { signature: string }).signature}` : 'done'}`)
+      return { type: 'sol', result }
+    } catch (e) {
+      const error = e instanceof ProviderError ? { code: e.code, message: e.message } : { code: -32603, message: (e as Error).message }
+      if (asks) this.note(`${site}: ${error.message}`)
+      return { type: 'sol', error }
     }
   }
 

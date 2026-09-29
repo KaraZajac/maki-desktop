@@ -8,9 +8,9 @@ maki's roll for what to do and the green of the nori for what's done.
 
 > **Status: early.** Links over USB (Web Serial) or to a fake maki for development, syncs verified
 > time, runs from the tray, relays logins and TOTP codes between the browser extension and maki,
-> keeps maki's encrypted backups, is a wallet with maki's Bitcoin and Ethereum apps, has maki
-> sign Bitcoin transactions for wallet software, and gives sites maki's Ethereum account and its
-> Nostr key through the extension. Tested end to end against
+> keeps maki's encrypted backups, is a wallet with maki's Bitcoin, Ethereum, Monero and Solana
+> apps, has maki sign Bitcoin transactions for wallet software, and gives sites maki's Ethereum
+> and Solana accounts and its Nostr key through the extension. Tested end to end against
 > the fake maki (the firmware's own protocol, app host and apps on a socket), including in real
 > Chromium and Firefox. The firmware runs on a DC34 badge, linked over USB with its clock set
 > through Roughtime, and in the emulator. Linux AppImage builds; nothing is signed.
@@ -33,7 +33,7 @@ maki's roll for what to do and the green of the nori for what's done.
 - **Keeps backups.** On link, hourly, and soon after a login is saved, maki hands over its logins
   and codes encrypted with a key from its recovery phrase, and they're kept in the app's folder.
   "Restore to maki" sends the latest back; maki asks before adding anything.
-- **Is a wallet.** maki's wallets are apps from the maki store, Bitcoin, Ethereum and Monero, for
+- **Is a wallet.** maki's wallets are apps from the maki store, Bitcoin, Ethereum, Monero and Solana, for
   those who want them: maki keeps the keys, the app shows you what you sign on maki's screen, and
   the Wallets page offers the app when maki hasn't it. The page holds each account: Bitcoin
   (native SegWit and taproot, mainnet and testnet4; balance, coins and activity from
@@ -42,8 +42,10 @@ maki's roll for what to do and the green of the nori for what's done.
   knows included; sending a coin or a token, to an address or an ENS name) and Monero (once you
   let this computer watch it on maki: the chain scanned here with the view key, from a node you
   pick, which never sees the key; the balance, a fresh subaddress checked on maki, and sending,
-  which maki makes whole and signs). maki shows every payment and signs it; Monero's 25-word
-  backup shows on maki alone. Values in money if you pick a currency (CoinGecko, asked the same
+  which maki makes whole and signs) and Solana (the account Phantom makes from the phrase; its SOL
+  and tokens on Solana and its devnet; sending SOL or a token, simulated first, a token to its
+  recipient's own account for it, opened if it isn't yet). maki shows every payment and signs it;
+  Monero's 25-word backup shows on maki alone. Values in money if you pick a currency (CoinGecko, asked the same
   question for everyone).
 - **Works with the Monero GUI.** The GUI (or monero-wallet-cli) keeps a view-only wallet made from
   the address and view key maki shares, and maki is its cold wallet, through the files the GUI's
@@ -65,6 +67,12 @@ maki's roll for what to do and the green of the nori for what's done.
   public servers for Ethereum, Base, Optimism, Arbitrum, Polygon and Sepolia. Typed data for
   another network than the site is on, the older typed-data methods and `eth_sign` are
   refused.
+- **Gives sites a Solana account.** The extension registers a wallet called maki the Wallet
+  Standard's way, which Solana's sites list (their wallet adapters find it), and maki's Solana app
+  answers: a site connects once you allow it on maki; each transaction (legacy or version 0) and
+  message is shown on maki and signed there, SOL and tokens sent spelled out, with the most the
+  fee can be, and anything the app can't read flagged, with whether it can act as the account.
+  `signAndSendTransaction` sends through public servers for Solana and its devnet.
 - **Gives sites a Nostr key.** With maki's Nostr app installed, the extension puts
   `window.nostr` (NIP-07) in pages when no other signer has: maki asks before a site first sees
   the key, and shows each event (the site, its kind, how it begins) before signing it.
@@ -127,8 +135,8 @@ page ── content script ── background ══ native messaging ══ maki
   code fields, asks when you focus one, and fills what maki approves. The site it asks about is
   the hostname the browser reports for the asking frame, never something the page says; https
   only (and localhost). The page's own notices only say what's going on: the decision is made on
-  maki's screen. It also puts maki's Ethereum provider in pages (`inpage.ts`, in the page's own
-  world), which asks through the same path.
+  maki's screen. It also puts maki's Ethereum provider, `window.nostr` and a Solana wallet in
+  pages (`inpage.ts`, in the page's own world), which ask through the same path.
 - The browser starts this app with `--native-host` (headless, no window) as a relay to the
   running tray app, starting that if needed. The extension hangs up after 30 s idle.
 - **Set up** (Browsers, in the window) registers the relay with each installed browser. Firefox
@@ -162,15 +170,17 @@ npm run build:extension     # extension/dist/chrome and extension/dist/firefox
 npm install
 npm run dev          # the app, with hot reload
 npm run typecheck
-npm test             # unit tests, plus integration tests against the fake maki if it's built
+npm test             # unit tests, plus integration tests against the fake maki if it's built;
+                     # Solana's sends run in LiteSVM (a dev dependency), Solana's own runtime
 MAKI_LIVE=1 npm test # also a real sync through the real Roughtime servers
 MAKI_BROWSERS=1 npx vitest run extension/src/real-browsers.test.ts
                      # the extension in headless Chromium and Firefox, in throwaway profiles
 MAKI_AGE=/path/to/age npm test     # age-plugin-maki with the real age (or age on the PATH)
 MAKI_E2E=1 npx vitest run src/e2e
                      # the app itself, offscreen, pressed through: the Wallets page sends from
-                     # each account (and speeds one up), and offers the Bitcoin app to a maki
-                     # without it; the Apps page installs and removes
+                     # each account (and speeds one up; Solana's USDC through LiteSVM), and
+                     # offers the Bitcoin app to a maki without it; the Apps page installs and
+                     # removes
 MAKI_REGTEST=1 npm test
                      # Monero against a private chain: scripts/regtest.sh starts monerod and
                      # monero-wallet-rpc (MONERO_BIN: Monero's own release). A view-only wallet's
@@ -207,16 +217,17 @@ MAKI_STORE_TOKEN=$(gh auth token) MAKI_STORE=https://raw.githubusercontent.com/y
 ```
 
 The wallets read the networks through public servers: mempool.space's Esplora API for Bitcoin, and
-each Ethereum network's public JSON-RPC servers. For tests, or your own servers:
+each Ethereum and Solana network's public JSON-RPC servers. For tests, or your own servers:
 
 ```sh
 MAKI_ESPLORA=http://127.0.0.1:3002/api npm run dev   # an Esplora API (your own node's), both networks
 MAKI_ETH_RPC=http://127.0.0.1:8545 npm run dev        # one JSON-RPC server, for every network
+MAKI_SOL_RPC=http://127.0.0.1:8899 npm run dev        # one Solana JSON-RPC server, for both networks
 MAKI_FAKE_PORT=7879 npm run dev                       # the fake maki on another port
 ```
 
 To look at the UI without a window appearing: `npm run build && npx electron scripts/screenshot.cjs
-out.png [--fake] [--size WxH] [--click TEXT | --fill PLACEHOLDER=TEXT | --wait MS | --until TEXT]...
+out.png [--fake] [--size WxH] [--click [SECTION › ]TEXT | --fill PLACEHOLDER=TEXT | --wait MS | --until TEXT]...
 [--scroll TEXT] [--dump FILE]`, e.g. `--fake --click Wallets --click "Add from maki" --until BTC`,
 or `--fake --click Apps --size 1080x1500` for the whole Apps page. The steps run in order; the
 script's header says what each does. The end-to-end tests drive the app with it.

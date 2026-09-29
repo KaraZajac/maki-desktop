@@ -130,6 +130,12 @@ const api = {
     load: (): Promise<import('../shared/ethereum').EthState> => ipcRenderer.invoke('eth:load'),
     save: (state: import('../shared/ethereum').EthState): Promise<void> => ipcRenderer.invoke('eth:save', state)
   },
+  solana: {
+    rpc: (url: string, method: string, params: unknown[]): Promise<{ result?: unknown; error?: { code: number; message: string } }> =>
+      ipcRenderer.invoke('sol:rpc', url, method, params),
+    load: (): Promise<import('../shared/solana').SolState> => ipcRenderer.invoke('sol:load'),
+    save: (state: import('../shared/solana').SolState): Promise<void> => ipcRenderer.invoke('sol:save', state)
+  },
   settings: {
     startAtLogin: (): Promise<boolean> => ipcRenderer.invoke('settings:startAtLogin'),
     setStartAtLogin: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setStartAtLogin', on)

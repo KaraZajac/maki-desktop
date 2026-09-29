@@ -3,14 +3,15 @@
 // nothing to capture, so this uses a hidden offscreen window on the normal one.)
 //
 //   npm run build && npx electron scripts/screenshot.cjs OUT.png [--fake] [--size WxH]
-//       [--click TEXT | --fill PLACEHOLDER=TEXT | --choose VALUE | --wait MS | --until TEXT |
+//       [--click [SECTION › ]TEXT | --fill PLACEHOLDER=TEXT | --choose VALUE | --wait MS | --until TEXT |
 //        --gone TEXT]...
 //       [--scroll TEXT]
 //       [--dump FILE]
 //
 // --fake connects to a fake maki on 127.0.0.1:7878 first (start it beforehand; MAKI_FAKE_PORT for
 // another port). Then the steps, in order: --click presses the first button whose text includes
-// TEXT (and waits for the fake to approve), --fill types TEXT into the field whose placeholder is
+// TEXT (in the section whose heading includes SECTION, if it's given), and waits for the fake to
+// approve; --fill types TEXT into the field whose placeholder is
 // PLACEHOLDER, --choose picks VALUE in the first list that has it, --wait waits MS (for the
 // network, say), --until waits for the page to say TEXT (two
 // minutes at most; if it never does, the capture is made and the exit code is 1), --gone for it to
@@ -77,9 +78,13 @@ app.whenReady().then(async () => {
       })()`)
       await wait(300)
     } else if (step === '--click') {
-      await run(
-        `[...document.querySelectorAll('button')].find((b) => b.textContent.includes(${JSON.stringify(arg)}))?.click()`
-      )
+      // "Solana › Send": the button in the section whose heading says Solana
+      const [scope, text] = arg.includes(' › ') ? arg.split(' › ') : [null, arg]
+      await run(`(() => {
+        const within = ${JSON.stringify(scope)} === null ? document : [...document.querySelectorAll('h2')].find((h) => h.textContent.includes(${JSON.stringify(scope)}))?.closest('section')
+        if (!within) return
+        ;[...within.querySelectorAll('button')].find((b) => b.textContent.includes(${JSON.stringify(text)}))?.click()
+      })()`)
       await wait(2500) // the fake approves after a moment
     } else {
       const [placeholder, ...text] = arg.split('=')

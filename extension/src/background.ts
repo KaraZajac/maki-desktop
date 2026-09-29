@@ -66,8 +66,9 @@ type FromPage = { type?: unknown; username?: unknown; password?: unknown; method
 
 export function handle(msg: FromPage, senderUrl: string | undefined): Promise<Reply> {
   if (msg.type === 'status') return toDesktop({ type: 'status' })
-  if (msg.type === 'eth' || msg.type === 'nostr') {
-    // the page's Ethereum provider, or its window.nostr: the site is the browser's word, never the page's
+  if (msg.type === 'eth' || msg.type === 'nostr' || msg.type === 'sol') {
+    // the page's Ethereum provider, its window.nostr or its Solana wallet: the site is the
+    // browser's word, never the page's
     const site = siteOf(senderUrl)
     if (!site) return Promise.resolve({ ok: false, error: 'maki only works on https pages' })
     if (typeof msg.method !== 'string' || !Array.isArray(msg.params)) return Promise.resolve({ ok: false, error: 'unknown request' })

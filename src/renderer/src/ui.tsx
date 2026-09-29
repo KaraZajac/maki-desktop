@@ -147,6 +147,13 @@ const glyphs: Record<string, ReactNode> = {
       <path d="m6 14 6 7 6-7-6 3.5z" />
     </>
   ),
+  solana: (
+    <>
+      <path d="M7.5 6h12l-3 3h-12z" />
+      <path d="M4.5 10.5h12l3 3h-12z" />
+      <path d="M7.5 15h12l-3 3h-12z" />
+    </>
+  ),
   monero: (
     <>
       <circle cx="12" cy="12" r="9" />

@@ -57,6 +57,17 @@ export default function App(): React.JSX.Element {
               load: () => window.maki.ethereum.load(),
               save: (s) => window.maki.ethereum.save(s)
             }
+          },
+          {
+            rpc: async (url, method, params) => {
+              const r = await window.maki.solana.rpc(url, method, params)
+              if (r.error) throw new ProviderError(r.error.code, r.error.message)
+              return r.result
+            },
+            store: {
+              load: () => window.maki.solana.load(),
+              save: (s) => window.maki.solana.save(s)
+            }
           }
         ),
       []

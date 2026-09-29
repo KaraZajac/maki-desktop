@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fromBase64, toBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
+import { SOL_NETWORKS, type SolState } from '../shared/solana'
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
@@ -255,6 +256,47 @@ function ipc(): void {
     // MAKI_ETH_RPC (tests) is a server to use instead, for every network
     let unreachable = ''
     const servers = process.env['MAKI_ETH_RPC'] ? [process.env['MAKI_ETH_RPC']] : [network.rpc, ...network.fallbacks]
+    for (const server of servers) {
+      try {
+        const res = await fetch(server, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+          signal: AbortSignal.timeout(20_000)
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const body = (await res.json()) as { result?: unknown; error?: { code?: number; message?: string } }
+        if (body.error) return { error: { code: body.error.code ?? -32603, message: body.error.message ?? 'the network refused it' } }
+        return { result: body.result ?? null }
+      } catch (e) {
+        unreachable = (e as Error).message
+      }
+    }
+    return { error: { code: -32603, message: `the network is unreachable: ${unreachable}` } }
+  })
+  // Solana: which sites are connected; and the networks' servers, as for Ethereum
+  const solFile = (): string => join(app.getPath('userData'), 'solana.json')
+  const solState = (v: unknown): SolState | null => {
+    const c = (v as SolState | null)?.connected
+    return typeof c === 'object' && c !== null && Object.values(c).every((x) => typeof x === 'string') ? { connected: c } : null
+  }
+  ipcMain.handle('sol:load', async () => {
+    try {
+      return solState(JSON.parse(await readFile(solFile(), 'utf8'))) ?? { connected: {} }
+    } catch {
+      return { connected: {} }
+    }
+  })
+  ipcMain.handle('sol:save', async (_e, state: unknown) => {
+    const s = solState(state)
+    if (s) await writeFile(solFile(), JSON.stringify(s))
+  })
+  ipcMain.handle('sol:rpc', async (_e, url: string, method: string, params: unknown[]) => {
+    // only the networks maki desktop knows; MAKI_SOL_RPC (tests) is a server to use instead
+    const network = SOL_NETWORKS.find((n) => n.rpc === url)
+    if (!network) return { error: { code: 4901, message: 'unknown network' } }
+    let unreachable = ''
+    const servers = process.env['MAKI_SOL_RPC'] ? [process.env['MAKI_SOL_RPC']] : [network.rpc, ...network.fallbacks]
     for (const server of servers) {
       try {
         const res = await fetch(server, {

@@ -19,7 +19,9 @@ const IDS: Record<string, string> = {
   DAI: 'dai',
   WETH: 'weth',
   WBTC: 'wrapped-bitcoin',
-  XMR: 'monero'
+  XMR: 'monero',
+  SOL: 'solana',
+  PYUSD: 'paypal-usd'
 }
 
 /** Everything asked about, every time: the question says nothing about what's held. */

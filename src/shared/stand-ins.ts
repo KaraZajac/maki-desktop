@@ -2,6 +2,7 @@
  * Stand-ins for the networks the wallets use, for tests (Node only): a Bitcoin chain holding one
  * coin, behind an Esplora API, and an Ethereum network that holds a little of everything, behind
  * JSON-RPC; each keeps what it's sent. And what a signed Ethereum transaction says, read back.
+ * And Solana: LiteSVM, Solana's runtime, behind the JSON-RPC calls maki desktop's wallet makes.
  */
 import { secp256k1 } from '@noble/curves/secp256k1.js'
 import { keccak_256 } from '@noble/hashes/sha3.js'
@@ -14,6 +15,9 @@ import type { Esplora } from './btc-wallet'
 import { NETWORKS, ProviderError, type Rpc } from './ethereum'
 import { ENS_REGISTRY, namehash } from './eth-wallet'
 import { fromHex, toHex } from './rlp'
+import { associatedTokenAccount, keyOf, SOL_NETWORKS, type SolRpc, TOKEN_PROGRAM } from './solana'
+import { fromBase64 } from './bridge-types'
+import { base58 } from '@scure/base'
 import { tokensOn } from './tokens'
 
 const USDC = tokensOn(1n).find((t) => t.symbol === 'USDC')!
@@ -354,6 +358,157 @@ export function serveEthRpc(rpc: Rpc): Promise<{ url: string; close: () => void 
       return [
         200,
         JSON.stringify({ jsonrpc: '2.0', id, result: await rpc(NETWORKS[0].rpc, method, params) })
+      ]
+    } catch (e) {
+      const code = e instanceof ProviderError ? e.code : -32603
+      return [
+        200,
+        JSON.stringify({ jsonrpc: '2.0', id, error: { code, message: (e as Error).message } })
+      ]
+    }
+  })
+}
+
+// ---- Solana ----
+
+/** The test phrase's first Solana account, as Phantom has it, and USDC's mint. */
+export const SOL_ME = 'HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk'
+export const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+
+/** A mint's account (82 bytes): no authorities, `decimals`, initialized. */
+function mintData(decimals: number): Uint8Array {
+  const d = new Uint8Array(82)
+  d[44] = decimals
+  d[45] = 1
+  return d
+}
+
+/** A token account (165 bytes): its mint, owner and amount, initialized. */
+function tokenData(mint: string, owner: string, amount: bigint): Uint8Array {
+  const d = new Uint8Array(165)
+  d.set(keyOf(mint)!, 0)
+  d.set(keyOf(owner)!, 32)
+  new DataView(d.buffer).setBigUint64(64, amount, true)
+  d[108] = 1
+  return d
+}
+
+/** Whether LiteSVM is here to stand in for Solana. */
+export async function haveLiteSvm(): Promise<boolean> {
+  try {
+    await import('litesvm')
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Solana, as LiteSVM runs it: the account holds 10 SOL and 100 USDC (in its own token account for
+ * it), and the JSON-RPC calls maki desktop's wallet makes are answered from the runtime's state.
+ * Every transaction sent is checked as Solana checks it (maki's signature too) and run.
+ */
+export async function solStandIn(): Promise<{
+  rpc: SolRpc
+  /** lamports at an address */
+  balance(address: string): bigint
+  /** `owner`'s USDC, in its own token account for it; -1 if it hasn't one */
+  usdc(owner: string): bigint
+}> {
+  const { LiteSVM } = await import('litesvm')
+  const kit = await import('@solana/kit')
+  const svm = new LiteSVM()
+  svm.airdrop(kit.address(SOL_ME), kit.lamports(10_000_000_000n))
+  const rent = svm.minimumBalanceForRentExemption(165n)
+  const put = (address: string, data: Uint8Array): void =>
+    svm.setAccount({
+      address: kit.address(address),
+      data,
+      executable: false,
+      lamports: kit.lamports(rent),
+      programAddress: kit.address(TOKEN_PROGRAM),
+      space: BigInt(data.length)
+    })
+  put(SOL_USDC, mintData(6))
+  put(associatedTokenAccount(SOL_ME, SOL_USDC), tokenData(SOL_USDC, SOL_ME, 100_000_000n))
+  const account = (a: string) => svm.getAccount(kit.address(a))
+  const amountIn = (data: Uint8Array): bigint =>
+    new DataView(data.buffer, data.byteOffset).getBigUint64(64, true)
+  const decode = (b64: string) => kit.getTransactionDecoder().decode(fromBase64(b64)!)
+  const rpc: SolRpc = async (_url, method, params) => {
+    switch (method) {
+      case 'getBalance':
+        return { value: Number(svm.getBalance(kit.address(params[0] as string)) ?? 0n) }
+      case 'getTokenAccountsByOwner': {
+        const [owner, { programId }] = params as [string, { programId: string }]
+        const at = associatedTokenAccount(owner, SOL_USDC, programId)
+        const a = account(at)
+        if (!a.exists || a.programAddress !== programId) return { value: [] }
+        const info = {
+          mint: SOL_USDC,
+          tokenAmount: { amount: String(amountIn(a.data)), decimals: 6 }
+        }
+        return { value: [{ pubkey: at, account: { data: { parsed: { info } } } }] }
+      }
+      case 'getAccountInfo': {
+        const a = account(params[0] as string)
+        return {
+          value: a.exists ? { owner: a.programAddress, lamports: Number(a.lamports) } : null
+        }
+      }
+      case 'getRecentPrioritizationFees':
+        return [{ slot: 1, prioritizationFee: 0 }]
+      case 'getLatestBlockhash':
+        return { value: { blockhash: svm.latestBlockhash(), lastValidBlockHeight: 1000 } }
+      case 'simulateTransaction': {
+        // unsigned, as wallets simulate
+        svm.withSigverify(false)
+        const r = svm.simulateTransaction(decode(params[0] as string))
+        svm.withSigverify(true)
+        const meta = 'err' in r ? r.meta() : r.meta()
+        return {
+          value: {
+            err: 'err' in r ? String(r.err()) : null,
+            logs: meta.logs(),
+            unitsConsumed: Number(meta.computeUnitsConsumed())
+          }
+        }
+      }
+      case 'sendTransaction': {
+        const r = svm.sendTransaction(decode(params[0] as string))
+        if ('err' in r) throw new ProviderError(-32002, `Transaction failed: ${String(r.err())}`)
+        return base58.encode(fromBase64(params[0] as string)!.subarray(1, 65))
+      }
+      default:
+        throw new ProviderError(-32601, `no ${method} here`)
+    }
+  }
+  return {
+    rpc,
+    balance: (a) => svm.getBalance(kit.address(a)) ?? 0n,
+    usdc: (owner) => {
+      const a = account(associatedTokenAccount(owner, SOL_USDC))
+      return a.exists ? amountIn(a.data) : -1n
+    }
+  }
+}
+
+/** A Solana stand-in's calls, as a JSON-RPC server (MAKI_SOL_RPC). */
+export function serveSolRpc(rpc: SolRpc): Promise<{ url: string; close: () => void }> {
+  return serve(async (_method, _path, body) => {
+    const { id, method, params } = JSON.parse(body) as {
+      id: number
+      method: string
+      params: unknown[]
+    }
+    try {
+      return [
+        200,
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: await rpc(SOL_NETWORKS[0].rpc, method, params)
+        })
       ]
     } catch (e) {
       const code = e instanceof ProviderError ? e.code : -32603

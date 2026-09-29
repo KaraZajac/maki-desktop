@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { ed25519 } from '@noble/curves/ed25519.js'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { serveBridge } from '../../src/main/bridge'
 import { readNativeMessages, runNativeHost, writeNativeMessage } from '../../src/main/native-host'
@@ -27,6 +28,8 @@ import {
 
 const PAGE = 'https://github.com/login'
 const ADDRESS = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
+/** The test phrase's first Solana account, as Phantom has it. */
+const SOL_ADDRESS = 'HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk'
 
 describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
   let fake: { port: number; proc: ChildProcess }
@@ -38,13 +41,15 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
   let scratch: string | undefined
 
   beforeAll(async () => {
-    // maki's Ethereum app installed, for the page's provider
+    // maki's Ethereum and Solana apps installed, for the page's wallets
     fake = await startFake([
       '--clock-verified',
       '--totp',
       `github.com=${SECRET_B32}`,
       '--app',
-      join(APP_FIXTURES, 'ethereum.maki')
+      join(APP_FIXTURES, 'ethereum.maki'),
+      '--app',
+      join(APP_FIXTURES, 'solana.maki')
     ])
     link = new Link(async () => {
       throw new Error('offline')
@@ -158,6 +163,43 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
     await expect(eth.request({ method: 'eth_signTypedData_v3', params: [] })).rejects.toMatchObject({ code: 4200 })
     await expect(eth.request({ method: 'eth_blockNumber' })).rejects.toMatchObject({ code: 4900 })
     expect(link.log.join('\n')).toMatch(/github\.com wants to connect to your Ethereum account/)
+  })
+
+  it('gives the page a Solana wallet, as the Wallet Standard has them, that asks maki', async () => {
+    await import('./inpage')
+    // what a Solana site's wallet adapter does: says it's ready, and wallets register with it
+    type Account = { address: string; publicKey: Uint8Array }
+    type Wallet = { name: string; chains: string[]; features: Record<string, Record<string, (...a: unknown[]) => Promise<unknown>>> }
+    const wallets: Wallet[] = []
+    window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: { register: (w: Wallet) => wallets.push(w) } }))
+    const maki = wallets.find((w) => w.name === 'maki')!
+    expect(maki.chains).toEqual(['solana:mainnet', 'solana:devnet'])
+    const connect = maki.features['standard:connect'].connect
+    expect(await connect({ silent: true })).toEqual({ accounts: [] })
+    const { accounts } = (await connect()) as { accounts: Account[] }
+    expect(accounts[0].address).toBe(SOL_ADDRESS)
+    expect(accounts[0].publicKey).toHaveLength(32)
+    // a sign-in, signed with the account's key
+    const message = new TextEncoder().encode(`github.com wants you to sign in with your Solana account:\n${SOL_ADDRESS}\n\nNonce: 7`)
+    const [signed] = (await maki.features['solana:signMessage'].signMessage({ account: accounts[0], message })) as { signature: Uint8Array }[]
+    expect(ed25519.verify(signed.signature, message, accounts[0].publicKey)).toBe(true)
+    // a transaction web3.js made, signed as web3.js signs it
+    const fixtures = resolve(__dirname, '../../../xous-core/libs/maki-sol/tests/fixtures/transactions.json')
+    if (existsSync(fixtures)) {
+      const f = (JSON.parse(readFileSync(fixtures, 'utf8')) as { name: string; message: string; signature: string }[]).find((x) => x.name === 'usdc')!
+      const transaction = Uint8Array.from([1, ...new Uint8Array(64), ...Buffer.from(f.message, 'hex')])
+      const [{ signedTransaction }] = (await maki.features['solana:signTransaction'].signTransaction({ account: accounts[0], transaction })) as {
+        signedTransaction: Uint8Array
+      }[]
+      expect(Buffer.from(signedTransaction.subarray(1, 65)).toString('hex')).toBe(f.signature)
+      // sent: maki desktop has no network here, which the page hears
+      await expect(
+        maki.features['solana:signAndSendTransaction'].signAndSendTransaction({ account: accounts[0], transaction, chain: 'solana:mainnet' })
+      ).rejects.toMatchObject({ code: 4900 })
+    }
+    // another account isn't this site's to use
+    await expect(maki.features['solana:signMessage'].signMessage({ account: { address: ADDRESS }, message })).rejects.toMatchObject({ code: 4100 })
+    expect(link.log.join('\n')).toMatch(/github\.com wants to connect to your Solana account/)
   })
 
   it('keeps secrets out of maki desktop’s log', () => {
