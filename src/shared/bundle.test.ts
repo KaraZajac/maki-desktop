@@ -36,7 +36,7 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
   it('reads a wallet app’s accounts, naming their coins as maki does', () => {
     const btc = readBundle(fixture('bitcoin')).manifest
     expect(btc.api).toBe(3)
-    expect(btc.permissions.map((p) => p.permission.name)).toEqual(['link', 'wallet'])
+    expect(btc.permissions.map((p) => p.permission.name)).toEqual(['link', 'camera', 'wallet'])
     expect(btc.wallet!.paths.map(formatPath)).toEqual(["m/84'/0'", "m/86'/0'", "m/84'/1'", "m/86'/1'"])
     expect(walletCoins(btc.wallet!.paths)).toEqual(['Bitcoin', 'test networks'])
     const eth = readBundle(fixture('ethereum')).manifest
