@@ -124,6 +124,8 @@ export function MoneroWallet({
         setProgress([scanned - wallet.state.restoreHeight, h - wallet.state.restoreHeight])
         setHeight(h)
       })
+      // what the scan found is kept whatever maki says next
+      await keep({ ...wallet.state })
       const need = wallet.withoutKeyImages()
       if (need.length > 0 && link.state.linked) {
         const r = await link.moneroKeyImages(
@@ -139,9 +141,9 @@ export function MoneroWallet({
           await wallet.learnKeyImages(
             need.map((o, i) => ({ key: o.key, image: hex.encode(r.images[i].image) }))
           )
+          await keep({ ...wallet.state })
         }
       }
-      await keep({ ...wallet.state })
     } catch (e) {
       setProblem(`Couldn’t look: ${(e as Error).message}.`)
     } finally {
