@@ -99,7 +99,7 @@ describe('maki-ssh-keygen', () => {
     let err = ''
     const passed: string[][] = []
     const code = await runSshKeygen(['--maki-ssh-keygen', ...args], {
-      input: [],
+      input: (async function* () {})(),
       output: () => {},
       error: (l) => (err += `${l}\n`),
       ask: app,
