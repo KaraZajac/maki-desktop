@@ -2,7 +2,7 @@
 # A private Monero chain for maki desktop's Monero tests: monerod in regtest mode, offline, its
 # RPC on 127.0.0.1:28081, and monero-wallet-rpc on 28083, with 130 blocks mined to the BIP39 test
 # phrase's wallet (the fake maki's), so it has coins to spend (a coinbase output waits 60 blocks).
-# Then `MAKI_REGTEST=1 npm test`.
+# Then `MAKI_REGTEST=1 npm test`, MONERO_BIN set too for the test through monero-wallet-cli.
 #
 # MONERO_BIN: where monerod and monero-wallet-rpc are (Monero's own release, getmonero.org),
 # else they're looked for on the PATH. DATA: where the chain and the wallets go, else a new

@@ -147,9 +147,10 @@ MAKI_E2E=1 npx vitest run src/e2e
 MAKI_REGTEST=1 npm test
                      # Monero against a private chain: scripts/regtest.sh starts monerod and
                      # monero-wallet-rpc (MONERO_BIN: Monero's own release). A view-only wallet's
-                     # payment signed by maki and mined; this app's own wallet scanning what the
-                     # full wallet of the same phrase sees, and paying (with MAKI_E2E=1, through
-                     # the app itself too)
+                     # payment signed by maki and mined; the Monero GUI's offline signing, file
+                     # by file, through monero-wallet-cli (with MONERO_BIN set, or it on the
+                     # PATH); this app's own wallet scanning what the full wallet of the same
+                     # phrase sees, and paying (with MAKI_E2E=1, through the app itself too)
 ```
 
 The real-browser test uses Playwright's Chromium from `~/.cache/ms-playwright` (or
