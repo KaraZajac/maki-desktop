@@ -17,6 +17,7 @@ import {
   Reader,
   Writer
 } from './protocol'
+import { Writer as XmrWriter } from './monero/transaction'
 
 export const BITCOIN_APP = 'com.leviathan.maki.bitcoin'
 export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
@@ -348,9 +349,27 @@ export class EthereumApp extends WalletApp {
 export const MoneroNetwork = { MONERO: 0, TESTNET: 1, STAGENET: 2 } as const
 export type MoneroNetworkValue = (typeof MoneroNetwork)[keyof typeof MoneroNetwork]
 
+/** The biggest request the Monero app takes to sign: 16 inputs. */
+export const MAX_MONERO_REQUEST = 64 * 1024
+/** Outputs a `K` asks about at once. */
+const KEY_IMAGES_AT_ONCE = 40
+
+/** An output of the wallet's, whose key image maki makes (`K`). */
+export interface MoneroOutput {
+  /** its transaction's public key, or its own additional key */
+  txKey: Uint8Array
+  /** its index in that transaction */
+  index: bigint
+  major: number
+  minor: number
+  key: Uint8Array
+}
+
 /**
  * maki's Monero app: the account Ledger's Monero app makes from the same phrase. Its backup
- * words, the 25 any Monero wallet restores from, are shown on maki alone (the app's menu).
+ * words, the 25 any Monero wallet restores from, are shown on maki alone (the app's menu). A
+ * computer the owner lets watch the wallet gets its view key, and asks maki to spend: maki makes
+ * each transaction itself, from what it's asked to pay, once the owner has seen it.
  */
 export class MoneroApp extends WalletApp {
   constructor(send: AppMessage) {
@@ -377,5 +396,79 @@ export class MoneroApp extends WalletApp {
       // locked, or no answer: nothing shown
     }
     return { approval: a.approval, address }
+  }
+
+  /**
+   * Let this computer watch the wallet, once the owner agrees on maki: the primary address and the
+   * secret view key, which finds the wallet's payments and can't spend them.
+   */
+  async watch(
+    network: MoneroNetworkValue
+  ): Promise<{ approval: ApprovalValue; address: string; viewKey: Uint8Array | null }> {
+    const a = await this.ask(Uint8Array.of(0x57, network), SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '', viewKey: null }
+    if (a.approval !== 'approved') return { approval: a.approval, address: '', viewKey: null }
+    try {
+      return { approval: a.approval, address: a.text(), viewKey: a.fixed(32) }
+    } catch {
+      return { approval: 'unavailable', address: '', viewKey: null }
+    }
+  }
+
+  /**
+   * Outputs' key images, each with what proves it's that output's (a ring signature of one, as a
+   * view-only wallet imports them): once the owner has let a computer watch the wallet. Refused
+   * ones come back with the app's reason.
+   */
+  async keyImages(
+    outputs: MoneroOutput[],
+    progress?: (done: number) => void
+  ): Promise<{
+    approval: ApprovalValue
+    reason: string
+    images: { image: Uint8Array; proof: Uint8Array }[]
+  }> {
+    const images: { image: Uint8Array; proof: Uint8Array }[] = []
+    for (let at = 0; at < outputs.length; at += KEY_IMAGES_AT_ONCE) {
+      const batch = outputs.slice(at, at + KEY_IMAGES_AT_ONCE)
+      const w = new XmrWriter().u8(0x4b).u8(batch.length)
+      for (const o of batch) w.key(o.txKey).u64(o.index).u32(o.major).u32(o.minor).key(o.key)
+      const a = await this.ask(w.finish(), PIECE_TIMEOUT_MS)
+      if (typeof a === 'string') return { approval: a, reason: '', images: [] }
+      if (a.approval !== 'approved') return { approval: a.approval, reason: a.reason(), images: [] }
+      try {
+        for (let i = 0; i < batch.length; i++)
+          images.push({ image: a.fixed(32), proof: a.fixed(64) })
+      } catch {
+        return { approval: 'unavailable', reason: '', images: [] }
+      }
+      progress?.(images.length)
+    }
+    return { approval: 'approved', reason: '', images }
+  }
+
+  /**
+   * Spend: `request` says what (the outputs spent, in their rings, and the payments, the change
+   * and the fee); the owner goes through it on maki's screen, and maki makes the transaction and
+   * signs it. It comes back whole (`decodeSigned`), or refused with the app's reason.
+   */
+  async sign(
+    network: MoneroNetworkValue,
+    request: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
+    if (request.length === 0 || request.length > MAX_MONERO_REQUEST) {
+      return {
+        approval: 'refused',
+        reason: 'more than maki signs at once (16 inputs)',
+        signed: null
+      }
+    }
+    const a = await this.pieces(Uint8Array.of(0x53, network), new Uint8Array(), request)
+    if (typeof a === 'string') return { approval: a, reason: '', signed: null }
+    if (a.approval !== 'approved') return { approval: a.approval, reason: a.reason(), signed: null }
+    const signed = await this.signed(a.u32())
+    return signed
+      ? { approval: 'approved', reason: '', signed }
+      : { approval: 'unavailable', reason: '', signed: null }
   }
 }

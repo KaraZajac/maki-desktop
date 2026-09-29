@@ -18,7 +18,8 @@ const IDS: Record<string, string> = {
   USDT0: 'usdt0',
   DAI: 'dai',
   WETH: 'weth',
-  WBTC: 'wrapped-bitcoin'
+  WBTC: 'wrapped-bitcoin',
+  XMR: 'monero'
 }
 
 /** Everything asked about, every time: the question says nothing about what's held. */

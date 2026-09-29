@@ -7,6 +7,7 @@ describe('prices', () => {
       'bitcoin',
       'dai',
       'ethereum',
+      'monero',
       'polygon-ecosystem-token',
       'tether',
       'usd-coin',
@@ -15,7 +16,7 @@ describe('prices', () => {
       'wrapped-bitcoin'
     ])
     expect(pricesUrl('eur')).toBe(
-      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,dai,ethereum,polygon-ecosystem-token,tether,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
+      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,dai,ethereum,monero,polygon-ecosystem-token,tether,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
     )
   })
 

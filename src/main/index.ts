@@ -337,6 +337,59 @@ function ipc(): void {
     return r.filePath
   })
 
+  // Monero: the view key maki shared (for this computer to watch the wallet, and to read and write
+  // the Monero GUI's files), and maki desktop's own wallet's state; readable by this user alone
+  const xmrFile = (): string => join(app.getPath('userData'), 'monero.json')
+  ipcMain.handle('xmr:load', async () => {
+    try {
+      return JSON.parse(await readFile(xmrFile(), 'utf8')) as unknown
+    } catch {
+      return null
+    }
+  })
+  ipcMain.handle('xmr:save', async (_e, state: unknown) => {
+    const text = JSON.stringify(state)
+    if (typeof state !== 'object' || state === null || text.length > 64 * 1024 * 1024) throw new Error('not a Monero wallet state')
+    await writeFile(xmrFile(), text, { mode: 0o600 })
+  })
+  // a Monero node, as maki desktop's wallet asks it (the page can't reach one itself): POST to
+  // one of its paths, the answer's bytes; http for your own node, https or http for others
+  ipcMain.handle('xmr:node', async (_e, url: unknown, path: unknown, body: unknown) => {
+    if (typeof url !== 'string' || !/^https?:\/\/[^\s/]+\/?$/.test(url)) throw new Error('not a node’s address')
+    if (typeof path !== 'string' || !/^\/[a-z_./]+$/.test(path)) throw new Error('not a node’s path')
+    if (typeof body !== 'string' && !(body instanceof Uint8Array)) throw new Error('nothing to send the node')
+    const r = await fetch(`${url.replace(/\/$/, '')}${path}`, {
+      method: 'POST',
+      body,
+      headers: typeof body === 'string' ? { 'Content-Type': 'application/json' } : {},
+      signal: AbortSignal.timeout(120_000)
+    })
+    if (!r.ok) throw new Error(`the node said ${r.status}`)
+    return new Uint8Array(await r.arrayBuffer())
+  })
+  ipcMain.handle('xmr:open', async (_e, title: unknown) => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: typeof title === 'string' ? title : 'Open a Monero file',
+      properties: ['openFile']
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    const path = r.filePaths[0]
+    if ((await stat(path)).size > 64 * 1024 * 1024) throw new Error('that file is too big to be one of the Monero GUI’s')
+    return { path, data: new Uint8Array(await readFile(path)) }
+  })
+  ipcMain.handle('xmr:saveFile', async (_e, title: unknown, defaultPath: unknown, data: unknown, keyImages: unknown) => {
+    if (!(data instanceof Uint8Array)) throw new Error('nothing to save')
+    const r = await dialog.showSaveDialog(win!, {
+      title: typeof title === 'string' ? title : 'Save',
+      defaultPath: typeof defaultPath === 'string' ? defaultPath : undefined
+    })
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, data)
+    // the Monero GUI imports a signed transaction's key images from beside it as it submits it
+    if (keyImages instanceof Uint8Array) await writeFile(`${r.filePath}_keyImages`, keyImages)
+    return r.filePath
+  })
+
   const btcFile = (): string => join(app.getPath('userData'), 'bitcoin.json')
   ipcMain.handle('btc:load', async () => {
     try {

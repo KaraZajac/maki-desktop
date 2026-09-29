@@ -39,10 +39,16 @@ maki's roll for what to do and the green of the nori for what's done.
   (native SegWit and taproot, mainnet and testnet4; balance, coins and activity from
   mempool.space; a fresh address as a QR code, checked on maki; sending at the fee you choose, and
   speeding up one that's waiting) and Ethereum (what it holds on six networks, the tokens maki
-  knows included; sending a coin or a token, to an address or an ENS name). maki shows every
-  payment and signs it. And Monero's address and subaddresses, each compared on maki's screen
-  first; its 25-word backup shows on maki alone. Values in money if you pick a currency
-  (CoinGecko, asked the same question for everyone).
+  knows included; sending a coin or a token, to an address or an ENS name) and Monero (once you
+  let this computer watch it on maki: the chain scanned here with the view key, from a node you
+  pick, which never sees the key; the balance, a fresh subaddress checked on maki, and sending,
+  which maki makes whole and signs). maki shows every payment and signs it; Monero's 25-word
+  backup shows on maki alone. Values in money if you pick a currency (CoinGecko, asked the same
+  question for everyone).
+- **Works with the Monero GUI.** The GUI (or monero-wallet-cli) keeps a view-only wallet made from
+  the address and view key maki shares, and maki is its cold wallet, through the files the GUI's
+  Advanced options pass back and forth: maki makes key images for its outputs, so it sees what's
+  spent, and signs each transaction it makes, once you've gone through it on maki's screen.
 - **Works with Bitcoin wallet software.** Get one of maki's accounts, native SegWit (BIP84) or
   taproot (BIP86), as an output descriptor for Sparrow or Bitcoin Core as a watch-only wallet;
   check an address on maki's screen before giving it out; and
@@ -138,6 +144,12 @@ MAKI_E2E=1 npx vitest run src/e2e
                      # the app itself, offscreen, pressed through: the Wallets page sends from
                      # each account (and speeds one up), and offers the Bitcoin app to a maki
                      # without it; the Apps page installs and removes
+MAKI_REGTEST=1 npm test
+                     # Monero against a private chain: scripts/regtest.sh starts monerod and
+                     # monero-wallet-rpc (MONERO_BIN: Monero's own release). A view-only wallet's
+                     # payment signed by maki and mined; this app's own wallet scanning what the
+                     # full wallet of the same phrase sees, and paying (with MAKI_E2E=1, through
+                     # the app itself too)
 ```
 
 The real-browser test uses Playwright's Chromium from `~/.cache/ms-playwright` (or
@@ -192,7 +204,12 @@ src/shared/psbt.ts       PSBTs as wallet software hands them over: binary, base6
 src/shared/ethereum.ts   the EIP-1193 methods sites call, answered from maki and the network
 src/shared/btc-wallet.ts the Bitcoin wallet: descriptors, the gap-limit scan, PSBTs maki reads
 src/shared/eth-wallet.ts the Ethereum wallet: holdings on each network, sends through maki
-src/shared/wallet-apps.ts maki's wallet apps, Bitcoin and Ethereum: their messages, over APP_MESSAGE
+src/shared/wallet-apps.ts maki's wallet apps, Bitcoin, Ethereum and Monero: their messages, over APP_MESSAGE
+src/shared/monero/       Monero: keys and addresses with the view key (xmr.ts), transactions and
+                         blocks, the node's RPC (node.ts, epee.ts), scanning, decoys as wallet2 picks
+                         them, the wallet (wallet.ts) and paying (send.ts, the request maki signs);
+                         wallet2's cold-signing files (wallet2.ts, CryptoNight for their key) and maki
+                         as the GUI's cold wallet (cold.ts)
 src/shared/tokens.ts     the tokens maki knows by contract (the firmware's table, kept in step)
 src/shared/polite.ts     asking a public server politely: a few at a time, and waiting when told
 src/shared/rlp.ts        RLP, and the unsigned EIP-1559 transactions maki signs

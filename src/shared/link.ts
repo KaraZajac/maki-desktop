@@ -21,7 +21,7 @@ import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from '.
 import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
-import { BitcoinApp, EthereumApp, MoneroApp, type MoneroNetworkValue } from './wallet-apps'
+import { BitcoinApp, EthereumApp, MoneroApp, type MoneroNetworkValue, type MoneroOutput } from './wallet-apps'
 import type { Store, StoreApp } from './store'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
@@ -402,6 +402,54 @@ export class Link {
         : r.approval === 'denied'
           ? `${which} doesn't match maki's: don't use this computer's copy`
           : `${which}: ${Link.walletSays(r.approval, 'Monero')}`
+    )
+    return r
+  }
+
+  /** Let this computer watch the Monero wallet, once the owner says so on maki: its address and view key. */
+  async moneroWatch(
+    network: MoneroNetworkValue
+  ): Promise<{ approval: ApprovalValue; address: string; viewKey: Uint8Array | null }> {
+    this.linkedClient()
+    this.note('watching the Monero wallet: approve on maki')
+    const r = await this.monero.watch(network)
+    this.note(r.approval === 'approved' ? 'this computer watches the Monero wallet' : `Monero: ${Link.walletSays(r.approval, 'Monero')}`)
+    return r
+  }
+
+  /** Monero outputs' key images, with their proofs, from maki. */
+  async moneroKeyImages(
+    outputs: MoneroOutput[],
+    progress?: (done: number) => void
+  ): Promise<{ approval: ApprovalValue; reason: string; images: { image: Uint8Array; proof: Uint8Array }[] }> {
+    this.linkedClient()
+    const r = await this.monero.keyImages(outputs, progress)
+    this.note(
+      r.approval === 'approved'
+        ? `${r.images.length} Monero key images from maki`
+        : r.approval === 'refused'
+          ? `no Monero key images: ${r.reason}`
+          : `Monero key images: ${Link.walletSays(r.approval, 'Monero')}`
+    )
+    return r
+  }
+
+  /** Have maki make and sign a Monero transaction, once the owner has gone through it on maki's screen. */
+  async moneroSign(
+    network: MoneroNetworkValue,
+    request: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
+    this.linkedClient()
+    this.note('Monero transaction sent: go through it on maki')
+    const r = await this.monero.sign(network, request)
+    this.note(
+      r.approval === 'approved'
+        ? 'Monero transaction signed'
+        : r.approval === 'refused'
+          ? `maki won't sign it: ${r.reason}`
+          : r.approval === 'denied'
+            ? 'Monero transaction rejected on maki'
+            : `Monero transaction: ${Link.walletSays(r.approval, 'Monero')}`
     )
     return r
   }

@@ -1,0 +1,5 @@
+{
+ "address": "44LozChfYpiYc66YWqqXGfX2Fv8VXV1Q4bwzMB1nD9iweUbEpRS5pRDNBJrKcikigXXQT9tBay1Tp8Btn4MSAsp715HMk66",
+ "view": "6b5ea940efb4694c376be6c256385c31f9a36c0726fdceb60695ebd948459409",
+ "note": "a throwaway regtest wallet's (monero v0.18.5.1 --regtest): its address and secret view key, what the files here are encrypted with"
+}

@@ -73,6 +73,19 @@ const api = {
     load: (): Promise<string[]> => ipcRenderer.invoke('btc:load'),
     save: (descriptors: string[]): Promise<void> => ipcRenderer.invoke('btc:save', descriptors)
   },
+  monero: {
+    /** what maki desktop keeps of the Monero wallet (its view key, and its own wallet's state) */
+    load: (): Promise<unknown> => ipcRenderer.invoke('xmr:load'),
+    save: (state: unknown): Promise<void> => ipcRenderer.invoke('xmr:save', state),
+    /** POST to a Monero node's path; the answer's bytes */
+    node: (url: string, path: string, body: Uint8Array | string): Promise<Uint8Array> =>
+      ipcRenderer.invoke('xmr:node', url, path, body),
+    /** a file dialog for one of wallet2's files; its path and bytes, or null if cancelled */
+    open: (title: string): Promise<{ path: string; data: Uint8Array } | null> => ipcRenderer.invoke('xmr:open', title),
+    /** a save dialog; where it went, or null. A signed transaction's key images go beside it, as the Monero GUI looks for them. */
+    saveFile: (title: string, defaultPath: string, data: Uint8Array, keyImages?: Uint8Array): Promise<string | null> =>
+      ipcRenderer.invoke('xmr:saveFile', title, defaultPath, data, keyImages)
+  },
   age: {
     /** whether age-plugin-maki is on the PATH, starting this app */
     status: (): Promise<import('../shared/age').AgePluginStatus> => ipcRenderer.invoke('age:status'),
