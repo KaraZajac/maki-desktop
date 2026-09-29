@@ -1,15 +1,25 @@
 import { useMemo, useRef, useState } from 'react'
 import type { Link } from '@shared/link'
-import { keyImageFile, type MoneroSigner, signFile } from '@shared/monero/cold'
+import { keyImageFile, type MoneroSigner, OtherKdfRounds, signFile } from '@shared/monero/cold'
 import { type Watched, viewWallet } from '@shared/monero/kept'
-import { fileKey } from '@shared/monero/wallet2'
+import { fileKeyRounds } from '@shared/monero/wallet2'
 import { formatXmr, type Network } from '@shared/monero/xmr'
 import type { MoneroNetworkValue } from '@shared/wallet-apps'
 import { Grouped } from './BitcoinWallet'
-import { Button, Glyph } from './ui'
+import { Button, Field, Glyph } from './ui'
 
 const heading =
   'mt-6 mb-2 font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1'
+
+/** The KDF rounds the GUI's wallet on `network` was made with, as its owner said (1 by default). */
+function keptRounds(network: Network): number {
+  try {
+    const n = Number(localStorage.getItem(`maki.xmr.kdfRounds.${network}`))
+    return Number.isSafeInteger(n) && n >= 1 ? n : 1
+  } catch {
+    return 1
+  }
+}
 
 /** Where a file goes by default: beside the one it came from, as the Monero GUI names them. */
 function beside(path: string, name: string): string {
@@ -42,13 +52,39 @@ export function MoneroGui({
   const [done, setDone] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [rounds, setRounds] = useState(() => keptRounds(network))
+  const [roundsText, setRoundsText] = useState(() => String(keptRounds(network)))
+  const [askRounds, setAskRounds] = useState(false)
+  const [making, setMaking] = useState<number | null>(null)
   const wallet = useMemo(() => viewWallet(watched, network), [watched, network])
-  // the key wallet2 encrypts its files with (CryptoNight of the view key): made once
-  const key = useRef<{ view: string; key: Uint8Array } | null>(null)
-  const fileKeyFor = (): Uint8Array => {
-    if (key.current?.view !== watched.view)
-      key.current = { view: watched.view, key: fileKey(wallet!.view) }
+  // the key wallet2 encrypts its files with (CryptoNight of the view key, once for each of the
+  // wallet's KDF rounds): made once, a round at a time, the page kept going between them
+  const key = useRef<{ view: string; rounds: number; key: Uint8Array } | null>(null)
+  const fileKeyFor = async (): Promise<Uint8Array> => {
+    if (key.current?.view !== watched.view || key.current.rounds !== rounds) {
+      let made: Uint8Array = new Uint8Array()
+      let n = 0
+      for (made of fileKeyRounds(wallet!.view, rounds)) {
+        if (rounds > 1) {
+          setMaking(++n)
+          await new Promise((r) => setTimeout(r, 0))
+        }
+      }
+      setMaking(null)
+      key.current = { view: watched.view, rounds, key: made }
+    }
     return key.current.key
+  }
+  const roundsSaid = (text: string): void => {
+    setRoundsText(text)
+    const n = Number(text)
+    if (!Number.isSafeInteger(n) || n < 1) return
+    setRounds(n)
+    try {
+      localStorage.setItem(`maki.xmr.kdfRounds.${network}`, String(n))
+    } catch {
+      // kept for this run alone
+    }
   }
 
   const maki: MoneroSigner = {
@@ -69,8 +105,14 @@ export function MoneroGui({
     try {
       setDone(await f())
     } catch (e) {
-      setProblem((e as Error).message)
+      if (e instanceof OtherKdfRounds) {
+        setAskRounds(true)
+        setProblem(
+          `That file is this wallet’s, but doesn’t decrypt with ${rounds} KDF round${rounds === 1 ? '' : 's'}. If the Monero GUI’s Number of KDF rounds isn’t ${rounds} (its first page’s Advanced options have it), give it below and try again.`
+        )
+      } else setProblem((e as Error).message)
     } finally {
+      setMaking(null)
       setBusy(null)
     }
   }
@@ -79,7 +121,7 @@ export function MoneroGui({
     run('images', async () => {
       const file = await window.maki.monero.open('Open the outputs the Monero GUI exported')
       if (!file) return null
-      const made = await keyImageFile(file.data, wallet!, fileKeyFor(), maki)
+      const made = await keyImageFile(file.data, wallet!, await fileKeyFor(), maki)
       const path = await window.maki.monero.saveFile(
         'Save the key images for the Monero GUI',
         beside(file.path, 'key_images'),
@@ -96,7 +138,7 @@ export function MoneroGui({
         'Open the unsigned transaction the Monero GUI made'
       )
       if (!file) return null
-      const signed = await signFile(file.data, wallet!, fileKeyFor(), maki)
+      const signed = await signFile(file.data, wallet!, await fileKeyFor(), maki)
       const path = await window.maki.monero.saveFile(
         'Save the signed transaction for the Monero GUI',
         `${file.path}_signed`,
@@ -158,6 +200,16 @@ export function MoneroGui({
             It shows what comes in and what’s spent, never enough to spend. Anyone with it sees this
             wallet’s payments.
           </p>
+          {(askRounds || rounds !== 1) && (
+            <Field
+              className="mt-4 max-w-xs"
+              label="KDF rounds"
+              inputMode="numeric"
+              value={roundsText}
+              onChange={(e) => roundsSaid(e.target.value)}
+              hint="The Monero GUI’s Number of KDF rounds: 1 unless you changed it. Each takes maki desktop a moment, once."
+            />
+          )}
 
           <h3 className={heading}>Key images</h3>
           <p className="mb-2 text-sm leading-relaxed text-subtext0">
@@ -170,7 +222,11 @@ export function MoneroGui({
             disabled={!linked || busy !== null}
             onClick={() => void keyImages()}
           >
-            {busy === 'images' ? 'maki is making them…' : 'Key images for an outputs file…'}
+            {busy === 'images'
+              ? making !== null
+                ? `KDF round ${making} of ${rounds}…`
+                : 'maki is making them…'
+              : 'Key images for an outputs file…'}
           </Button>
 
           <h3 className={heading}>Send</h3>
@@ -186,7 +242,11 @@ export function MoneroGui({
             disabled={!linked || busy !== null}
             onClick={() => void sign()}
           >
-            {busy === 'sign' ? 'Go through it on maki…' : 'Sign a transaction file…'}
+            {busy === 'sign'
+              ? making !== null
+                ? `KDF round ${making} of ${rounds}…`
+                : 'Go through it on maki…'
+              : 'Sign a transaction file…'}
           </Button>
 
           {done && <p className="mt-3 text-sm text-green">{done}</p>}

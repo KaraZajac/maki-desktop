@@ -92,9 +92,22 @@ function chacha20(data: Uint8Array, key: Uint8Array, iv: Uint8Array): Uint8Array
   return out
 }
 
-/** The key wallet2 encrypts files with: CryptoNight of the view key (once, as wallets run by default). */
-export function fileKey(viewSecret: bigint): Uint8Array {
-  return cnSlowHash(scalarBytes(viewSecret))
+/**
+ * The key wallet2 encrypts files with: CryptoNight of the view key, then of that, as many times in
+ * all as the wallet's KDF rounds (once by default; the GUI's wizard and the CLI's `--kdf-rounds`
+ * can make it more).
+ */
+export function fileKey(viewSecret: bigint, rounds = 1): Uint8Array {
+  let key: Uint8Array = new Uint8Array()
+  for (key of fileKeyRounds(viewSecret, rounds));
+  return key
+}
+
+/** The same a round at a time (a quarter of a second each, here): the key after each, the last the key. */
+export function* fileKeyRounds(viewSecret: bigint, rounds: number): Generator<Uint8Array> {
+  let key = cnSlowHash(scalarBytes(viewSecret))
+  yield key
+  for (let n = 1; n < rounds; n++) yield (key = cnSlowHash(key))
 }
 
 /** wallet2's ASCII armour, if a file has it (`export-format ascii`): its bytes. */

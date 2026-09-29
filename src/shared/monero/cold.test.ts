@@ -7,7 +7,14 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { hex } from '@scure/base'
-import { prepare, type ViewWallet } from './cold'
+import {
+  keyImageFile,
+  type MoneroSigner,
+  OtherKdfRounds,
+  prepare,
+  signFile,
+  type ViewWallet
+} from './cold'
 import { encodeRequest } from './request'
 import { fileKey, openFile, parseSigned, parseUnsigned } from './wallet2'
 import { decodeAddress, leNumber, mulBase } from './xmr'
@@ -57,5 +64,21 @@ describe('maki as the cold wallet of a view-only wallet', () => {
     const set = parseUnsigned(openFile('unsigned', file('unsigned1.bin'), w.view, key))
     const other: ViewWallet = { ...w, spend: mulBase(7n).toBytes() }
     expect(() => prepare(set.txes[0], other)).toThrow('isn’t this wallet’s')
+  })
+
+  it('reads the files of a wallet made with more KDF rounds, given how many', async () => {
+    // the same wallet's, as monero-wallet-cli --kdf-rounds 3 exported its outputs (none yet)
+    const three = file('outputs_kdf3.bin')
+    const maki: MoneroSigner = {
+      keyImages: async () => ({ approval: 'approved', reason: '', images: [] }),
+      sign: async () => ({ approval: 'denied', reason: '', signed: null })
+    }
+    await expect(keyImageFile(three, w, key, maki)).rejects.toThrow(OtherKdfRounds)
+    const made = await keyImageFile(three, w, fileKey(w.view, 3), maki)
+    expect(made.outputs).toBe(0)
+    // and a transaction file, the other way round: this one's key made in one round, not three
+    await expect(signFile(file('unsigned1.bin'), w, fileKey(w.view, 3), maki)).rejects.toThrow(
+      OtherKdfRounds
+    )
   })
 })

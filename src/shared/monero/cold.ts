@@ -29,10 +29,12 @@ import {
   type PendingTx,
   sealFile,
   type SignedTxSet,
+  type UnsignedTxSet,
   writeKeyImages,
   writeSigned
 } from './wallet2'
 import {
+  concat,
   derivation,
   derivationToScalar,
   encodeAddress,
@@ -294,9 +296,7 @@ export function keyImageAsks(outputs: ExportedTransfer[], w: ViewWallet): KeyIma
 
 /** maki, as the files need it: key images for outputs, and transactions signed. */
 export interface MoneroSigner {
-  keyImages(
-    outputs: KeyImageAsk[]
-  ): Promise<{
+  keyImages(outputs: KeyImageAsk[]): Promise<{
     approval: string
     reason: string
     images: { image: Uint8Array; proof: Uint8Array }[]
@@ -304,6 +304,16 @@ export interface MoneroSigner {
   sign(
     request: Uint8Array
   ): Promise<{ approval: string; reason: string; signed: Uint8Array | null }>
+}
+
+/**
+ * A file this wallet made (the view key signed it) that doesn't decrypt with the key it was opened
+ * with: the wallet makes its key in another number of KDF rounds.
+ */
+export class OtherKdfRounds extends Error {
+  constructor() {
+    super('a file of this wallet’s, encrypted with a key made in another number of KDF rounds')
+  }
 }
 
 function refused(what: string, r: { approval: string; reason: string }): Error {
@@ -327,7 +337,11 @@ export async function keyImageFile(
   maki: MoneroSigner
 ): Promise<{ file: Uint8Array; outputs: number }> {
   const viewPublic = mulBase(w.view).toBytes()
-  const exported = parseOutputs(openFile('outputs', file, w.view, key), w.spend, viewPublic)
+  const outputs = openFile('outputs', file, w.view, key)
+  // it's this wallet's, so it starts with the wallet's keys, unless it didn't decrypt
+  if (outputs.length >= 64 && !equal(outputs.subarray(0, 64), concat(w.spend, viewPublic)))
+    throw new OtherKdfRounds()
+  const exported = parseOutputs(outputs, w.spend, viewPublic)
   const r = await maki.keyImages(keyImageAsks(exported.outputs, w))
   if (r.approval !== 'approved') throw refused('make key images', r)
   const body = writeKeyImages(Number(exported.offset), w.spend, viewPublic, r.images)
@@ -345,7 +359,15 @@ export async function signFile(
   key: Uint8Array,
   maki: MoneroSigner
 ): Promise<{ signed: Uint8Array; keyImages: Uint8Array; transactions: number; fee: bigint }> {
-  const set = parseUnsigned(openFile('unsigned', file, w.view, key))
+  const body = openFile('unsigned', file, w.view, key)
+  let set: UnsignedTxSet
+  try {
+    set = parseUnsigned(body)
+  } catch (e) {
+    // a version of the set wallet2 has never written: it didn't decrypt
+    if (body.length > 0 && body[0] > 3) throw new OtherKdfRounds()
+    throw e
+  }
   // everything checked before maki is asked anything
   const prepared = set.txes.map((c) => prepare(c, w))
   const done = []
