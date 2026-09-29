@@ -42,14 +42,22 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     expect(apps.map((a) => [a.name, a.kind, a.category])).toEqual([
       ['Age', 'wasm', 'Security'],
       ['Bitcoin', 'wasm', 'Finance'],
+      ['Breakout', 'wasm', 'Games'],
+      ['Contacts', 'wasm', 'Social'],
       ['Dice', 'wasm', 'Games'],
       ['Ethereum', 'wasm', 'Finance'],
+      ['Marble', 'wasm', 'Games'],
+      ['Minisign', 'wasm', 'Security'],
       ['Monero', 'wasm', 'Finance'],
       ['Nostr', 'wasm', 'Social'],
+      ['Notes', 'wasm', 'Security'],
+      ['OpenPGP', 'wasm', 'Security'],
       ['Passphrase', 'wasm', 'Security'],
       ['Pomodoro', 'native', 'Productivity'],
+      ['Scanner', 'wasm', 'Tools'],
       ['Sensors', 'wasm', 'Tools'],
       ['Snake', 'wasm', 'Games'],
+      ['Solana', 'wasm', 'Finance'],
       ['SSH', 'wasm', 'Security'],
       ['Status', 'wasm', 'Productivity'],
       ['Tally', 'wasm', 'Tools'],
@@ -66,10 +74,13 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     )
     expect(store.revocations?.entries).toEqual([])
     expect((await store.bundle(pomodoro)).manifest.kind).toBe('native')
-    // a wallet: its accounts come with it, and what may sign for them
+    // a wallet: its accounts come with it, and what may sign for them (the camera: signing by QR codes)
     const bitcoin = apps.find((a) => a.name === 'Bitcoin')!
-    expect(bitcoin.permissions.map((p) => p.permission.name)).toEqual(['link', 'wallet'])
+    expect(bitcoin.permissions.map((p) => p.permission.name)).toEqual(['link', 'camera', 'wallet'])
     expect((await store.bundle(bitcoin)).manifest.wallet?.paths).toHaveLength(4)
+    // Solana's is an Ed25519 wallet (host API 6), which this app reads too
+    const solana = (await store.bundle(apps.find((a) => a.name === 'Solana')!)).manifest
+    expect([solana.api, solana.wallet?.curve]).toEqual([6, 'ed25519'])
   })
 })
 
