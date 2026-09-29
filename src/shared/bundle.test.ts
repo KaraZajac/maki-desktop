@@ -44,6 +44,15 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
     expect(walletCoins(eth.wallet!.paths)).toEqual(['Ethereum'])
     const xmr = readBundle(fixture('monero')).manifest
     expect([xmr.api, xmr.wallet!.paths.map(formatPath), walletCoins(xmr.wallet!.paths)]).toEqual([5, ["m/44'/128'"], ['Monero']])
+    // Solana's: Ed25519 keys (host API 6)
+    const sol = readBundle(fixture('solana')).manifest
+    expect([sol.api, sol.wallet!.curve, sol.wallet!.paths.map(formatPath), walletCoins(sol.wallet!.paths)]).toEqual([
+      6,
+      'ed25519',
+      ["m/44'/501'"],
+      ['Solana']
+    ])
+    expect(btc.wallet!.curve).toBe('secp256k1')
     // an app without the permission has no paths
     expect(readBundle(fixture('dice')).manifest.wallet).toBeNull()
   })

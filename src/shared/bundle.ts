@@ -60,7 +60,7 @@ export interface Manifest {
   backup: boolean
   description: string
   /** the wallet permission's accounts: BIP32 paths, each a hardened purpose and coin type */
-  wallet: { paths: number[][] } | null
+  wallet: { curve: 'secp256k1' | 'ed25519'; paths: number[][] } | null
 }
 
 export interface Bundle {
@@ -198,10 +198,14 @@ function readManifest(b: Uint8Array): Manifest {
 /** Hardened, in a BIP32 path. */
 export const HARDENED = 0x80000000
 
-/** The wallet permission's paths: a curve (1, secp256k1), then each path, its depth and parts. */
-function walletField(v: Uint8Array): { paths: number[][] } {
+/**
+ * The wallet permission's paths: a curve (1, secp256k1; 2, Ed25519, Solana's), then each path,
+ * its depth and parts.
+ */
+function walletField(v: Uint8Array): { curve: 'secp256k1' | 'ed25519'; paths: number[][] } {
   const view = new DataView(v.buffer, v.byteOffset, v.byteLength)
-  if (v[0] !== 1) throw new BundleError("manifest: a wallet curve this app doesn't know")
+  const curve = v[0] === 1 ? 'secp256k1' : v[0] === 2 ? 'ed25519' : null
+  if (!curve) throw new BundleError("manifest: a wallet curve this app doesn't know")
   const n = v[1] ?? 0
   const paths: number[][] = []
   let at = 2
@@ -212,7 +216,7 @@ function walletField(v: Uint8Array): { paths: number[][] } {
     at += 1 + depth * 4
   }
   if (n === 0 || at !== v.length) throw new BundleError('manifest: wallet paths')
-  return { paths }
+  return { curve, paths }
 }
 
 /** A path as wallets write it: `m/84'/0'`. */
