@@ -58,6 +58,14 @@ maki's roll for what to do and the green of the nori for what's done.
   anything that isn't its own wallet's, goes through every payment, the change and the fee with
   you, and maki signs only when you say so. The signed PSBT goes back to the wallet software to
   broadcast.
+- **Is one of a multisig wallet's keys.** Get maki's key for one (BIP48's, P2WSH:
+  `[73c5da0a/48h/0h/0h/2h]Zpub…`, or saved as the file Coldcard exports one in, which Sparrow
+  imports) for Sparrow, Nunchuk, Specter or Bitcoin Core to make the wallet with; then give maki
+  the wallet (its descriptor, or Sparrow's Coldcard multisig export): maki shows you every key's
+  fingerprint and xpub, its own marked, and adds it when you say so. From then on it signs what
+  spends from the wallet as any other PSBT, checked against the wallet as you added it: each
+  input's script rebuilt from its keys, change only where it pays the wallet's own change chain,
+  and the wallet's name on maki's screen. It checks addresses on maki's screen too.
 - **Gives sites an Ethereum account.** The extension puts an EIP-1193 provider in pages
   (`window.ethereum` when no other wallet has it, and announced the EIP-6963 way), which maki's
   Ethereum app answers. A site connects once you allow it on maki; messages (`personal_sign`), typed data

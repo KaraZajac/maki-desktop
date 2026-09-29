@@ -8,6 +8,13 @@ import {
   type NetworkValue
 } from '@shared/protocol'
 import { parseDescriptor, walletKey, type BtcAccountInfo } from '@shared/btc-wallet'
+import {
+  coldcardFile,
+  looksLikeWallet,
+  parseCosigner,
+  type CosignerKey,
+  type MultisigWallet
+} from '@shared/multisig'
 import { readPsbt, toBase64 } from '@shared/psbt'
 import { BITCOIN_APP } from '@shared/wallet-apps'
 import type { Apps } from './apps-state'
@@ -187,7 +194,249 @@ export function Bitcoin({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
         info={info}
         forget={() => void forget()}
       />
+      <Multisig link={link} network={network} />
     </Card>
+  )
+}
+
+/**
+ * maki as one of a multisig wallet's keys, with Sparrow (or Nunchuk, Specter, Bitcoin Core) as
+ * the coordinator: maki's key for it, the wallet given to maki to go through and add, and the
+ * wallets it has. Their transactions sign as any other's, in Wallet software.
+ */
+function Multisig({ link, network }: { link: Link; network: NetworkValue }): React.JSX.Element {
+  const linked = link.state.linked
+  const [open, setOpen] = useState(false)
+  const [key, setKey] = useState<CosignerKey | null>(null)
+  const [wallets, setWallets] = useState<MultisigWallet[] | null>(null)
+  const [text, setText] = useState('')
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [shown, setShown] = useState<{
+    id: string
+    approval: ApprovalValue
+    address: string
+  } | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const net = network === Network.TESTNET ? 'testnet' : 'bitcoin'
+
+  const refresh = (): void => {
+    link.btcMultisigs().then(setWallets, () => setWallets(null))
+  }
+  useEffect(() => {
+    if (open && linked) refresh()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, linked])
+  // the key is the network's
+  useEffect(() => setKey(null), [network])
+
+  const run = async (what: string, f: () => Promise<void>): Promise<void> => {
+    setBusy(what)
+    setProblem(null)
+    try {
+      await f()
+    } catch (e) {
+      setProblem((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  const idle = linked && busy === null
+  const heading =
+    'mt-6 mb-2 font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1'
+  const ours = (wallets ?? []).filter((w) => w.network === network)
+
+  return (
+    <div className="mt-4 border-t border-surface0 pt-4">
+      <button
+        className="flex w-full items-center gap-2 text-left font-mono text-[0.72rem] font-bold text-subtext0 transition-colors hover:text-fg"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Glyph
+          name="chevron"
+          className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-90' : ''}`}
+        />
+        Multisig
+        <span className="font-sans font-normal text-overlay1">
+          maki as one of a wallet’s keys, with Sparrow as the coordinator
+        </span>
+      </button>
+      {open && (
+        <div className="rise">
+          <p className="mt-3 max-w-2xl text-xs leading-relaxed text-overlay1">
+            In Sparrow (or Nunchuk, Specter, Bitcoin Core), make a native SegWit multisig wallet
+            with maki’s key as one of its keys. Then give maki the wallet: maki shows you every key,
+            and once you add it there, it signs what spends from it, checked against the wallet as
+            you added it. Its transactions sign as any other’s, in Wallet software.
+          </p>
+
+          <h3 className={heading}>maki’s key, for the coordinator</h3>
+          {key ? (
+            <>
+              <code className="block select-all break-all rounded-lg bg-crust p-2.5 font-mono text-xs text-subtext1">
+                [{key.fingerprint.toLowerCase()}/{key.path.slice(2).replace(/'/g, 'h')}]{key.key}
+              </code>
+              <p className="mt-1 text-xs text-overlay1">
+                Fingerprint {key.fingerprint}, {key.path}. In Sparrow: Airgapped Hardware Wallet,
+                Coldcard, Import File, and the file saved here.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  small
+                  glyph="copy"
+                  onClick={async () => {
+                    await window.maki.copy(
+                      `[${key.fingerprint.toLowerCase()}/${key.path.slice(2).replace(/'/g, 'h')}]${key.key}`
+                    )
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+                <Button
+                  small
+                  glyph="download"
+                  onClick={async () => {
+                    const f = coldcardFile(key)
+                    const path = await window.maki.bitcoin.saveText(f.name, f.text)
+                    if (path) link.note(`maki’s multisig key saved to ${path}`)
+                  }}
+                >
+                  Save for Sparrow…
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Button
+              small
+              kind="ghost"
+              glyph="chip"
+              disabled={!idle}
+              onClick={() =>
+                void run('key', async () => {
+                  const k = await link.btcCosigner(network)
+                  if (!k) {
+                    setProblem('maki didn’t share its key.')
+                    return
+                  }
+                  const parsed = parseCosigner(k)
+                  if (!parsed)
+                    throw new Error('maki’s Bitcoin app gave a key maki desktop can’t read')
+                  setKey(parsed)
+                })
+              }
+            >
+              {busy === 'key' ? 'Approve on maki…' : `Share it from maki (${net})`}
+            </Button>
+          )}
+
+          <h3 className={heading}>Add a wallet to maki</h3>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              small
+              glyph="file"
+              disabled={!idle}
+              onClick={async () => {
+                const f = await window.maki.bitcoin.openWallet()
+                if (f) setText(f.text)
+              }}
+            >
+              Open file…
+            </Button>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value.slice(0, 32))}
+              placeholder="its name, if the file has none"
+              className="min-w-0 flex-1 rounded-lg border border-surface1 bg-crust/60 px-2.5 py-1 text-sm text-fg outline-none placeholder:text-overlay0 focus:border-peach/70"
+            />
+          </div>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={4}
+            placeholder="…or paste its descriptor, wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…)), or Sparrow’s Coldcard multisig export"
+            className="mt-2 w-full resize-none rounded-lg border border-surface1 bg-crust/60 p-2.5 font-mono text-xs text-subtext1 outline-none placeholder:text-overlay0 focus:border-peach/70"
+          />
+          <Button
+            small
+            kind="ghost"
+            glyph="chip"
+            disabled={!idle || !looksLikeWallet(text)}
+            onClick={() =>
+              void run('add', async () => {
+                const r = await link.btcAddMultisig(network, name.trim(), text.trim())
+                if (r.approval === 'approved') {
+                  setText('')
+                  setName('')
+                  refresh()
+                } else setProblem(said(r.approval, r.reason))
+              })
+            }
+          >
+            {busy === 'add' ? 'Go through it on maki…' : 'Add on maki'}
+          </Button>
+
+          <h3 className={heading}>maki’s multisig wallets ({net})</h3>
+          {wallets === null ? (
+            <p className="text-xs text-overlay1">
+              {linked ? 'asking maki…' : 'Plug maki in to see them.'}
+            </p>
+          ) : ours.length === 0 ? (
+            <p className="text-xs text-overlay1">None yet.</p>
+          ) : (
+            <ul className="divide-y divide-surface0 rounded-xl border border-surface0 bg-crust/40">
+              {ours.map((w) => (
+                <li key={w.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 text-sm text-fg">
+                      {w.name}
+                      <span className="ml-2 font-mono text-[0.68rem] text-overlay1">
+                        {w.threshold} of {w.keys} · {w.id}
+                      </span>
+                    </span>
+                    <Button
+                      small
+                      kind="ghost"
+                      glyph="chip"
+                      disabled={!idle}
+                      onClick={() =>
+                        void run(w.id, async () => {
+                          setShown(null)
+                          const r = await link.btcMultisigAddress(w.id, false, 0)
+                          setShown({ id: w.id, ...r })
+                        })
+                      }
+                    >
+                      {busy === w.id ? 'Compare on maki…' : 'Receive #0 on maki'}
+                    </Button>
+                  </div>
+                  {shown?.id === w.id && (
+                    <div className="mt-2 text-sm">
+                      <code className="block break-all font-mono text-xs">
+                        <Grouped text={shown.address} />
+                      </code>
+                      <p
+                        className={`mt-1 ${shown.approval === 'approved' ? 'text-green' : shown.approval === 'denied' ? 'text-red' : 'text-yellow'}`}
+                      >
+                        {shown.approval === 'approved'
+                          ? 'You said it matches your wallet software’s first address.'
+                          : shown.approval === 'denied'
+                            ? 'You said it doesn’t match: the wallet software’s isn’t the wallet maki has.'
+                            : said(shown.approval)}
+                      </p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {problem && <p className="mt-2 text-sm text-yellow">{problem}</p>}
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -199,6 +199,29 @@ function ipc(): void {
     await sudoOff(pkexec)
     return sudoStatus()
   })
+  // a multisig wallet for maki's Bitcoin app to add: its descriptor, or Sparrow's Coldcard export
+  ipcMain.handle('btc:openWallet', async () => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: 'Open a multisig wallet (its descriptor, or Sparrow’s Coldcard multisig export)',
+      filters: [
+        { name: 'Text', extensions: ['txt', 'json'] },
+        { name: 'All files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    if (r.canceled || r.filePaths.length === 0) return null
+    const path = r.filePaths[0]
+    if ((await stat(path)).size > 64 * 1024) throw new Error('that file is too big to be a multisig wallet')
+    return { path, text: await readFile(path, 'utf8') }
+  })
+  // maki's multisig key, as the file Coldcard exports one in, for Sparrow
+  ipcMain.handle('btc:saveText', async (_e, name: unknown, text: unknown) => {
+    if (typeof name !== 'string' || typeof text !== 'string' || !/^[\w.-]{1,64}$/.test(name)) throw new Error('not a file to save')
+    const r = await dialog.showSaveDialog(win!, { defaultPath: join(app.getPath('home'), name), title: 'Save maki’s multisig key' })
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, text)
+    return r.filePath
+  })
   ipcMain.handle('wallet:open', async () => {
     const r = await dialog.showOpenDialog(win!, {
       title: 'Open a transaction to sign (PSBT)',

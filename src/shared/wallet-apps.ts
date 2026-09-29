@@ -19,6 +19,7 @@ import {
   Writer
 } from './protocol'
 import { Writer as XmrWriter } from './monero/transaction'
+import type { MultisigWallet } from './multisig'
 import { base58 } from '@scure/base'
 
 export const BITCOIN_APP = 'com.leviathan.maki.bitcoin'
@@ -221,8 +222,89 @@ export class BitcoinApp extends WalletApp {
   }
 
   /**
+   * maki's key for multisig wallets (BIP48's, P2WSH), with its origin, once the owner agrees on
+   * maki: `[73c5da0a/48h/0h/0h/2h]Zpub…`, as a coordinator takes a cosigner's.
+   */
+  async cosigner(network: NetworkValue): Promise<{ approval: ApprovalValue; key: string }> {
+    const a = await this.ask(Uint8Array.of(0x4b, network), SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, key: '' }
+    return { approval: a.approval, key: a.approval === 'approved' ? a.text() : '' }
+  }
+
+  /**
+   * Add a multisig wallet with maki's key in it (its descriptor, or Coldcard's multisig file), once
+   * the owner has gone through it on maki: every key's fingerprint and xpub. `name` names it if the
+   * text doesn't. Its ID and name; or why maki's app refused it.
+   */
+  async addMultisig(
+    network: NetworkValue,
+    name: string,
+    text: string
+  ): Promise<{ approval: ApprovalValue; reason: string; id: string; name: string }> {
+    const enc = new TextEncoder()
+    const m = new Writer()
+      .u8(0x4d)
+      .u8(network)
+      .bytes16(enc.encode(name))
+      .bytes16(enc.encode(text))
+      .finish()
+    if (m.length > MAX_APP_MESSAGE)
+      return {
+        approval: 'refused',
+        reason: 'that wallet is too big to send to maki',
+        id: '',
+        name: ''
+      }
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', id: '', name: '' }
+    if (a.approval !== 'approved')
+      return { approval: a.approval, reason: a.reason(), id: '', name: '' }
+    const id = [...a.fixed(4)].map((b) => b.toString(16).padStart(2, '0')).join('')
+    return { approval: 'approved', reason: '', id, name: a.text() }
+  }
+
+  /** The multisig wallets maki has added. */
+  async multisigs(): Promise<{ approval: ApprovalValue; wallets: MultisigWallet[] }> {
+    const a = await this.ask(Uint8Array.of(0x57), 30_000)
+    if (typeof a === 'string') return { approval: a, wallets: [] }
+    if (a.approval !== 'approved') return { approval: a.approval, wallets: [] }
+    const wallets: MultisigWallet[] = []
+    for (let n = a.fixed(1)[0]; n > 0; n--) {
+      const id = [...a.fixed(4)].map((b) => b.toString(16).padStart(2, '0')).join('')
+      const [network, threshold, keys] = a.fixed(3)
+      wallets.push({ id, network, threshold, keys, name: a.text() })
+    }
+    return { approval: 'approved', wallets }
+  }
+
+  /** A multisig wallet's address on maki's screen, to compare with this computer's. */
+  async multisigAddress(
+    id: string,
+    change: boolean,
+    index: number
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    const idBytes = Uint8Array.from(id.match(/../g) ?? [], (h) => parseInt(h, 16))
+    const m = new Writer()
+      .u8(0x45)
+      .bytes(idBytes)
+      .u8(change ? 1 : 0)
+      .u32(index)
+      .finish()
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '' }
+    let address = ''
+    try {
+      address = a.text()
+    } catch {
+      // locked, or no answer
+    }
+    return { approval: a.approval, address }
+  }
+
+  /**
    * Sign a PSBT: the app checks it, the owner goes through it on maki's screen, and it comes back
-   * with a signature for each input. Refused ones come back with the app's reason.
+   * with a signature for each input. Refused ones come back with the app's reason. A multisig
+   * wallet's is signed once maki has added the wallet.
    */
   async sign(
     network: NetworkValue,

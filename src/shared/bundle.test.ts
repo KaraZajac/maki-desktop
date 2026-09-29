@@ -37,7 +37,8 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
     const btc = readBundle(fixture('bitcoin')).manifest
     expect(btc.api).toBe(3)
     expect(btc.permissions.map((p) => p.permission.name)).toEqual(['link', 'camera', 'wallet'])
-    expect(btc.wallet!.paths.map(formatPath)).toEqual(["m/84'/0'", "m/86'/0'", "m/84'/1'", "m/86'/1'"])
+    // native SegWit, taproot and multisig (BIP48), on bitcoin and the test networks
+    expect(btc.wallet!.paths.map(formatPath)).toEqual(["m/84'/0'", "m/86'/0'", "m/48'/0'", "m/84'/1'", "m/86'/1'", "m/48'/1'"])
     expect(walletCoins(btc.wallet!.paths)).toEqual(['Bitcoin', 'test networks'])
     const eth = readBundle(fixture('ethereum')).manifest
     expect(eth.wallet!.paths.map(formatPath)).toEqual(["m/44'/60'"])

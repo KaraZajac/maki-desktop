@@ -235,6 +235,11 @@ export class Writer {
     this.parts.push(...b)
     return this
   }
+  /** bytes as they are, with no length */
+  bytes(b: Uint8Array): this {
+    this.parts.push(...b)
+    return this
+  }
   finish(): Uint8Array {
     return Uint8Array.from(this.parts)
   }

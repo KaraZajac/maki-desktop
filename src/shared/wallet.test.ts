@@ -12,6 +12,7 @@ import { MakiClient } from './client'
 import { BtcAccount, Network } from './protocol'
 import { readPsbt, toBase64 } from './psbt'
 import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import { coldcardFile, looksLikeWallet, parseCosigner } from './multisig'
 import { BitcoinApp } from './wallet-apps'
 
 const FIXTURES = resolve(__dirname, '../../../xous-core/libs/maki-btc/tests/fixtures')
@@ -154,5 +155,46 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the walle
     const maki = await client(['--phrase', 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong'])
     const r = await maki.sign(Network.BITCOIN, fixture('abandon-unsigned.psbt'))
     expect(r).toMatchObject({ approval: 'refused', signed: null })
+  })
+
+  it('is one of a multisig wallet’s keys, once the owner adds the wallet on maki', async () => {
+    const maki = await client()
+    const cosigner = await maki.cosigner(Network.TESTNET)
+    expect(cosigner.approval).toBe('approved')
+    const key = parseCosigner(cosigner.key)!
+    expect(key).toMatchObject({ fingerprint: '73C5DA0A', path: "m/48'/1'/0'/2'" })
+    expect(key.key.startsWith('Vpub5n95dMZrDHj6')).toBe(true)
+    expect(JSON.parse(coldcardFile(key).text)).toEqual({ p2wsh_deriv: "m/48'/1'/0'/2'", p2wsh: key.key, xfp: '73C5DA0A' })
+
+    // not added yet: its transactions aren't signed
+    const unsigned = fixture('multisig-unsigned.psbt')
+    const early = await maki.sign(Network.TESTNET, unsigned)
+    expect(early.approval).toBe('refused')
+    expect(early.reason).toMatch(/add it on maki first/)
+
+    // Sparrow's Coldcard export, gone through on maki and added; its descriptor is the same wallet
+    const file = new TextDecoder().decode(fixture('multisig-coldcard.txt'))
+    expect(looksLikeWallet(file)).toBe(true)
+    const added = await maki.addMultisig(Network.TESTNET, '', file)
+    expect(added).toMatchObject({ approval: 'approved', name: 'Family vault' })
+    expect(added.id).toMatch(/^[0-9a-f]{8}$/)
+    const again = await maki.addMultisig(Network.TESTNET, 'x', new TextDecoder().decode(fixture('multisig.txt')))
+    expect(again.id).toBe(added.id)
+    expect((await maki.multisigs()).wallets).toEqual([{ id: added.id, network: 1, threshold: 2, keys: 3, name: 'Family vault' }])
+    expect((await maki.multisigAddress(added.id, false, 0)).address).toMatch(/^tb1q[02-9ac-hj-np-z]{58}$/)
+
+    // and now its transaction, signed exactly as the firmware signs it
+    const r = await maki.sign(Network.TESTNET, unsigned)
+    expect(r.approval).toBe('approved')
+    expect(r.signed).toEqual(fixture('multisig-signed.psbt'))
+  })
+
+  it('won’t add a wallet maki’s key isn’t in', async () => {
+    const maki = await client()
+    const theirs = new TextDecoder().decode(fixture('multisig.txt')).split('#')[0].replace('73c5da0a/', '73c5da0b/')
+    const r = await maki.addMultisig(Network.TESTNET, 'theirs', theirs)
+    expect(r.approval).toBe('refused')
+    expect(r.reason).toMatch(/isn't one of its keys/)
+    expect((await maki.multisigs()).wallets).toEqual([])
   })
 })

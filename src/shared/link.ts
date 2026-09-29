@@ -22,6 +22,7 @@ import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
 import { BitcoinApp, EthereumApp, MoneroApp, SolanaApp, type MoneroNetworkValue, type MoneroOutput } from './wallet-apps'
+import type { MultisigWallet } from './multisig'
 import { memorySolStore, Solana, type SolRpc, type SolStore } from './solana'
 import { SolWallet } from './sol-wallet'
 import type { Store, StoreApp } from './store'
@@ -463,6 +464,49 @@ export class Link {
             : `Monero transaction: ${Link.walletSays(r.approval, 'Monero')}`
     )
     return r
+  }
+
+  /** maki's key for multisig wallets, once the owner agrees on maki. */
+  async btcCosigner(network: NetworkValue): Promise<string | null> {
+    this.linkedClient()
+    this.note('sharing maki’s multisig key: approve on maki')
+    const r = await this.bitcoin.cosigner(network)
+    this.note(r.approval === 'approved' ? 'multisig key shared' : `multisig key: ${Link.walletSays(r.approval, 'Bitcoin')}`)
+    return r.approval === 'approved' ? r.key : null
+  }
+
+  /** Add a multisig wallet on maki, once the owner has gone through its keys there. */
+  async btcAddMultisig(
+    network: NetworkValue,
+    name: string,
+    text: string
+  ): Promise<{ approval: ApprovalValue; reason: string; id: string; name: string }> {
+    this.linkedClient()
+    this.note('multisig wallet sent: go through its keys on maki')
+    const r = await this.bitcoin.addMultisig(network, name, text)
+    this.note(
+      r.approval === 'approved'
+        ? `maki added ${r.name}: it signs for it now`
+        : r.approval === 'refused'
+          ? `maki won't add it: ${r.reason}`
+          : r.approval === 'denied'
+            ? 'not added, on maki'
+            : `multisig: ${Link.walletSays(r.approval, 'Bitcoin')}`
+    )
+    return r
+  }
+
+  /** The multisig wallets maki has added. */
+  async btcMultisigs(): Promise<MultisigWallet[]> {
+    this.linkedClient()
+    return (await this.bitcoin.multisigs()).wallets
+  }
+
+  /** A multisig wallet's address on maki's screen, to compare with this computer's. */
+  async btcMultisigAddress(id: string, change: boolean, index: number): Promise<{ approval: ApprovalValue; address: string }> {
+    this.linkedClient()
+    this.note('address on maki’s screen: compare it with your wallet software’s')
+    return this.bitcoin.multisigAddress(id, change, index)
   }
 
   /** Have maki sign a PSBT, once the owner has gone through it on maki's screen. */

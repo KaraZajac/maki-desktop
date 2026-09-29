@@ -71,7 +71,11 @@ const api = {
     },
     /** the accounts' descriptors maki shared, kept */
     load: (): Promise<string[]> => ipcRenderer.invoke('btc:load'),
-    save: (descriptors: string[]): Promise<void> => ipcRenderer.invoke('btc:save', descriptors)
+    save: (descriptors: string[]): Promise<void> => ipcRenderer.invoke('btc:save', descriptors),
+    /** an open dialog for a multisig wallet's file (a descriptor, or Coldcard's multisig file); its text, or null */
+    openWallet: (): Promise<{ path: string; text: string } | null> => ipcRenderer.invoke('btc:openWallet'),
+    /** a save dialog for a text file (maki's multisig key, for Sparrow); where it went, or null */
+    saveText: (name: string, text: string): Promise<string | null> => ipcRenderer.invoke('btc:saveText', name, text)
   },
   monero: {
     /** what maki desktop keeps of the Monero wallet (its view key, and its own wallet's state) */
