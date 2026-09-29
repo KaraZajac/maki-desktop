@@ -11,6 +11,10 @@ mac:
   category: public.app-category.utilities
 linux:
   files: [out/**/*, resources/**/*, package.json]
+  # sudo's approval plugin, where root can read it to set it up (not inside the app's archive)
+  extraResources:
+    - from: sudo/target/release/libmaki_sudo.so
+      to: maki_sudo.so
   syncDesktopName: true
   target: [AppImage]
   category: Utility

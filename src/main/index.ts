@@ -1,9 +1,9 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron'
 import { spawn } from 'node:child_process'
-import { writeSync } from 'node:fs'
+import { existsSync, writeSync } from 'node:fs'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
-import { tmpdir } from 'node:os'
+import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { fromBase64, toBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
@@ -11,7 +11,8 @@ import { SOL_NETWORKS, type SolState } from '../shared/solana'
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
-import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from './browsers'
+import { browserStatus, pkexec, registerBrowser, unregisterBrowser, type Launch } from './browsers'
+import { sudoOff, sudoOn, sudoStatus } from './sudo'
 import { forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
 import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
@@ -183,6 +184,21 @@ function ipc(): void {
   ipcMain.handle('browsers:status', () => browserStatus())
   ipcMain.handle('browsers:register', (_e, name: string) => registerBrowser(name, launch()))
   ipcMain.handle('browsers:unregister', (_e, name: string) => unregisterBrowser(name))
+  // sudo: maki's sudo plugin, set up (and taken away) as root, for this user
+  const sudoPlugin = (): string =>
+    app.isPackaged ? join(process.resourcesPath, 'maki_sudo.so') : join(app.getAppPath(), 'sudo/target/release/libmaki_sudo.so')
+  ipcMain.handle('sudo:status', () => sudoStatus())
+  ipcMain.handle('sudo:on', async (_e, key: unknown, name: unknown) => {
+    if (typeof key !== 'string') throw new Error('no key from maki')
+    const plugin = sudoPlugin()
+    if (!existsSync(plugin)) throw new Error('this maki desktop was built without its sudo plugin: cargo build --release, in sudo/')
+    await sudoOn(plugin, key, typeof name === 'string' ? name : null, userInfo().username, pkexec)
+    return sudoStatus()
+  })
+  ipcMain.handle('sudo:off', async () => {
+    await sudoOff(pkexec)
+    return sudoStatus()
+  })
   ipcMain.handle('wallet:open', async () => {
     const r = await dialog.showOpenDialog(win!, {
       title: 'Open a transaction to sign (PSBT)',

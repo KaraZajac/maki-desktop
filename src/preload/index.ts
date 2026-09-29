@@ -109,6 +109,14 @@ const api = {
     status: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('sshKeygen:status'),
     install: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('sshKeygen:install')
   },
+  sudo: {
+    /** whether maki's sudo plugin is set up, and with whose key */
+    status: (): Promise<import('../shared/sudo').SudoStatus> => ipcRenderer.invoke('sudo:status'),
+    /** sets it up for this user, trusting maki's key (base64): asks for the admin password */
+    on: (key: string, name: string | null): Promise<import('../shared/sudo').SudoStatus> => ipcRenderer.invoke('sudo:on', key, name),
+    /** takes it away, for everyone: asks for the admin password */
+    off: (): Promise<import('../shared/sudo').SudoStatus> => ipcRenderer.invoke('sudo:off')
+  },
   minisign: {
     /** whether maki-minisign is on the PATH, starting this app */
     status: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('minisign:status'),

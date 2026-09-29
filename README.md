@@ -104,6 +104,20 @@ maki's roll for what to do and the green of the nori for what's done.
   minisign does (BLAKE2b-512) and asks maki, which shows its name and size and asks you, then signs
   it with a trusted comment dated by maki's own clock. `minisign -V` checks it anywhere, as
   `maki-minisign -V` does.
+- **Makes sudo wait for maki.** With maki's Sudo app installed, the Connections page sets up
+  maki's sudo plugin (Linux, sudo 1.9 or later; `sudo/`, an approval plugin in Rust), asking for
+  the admin password: the plugin in `/usr/local/libexec/maki`, maki's key in `/etc/maki/sudo.pub`
+  (root's) and a line in `/etc/sudo.conf` for you, then sudo is started once, and if it won't
+  start everything goes back. From then on, once sudoers says yes to a command, the plugin asks
+  maki through this app's socket; maki shows the command line (quoted as a shell would take it
+  back), what it's given to run with beyond what every command gets (an `LD_PRELOAD` set on the
+  command line, a PATH of your own), and who asked where, and signs the request, a fresh nonce
+  and all, once you say yes. The plugin checks the signature with the key root keeps, and talks
+  only to a socket of yours with a process of yours at the other end: sudo's remembered password
+  isn't enough, nor is yours, nor something standing in for this app. With no maki to ask, the
+  command doesn't run, so keep another way in (su with root's password, or pkexec, which
+  doesn't ask maki) for when maki is lost. `scripts/sudo-e2e.sh` checks it all with the real
+  sudo, as root in a container.
 - **Sends notes to maki.** With maki's Notes app installed, a secret typed on the Connections page
   (recovery codes, a PIN) goes to maki, which asks you before it keeps it; this app clears it then,
   and sees only the notes' titles after. You read them on maki's screen.
@@ -258,6 +272,9 @@ src/main/bridge.ts       the local socket the native host connects to
 src/main/native-host.ts  --native-host: native messaging on stdio, relayed to the socket
 src/main/browsers.ts     registering the native host with installed browsers
 src/main/ssh-agent.ts    the SSH agent: each request to maki's SSH app, the answer back
+src/main/sudo.ts         setting up (and taking away) maki's sudo plugin, as root
+sudo/                    the sudo plugin itself (Rust, a cdylib sudo loads): `cargo test` there;
+                         tests/approve.c calls it as sudo does, for the end-to-end tests
 src/renderer/            Web Serial discovery (usb.ts) and the window: a page each (Overview, Apps,
                          Wallets, Connections, Backups), ui.tsx for the pieces they're made of
 extension/               the browser extension: background, content script, field finding
