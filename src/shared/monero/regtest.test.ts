@@ -9,8 +9,14 @@
  * - maki desktop's own wallet: scanning finds what monero-wallet-rpc's full wallet of the same phrase
  *   has, and what's spent; a payment planned here, signed by maki at the size planned, sent, mined,
  *   and its change found.
+ * - The Monero GUI's offline signing, as monero-wallet-cli does it (the same wallet2 calls, on the
+ *   same files): its outputs file, maki's key images for them imported, a transaction file signed
+ *   by maki, submitted, and the key images saved beside it imported, as the GUI's Submit does.
+ *   The CLI is looked for in MONERO_BIN, as scripts/regtest.sh does, else on the PATH.
  */
-import type { ChildProcess } from 'node:child_process'
+import { type ChildProcess, spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { hex } from '@scure/base'
@@ -33,6 +39,8 @@ import { fileKey, openFile, parseKeyImages, parseSigned } from './wallet2'
 import { decodeAddress, leNumber, mulBase, subaddressKeys } from './xmr'
 
 const REGTEST = process.env.MAKI_REGTEST === '1'
+const CLI = join(process.env.MONERO_BIN ?? '', 'monero-wallet-cli')
+const CLI_THERE = REGTEST && spawnSync(CLI, ['--version']).status === 0
 const NODE = process.env.MAKI_REGTEST_NODE ?? 'http://127.0.0.1:28081'
 const WALLET_RPC = process.env.MAKI_REGTEST_WALLET ?? 'http://127.0.0.1:28083'
 const TEST_PHRASE = {
@@ -295,4 +303,109 @@ describe.skipIf(!REGTEST || !FAKE_BUILT || !APP_FIXTURES_THERE)('Monero on a reg
     const after = wallet.balance((await node.info()).height)
     expect(after.total).toBe(before.total - 1_500_000_000_000n - plan.request.fee)
   }, 600_000)
+
+  it.skipIf(!CLI_THERE)(
+    'is the Monero GUI’s cold wallet, through wallet2’s own files',
+    async () => {
+      await mine()
+      const m = await monero()
+      const watched = await m.watch(MoneroNetwork.MONERO)
+      const view = leNumber(watched.viewKey!)
+      const w: ViewWallet = {
+        network: 'mainnet',
+        spend: decodeAddress(watched.address)!.spend,
+        view
+      }
+      const key = fileKey(view)
+      const maki = {
+        keyImages: (asks: Parameters<MoneroApp['keyImages']>[0]) => m.keyImages(asks),
+        sign: (request: Uint8Array) => m.sign(MoneroNetwork.MONERO, request)
+      }
+      const dir = mkdtempSync(join(tmpdir(), 'maki-gui-'))
+      const read = (name: string): Uint8Array => new Uint8Array(readFileSync(join(dir, name)))
+      // the CLI, its answers to what it asks (the password, "Is this okay?") given in order
+      const cli = (answers: string, ...args: string[]): string => {
+        const r = spawnSync(
+          CLI,
+          [
+            ...['--daemon-address', NODE.replace(/^https?:\/\//, ''), '--trusted-daemon'],
+            ...[
+              '--allow-mismatched-daemon-version',
+              '--password',
+              '',
+              '--log-file',
+              join(dir, 'log')
+            ],
+            ...args
+          ],
+          { cwd: dir, input: answers, encoding: 'utf8', timeout: 300_000 }
+        )
+        return `${r.stdout}${r.stderr}`
+      }
+      const wallet = ['--wallet-file', join(dir, 'view')]
+
+      // a view-only wallet from the address and view key, as the GUI restores one
+      cli(
+        `${watched.address}\n${hex.encode(watched.viewKey!)}\n0\nN\n`,
+        '--generate-from-view-key',
+        join(dir, 'view')
+      )
+      // Outputs, Export; maki desktop's key images for them; Key images, Import
+      const exported = cli(
+        '\n\n',
+        ...wallet,
+        '--command',
+        'export_outputs',
+        'all',
+        join(dir, 'outputs')
+      )
+      expect(exported).toContain('Outputs exported')
+      writeFileSync(
+        join(dir, 'key_images'),
+        (await keyImageFile(read('outputs'), w, key, maki)).file
+      )
+      const imported = cli(
+        '\n\n',
+        ...wallet,
+        '--command',
+        'import_key_images',
+        join(dir, 'key_images')
+      )
+      expect(imported).toContain('Signed key images imported')
+
+      // Offline transaction signing: Create; signed by maki; Submit, which imports the key images
+      // saved beside what it submits
+      const to =
+        '8AB7PQPtducdkghYFN2prK3rZ7zPeL9f2REEdqE4WXYbSZr3797Aqti5xAjRsVy4jTdcwMW11GWejQtqk2kNXxj2QZxJwPZ'
+      const created = cli('\ny\ny\n', ...wallet, '--command', 'transfer', to, '0.75')
+      expect(created).toContain('successfully written to file: unsigned_monero_tx')
+      const signed = await signFile(read('unsigned_monero_tx'), w, key, maki)
+      writeFileSync(join(dir, 'signed_monero_tx'), signed.signed)
+      writeFileSync(join(dir, 'signed_monero_tx_keyImages'), signed.keyImages)
+      const submitted = cli('y\ny\n', ...wallet, '--command', 'submit_transfer')
+      expect(submitted).toContain('Transaction successfully submitted')
+      const beside = cli(
+        '\n\n',
+        ...wallet,
+        '--command',
+        'import_key_images',
+        join(dir, 'signed_monero_tx_keyImages')
+      )
+      expect(beside).toContain('Signed key images imported')
+
+      // mined
+      const id = /Transaction successfully submitted, transaction <([0-9a-f]{64})>/.exec(
+        submitted
+      )![1]
+      await mine()
+      const got = (await (
+        await fetch(`${NODE}/get_transactions`, {
+          method: 'POST',
+          body: JSON.stringify({ txs_hashes: [id] })
+        })
+      ).json()) as { txs: { in_pool: boolean }[] }
+      expect(got.txs.map((t) => t.in_pool)).toEqual([false])
+    },
+    600_000
+  )
 })

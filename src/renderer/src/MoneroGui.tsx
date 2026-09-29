@@ -214,7 +214,8 @@ export function MoneroGui({
           <h3 className={heading}>Key images</h3>
           <p className="mb-2 text-sm leading-relaxed text-subtext0">
             So the GUI sees what’s spent: in its Transfer page’s Advanced options, export the
-            outputs to a file, bring it here, and import the key images maki makes for them.
+            outputs to a file, bring it here, and import the key images maki makes for them. The GUI
+            imports key images only through a node it trusts: your own, or one marked trusted.
           </p>
           <Button
             small
@@ -233,8 +234,9 @@ export function MoneroGui({
           <p className="mb-2 text-sm leading-relaxed text-subtext0">
             Make the transaction in the GUI (Offline transaction signing, Create), bring the file
             here, go through it on maki, then submit what maki signed from the GUI. The key images
-            that go with it are saved beside it, where the GUI looks for them; it imports them only
-            through a node it trusts (your own, or one marked trusted).
+            that go with it are saved beside it, where Submit looks for them: through a node the GUI
+            doesn’t trust, Submit sends the transaction, then says it couldn’t, having failed to
+            import them.
           </p>
           <Button
             small
