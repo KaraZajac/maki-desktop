@@ -130,9 +130,12 @@ export function Connections({
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-overlay1">
                   Then <code className="font-mono text-subtext0">ssh-add -L</code> shows its public
-                  key, for a server’s authorized_keys, or for git to sign with (
-                  <code className="font-mono text-subtext0">git config gpg.format ssh</code>).
+                  key, for a server’s authorized_keys. Turn on the certificate authority in the SSH
+                  app’s menu, and{' '}
+                  <code className="font-mono text-subtext0">ssh-keygen -s ca.pub -U</code> signs
+                  certificates with its key, each one read out on maki first.
                 </p>
+                <GitSigning link={link} />
               </>
             ) : (
               <div className="mt-2 flex items-center justify-between gap-4">
@@ -472,5 +475,107 @@ function Minisign({
         </div>
       </div>
     </Card>
+  )
+}
+
+/** An SSH message's strings, from `at`; null if they aren't there. */
+function sshStrings(b: Uint8Array, at: number, n: number): Uint8Array[] | null {
+  const out: Uint8Array[] = []
+  for (let i = 0; i < n; i++) {
+    if (at + 4 > b.length) return null
+    const len = new DataView(b.buffer, b.byteOffset + at).getUint32(0)
+    if (at + 4 + len > b.length) return null
+    out.push(b.slice(at + 4, at + 4 + len))
+    at += 4 + len
+  }
+  return out
+}
+
+/** git's commits and tags signed on maki: maki-ssh-keygen, and git's settings for it. */
+function GitSigning({ link }: { link: Link }): React.JSX.Element {
+  const linked = link.state.linked
+  const [command, setCommand] = useState<CommandStatus | null>(null)
+  const [key, setKey] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    void window.maki.sshKeygen.status().then(setCommand)
+  }, [])
+  // the SSH app's key, as ssh-add -L shows it: the first it offers
+  useEffect(() => {
+    if (!linked) return
+    link.appMessage(SSH_APP, Uint8Array.of(0, 0, 0, 0, 11)).then(
+      (r) => {
+        const blob =
+          r.status === 'approved' && r.answer[0] === 12 ? sshStrings(r.answer, 5, 1) : null
+        if (blob) setKey(`ssh-ed25519 ${btoa(String.fromCharCode(...blob[0]))} maki`)
+      },
+      () => {}
+    )
+  }, [link, linked])
+  const config = [
+    'git config --global gpg.format ssh',
+    'git config --global gpg.ssh.program maki-ssh-keygen',
+    `git config --global user.signingkey "key::${key ?? 'ssh-ed25519 AAAA… maki'}"`,
+    'git config --global commit.gpgsign true'
+  ].join('\n')
+
+  return (
+    <div className="mt-5 border-t border-surface0 pt-4">
+      <p className="text-sm text-subtext1">
+        git can sign commits and tags on maki too, which shows each one’s subject and author before
+        it signs: maki-ssh-keygen hands it the whole commit, in ssh-keygen’s place.
+      </p>
+      <ul className="mt-3 divide-y divide-surface0 rounded-xl border border-surface0 bg-crust/40">
+        <li className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="min-w-0 text-sm text-fg">
+            maki-ssh-keygen
+            {command && (
+              <span className="ml-2 font-mono text-[0.68rem] text-overlay1">{command.path}</span>
+            )}
+          </span>
+          {command?.installed ? (
+            <Badge kind="built">
+              <Glyph name="check" className="h-3 w-3" /> installed
+            </Badge>
+          ) : (
+            <Button
+              small
+              kind="ghost"
+              onClick={async () => {
+                try {
+                  setCommand(await window.maki.sshKeygen.install())
+                  link.note('maki-ssh-keygen installed: git can sign on maki')
+                } catch (e) {
+                  link.note(`maki-ssh-keygen: ${(e as Error).message}`)
+                }
+              }}
+            >
+              Install
+            </Button>
+          )}
+        </li>
+      </ul>
+      {command && command.installed && !command.onPath && (
+        <p className="mt-2 text-xs text-yellow">
+          Its folder isn’t on your PATH, where git looks: add it.
+        </p>
+      )}
+      <div className="mt-3 flex items-start gap-2">
+        <pre className="selectable min-w-0 flex-1 overflow-x-auto rounded-lg border border-surface0 bg-crust px-3 py-2 font-mono text-[0.68rem] leading-relaxed text-green">
+          {config}
+        </pre>
+        <Button
+          small
+          disabled={!key}
+          onClick={async () => {
+            await window.maki.copy(config)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+    </div>
   )
 }

@@ -92,7 +92,14 @@ maki's roll for what to do and the green of the nori for what's done.
 - **Is an SSH agent for maki's SSH app.** ssh and git talk to it (`SSH_AUTH_SOCK`, which the
   Connections page shows once the app is installed), and it hands each request to the app on maki, which
   reads what's to be signed, asks you, and signs. The agent holds no keys: `ssh-add -L` shows the
-  app's public key, for servers' authorized_keys or for git (`git config gpg.format ssh`).
+  app's public key, for servers' authorized_keys or for git (`git config gpg.format ssh`). Turn on
+  the app's certificate authority, from its menu on maki, and the agent offers its key too:
+  `ssh-keygen -s ca.pub -U` signs SSH certificates with it, each one read out on maki first (user
+  or host, for whom, until when, with what restrictions).
+- **Shows git's commits on maki.** The agent hands maki only a hash of what git signs; with
+  `maki-ssh-keygen` (installed from the Connections page) as git's `gpg.ssh.program`, git's
+  commits and tags go to maki whole, and maki shows each one's subject and author, from the bytes it
+  signs, before it signs. `git verify-commit` checks them as ever.
 
 ## Browsers
 

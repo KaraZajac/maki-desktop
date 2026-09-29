@@ -219,3 +219,167 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !OPENSSH)("maki desktop's 
     s.close()
   })
 })
+
+/** An sshd of a test's own, run as this user, with `config` added: its port, and how to stop it. */
+async function startSshd(
+  dir: string,
+  env: NodeJS.ProcessEnv,
+  config: string[]
+): Promise<{ port: number; stop: () => void; said: () => string }> {
+  const hostKey = await run(
+    'ssh-keygen',
+    ['-q', '-t', 'ed25519', '-N', '', '-f', join(dir, 'host_key')],
+    env
+  )
+  expect(hostKey.status, hostKey.stderr).toBe(0)
+  const port = await freePort()
+  const all = [
+    `Port ${port}`,
+    'ListenAddress 127.0.0.1',
+    `HostKey ${join(dir, 'host_key')}`,
+    `PidFile ${join(dir, 'sshd.pid')}`,
+    'StrictModes no',
+    'UsePAM no',
+    'PasswordAuthentication no',
+    'KbdInteractiveAuthentication no',
+    'PubkeyAuthentication yes',
+    'LogLevel ERROR',
+    ...config
+  ]
+  writeFileSync(join(dir, 'sshd_config'), all.join('\n') + '\n')
+  const sshd = spawn(SSHD!, ['-D', '-e', '-f', join(dir, 'sshd_config')], { env })
+  let said = ''
+  sshd.stderr.on('data', (d: Buffer) => (said += d.toString()))
+  for (let i = 0; i < 50; i++) {
+    const up = await new Promise<boolean>((resolve) => {
+      const s = connect(port, '127.0.0.1', () => (s.destroy(), resolve(true)))
+      s.on('error', () => resolve(false))
+    })
+    if (up) break
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return { port, stop: () => sshd.kill(), said: () => said }
+}
+
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !OPENSSH)(
+  "maki's SSH app as a certificate authority, with OpenSSH",
+  () => {
+    let fake: { port: number; proc: ChildProcess }
+    let transport: TcpTransport
+    let server: Server
+    let dir: string
+    let sock: string
+    const env = (): NodeJS.ProcessEnv => ({
+      PATH: process.env.PATH,
+      HOME: dir,
+      SSH_AUTH_SOCK: sock
+    })
+
+    beforeAll(async () => {
+      // the CA key turned on in the app's menu, as its owner would have
+      fake = await startFake(['--storage', `${SSH_APP}:ca=01000000`])
+      transport = await TcpTransport.open(fake.port)
+      const client = new MakiClient(transport)
+      const ssh = new Uint8Array(readFileSync(join(APP_FIXTURES, 'ssh.maki')))
+      expect(await client.appInstall(ssh)).toEqual({ approval: 'approved', reason: '' })
+      dir = mkdtempSync(join(tmpdir(), 'maki-ca-'))
+      sock = join(dir, 'agent.sock')
+      server = await serveAgent(async (message) => {
+        const r = await client.appMessage(SSH_APP, message)
+        return r.status === 'approved' ? r.answer : null
+      }, sock)
+    })
+    afterAll(async () => {
+      server?.close()
+      await transport?.close()
+      fake?.proc.kill()
+      if (dir) rmSync(dir, { recursive: true, force: true })
+    })
+
+    it('offers its key beside maki’s, and signs the certificates ssh-keygen makes', async () => {
+      const listed = (await run('ssh-add', ['-L'], env())).stdout.trim().split('\n')
+      expect(listed.map((l) => l.split(' ').slice(2).join(' '))).toEqual(['maki', 'maki CA'])
+      writeFileSync(join(dir, 'ca.pub'), `${listed[1]}\n`)
+      // someone's own key, and a certificate for it from maki's CA, for this user
+      const user = await run(
+        'ssh-keygen',
+        ['-q', '-t', 'ed25519', '-N', '', '-C', 'laptop', '-f', join(dir, 'user')],
+        env()
+      )
+      expect(user.status, user.stderr).toBe(0)
+      const me = userInfo().username
+      const signed = await run(
+        'ssh-keygen',
+        [
+          '-s',
+          join(dir, 'ca.pub'),
+          '-U',
+          '-I',
+          'kara-laptop',
+          '-n',
+          `${me},root`,
+          '-V',
+          '+52w',
+          join(dir, 'user.pub')
+        ],
+        env()
+      )
+      expect(signed.status, signed.stderr).toBe(0)
+      const shown = await run('ssh-keygen', ['-L', '-f', join(dir, 'user-cert.pub')], env())
+      expect(shown.stdout).toContain('ssh-ed25519-cert-v01@openssh.com user certificate')
+      expect(shown.stdout).toContain('Key ID: "kara-laptop"')
+      expect(shown.stdout).toMatch(new RegExp(`Principals: \\n\\s+${me}\\n\\s+root`))
+      const caPrint = (
+        await run('ssh-keygen', ['-l', '-f', join(dir, 'ca.pub')], env())
+      ).stdout.split(' ')[1]
+      expect(shown.stdout).toContain(`Signing CA: ED25519 ${caPrint}`)
+      // and maki's own key doesn't sign certificates
+      writeFileSync(join(dir, 'maki.pub'), `${listed[0]}\n`)
+      const refused = await run(
+        'ssh-keygen',
+        ['-s', join(dir, 'maki.pub'), '-U', '-I', 'x', '-n', me, join(dir, 'user.pub')],
+        env()
+      )
+      expect(refused.status).not.toBe(0)
+    })
+
+    it.skipIf(!SSHD)('signs in with a certificate from maki’s CA, which sshd trusts', async () => {
+      // a server that trusts maki's CA, and no one's keys of their own
+      const sshd = await startSshd(dir, env(), [
+        `TrustedUserCAKeys ${join(dir, 'ca.pub')}`,
+        'AuthorizedKeysFile none'
+      ])
+      try {
+        const options = [
+          ['BatchMode', 'yes'],
+          ['StrictHostKeyChecking', 'accept-new'],
+          ['UserKnownHostsFile', join(dir, 'known_hosts')],
+          ['GlobalKnownHostsFile', '/dev/null'],
+          ['IdentityAgent', 'none'],
+          ['IdentityFile', join(dir, 'user')],
+          ['CertificateFile', join(dir, 'user-cert.pub')],
+          ['IdentitiesOnly', 'yes'],
+          ['PreferredAuthentications', 'publickey']
+        ].flatMap(([k, v]) => ['-o', `${k}=${v}`])
+        const target = `${userInfo().username}@127.0.0.1`
+        const login = await run(
+          'ssh',
+          [
+            '-F',
+            '/dev/null',
+            '-p',
+            String(sshd.port),
+            ...options,
+            target,
+            'echo certified by maki'
+          ],
+          env()
+        )
+        expect(login.status, `${login.stderr}\n${sshd.said()}`).toBe(0)
+        expect(login.stdout).toBe('certified by maki\n')
+      } finally {
+        sshd.stop()
+      }
+    })
+  }
+)

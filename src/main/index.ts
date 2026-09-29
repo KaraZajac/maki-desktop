@@ -14,6 +14,7 @@ import { forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
 import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
 import { MINISIGN_COMMAND, runMinisign } from './minisign'
+import { runSshKeygen, SSH_KEYGEN_COMMAND, sshKeygenOnPath } from './ssh-keygen'
 import { installScript, scriptStatus } from './scripts'
 import { MINISIGN_APP, parsePublicKey } from '../shared/minisign'
 import { launchTrayApp, runNativeHost } from './native-host'
@@ -340,6 +341,10 @@ function ipc(): void {
     return r.filePath
   })
 
+  // git: maki-ssh-keygen on the PATH, which git runs to sign commits with maki's SSH app
+  ipcMain.handle('sshKeygen:status', () => scriptStatus(SSH_KEYGEN_COMMAND, launch()))
+  ipcMain.handle('sshKeygen:install', () => installScript(SSH_KEYGEN_COMMAND, launch()))
+
   // minisign: maki-minisign on the PATH, and maki's public key where the owner says
   ipcMain.handle('minisign:status', () => scriptStatus(MINISIGN_COMMAND, launch()))
   ipcMain.handle('minisign:install', () => installScript(MINISIGN_COMMAND, launch()))
@@ -489,6 +494,18 @@ if (process.argv.includes('--age-plugin-maki')) {
     output: process.stdout,
     error: (line) => process.stderr.write(`${line}\n`),
     ask: askOver(socketPath())
+  }).then((code) => app.exit(code))
+} else if (process.argv.includes(SSH_KEYGEN_COMMAND.flag)) {
+  // started by git, through maki-ssh-keygen on the PATH: signing with maki's SSH app, or
+  // ssh-keygen's own work
+  console.log = console.info = console.debug = console.error
+  app.dock?.hide()
+  void runSshKeygen(process.argv, {
+    input: process.stdin,
+    output: (bytes) => process.stdout.write(bytes),
+    error: (line) => process.stderr.write(`${line}\n`),
+    ask: askOver(socketPath(), SSH_APP),
+    sshKeygen: sshKeygenOnPath
   }).then((code) => app.exit(code))
 } else if (process.argv.includes(MINISIGN_COMMAND.flag)) {
   // started by maki-minisign on the PATH: minisign's commands, asking maki's Minisign app through

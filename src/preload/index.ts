@@ -93,6 +93,11 @@ const api = {
     /** a save dialog for the identity file; where it went, or null */
     save: (text: string): Promise<string | null> => ipcRenderer.invoke('age:save', text)
   },
+  sshKeygen: {
+    /** whether maki-ssh-keygen is on the PATH, starting this app */
+    status: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('sshKeygen:status'),
+    install: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('sshKeygen:install')
+  },
   minisign: {
     /** whether maki-minisign is on the PATH, starting this app */
     status: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('minisign:status'),
