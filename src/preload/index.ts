@@ -93,6 +93,13 @@ const api = {
     /** a save dialog for the identity file; where it went, or null */
     save: (text: string): Promise<string | null> => ipcRenderer.invoke('age:save', text)
   },
+  minisign: {
+    /** whether maki-minisign is on the PATH, starting this app */
+    status: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('minisign:status'),
+    install: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('minisign:install'),
+    /** a save dialog for minisign.pub; where it went, or null */
+    save: (text: string): Promise<string | null> => ipcRenderer.invoke('minisign:save', text)
+  },
   /** what the coins are worth in `currency` (CoinGecko), when the owner asks to see it */
   prices: async (currency: import('../shared/prices').Currency): Promise<import('../shared/prices').Prices> => {
     const r = (await ipcRenderer.invoke('prices:get', currency)) as { prices: Record<string, number> } | { error: string }

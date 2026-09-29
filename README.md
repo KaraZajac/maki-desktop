@@ -83,6 +83,12 @@ maki's roll for what to do and the green of the nori for what's done.
   Connections page installs `age-plugin-maki` (in `~/.local/bin`, this app in plugin mode) and
   saves an identity file naming maki's key; `age -d -i maki-age.txt file.age` then asks maki,
   which asks you on its screen before it hands over the file's key.
+- **Signs files with minisign.** With maki's Minisign app installed, maki keeps a minisign key
+  from its recovery phrase. The Connections page installs `maki-minisign` (in `~/.local/bin`, this
+  app in minisign mode) and saves `minisign.pub`; `maki-minisign -Sm file` hashes the file as
+  minisign does (BLAKE2b-512) and asks maki, which shows its name and size and asks you, then signs
+  it with a trusted comment dated by maki's own clock. `minisign -V` checks it anywhere, as
+  `maki-minisign -V` does.
 - **Is an SSH agent for maki's SSH app.** ssh and git talk to it (`SSH_AUTH_SOCK`, which the
   Connections page shows once the app is installed), and it hands each request to the app on maki, which
   reads what's to be signed, asks you, and signs. The agent holds no keys: `ssh-add -L` shows the

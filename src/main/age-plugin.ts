@@ -22,11 +22,10 @@ import {
   type KeyObject
 } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
-import { homedir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
+import type { Launch } from './browsers'
+import { type Command, installScript, scriptPath, scriptStatus, scriptText } from './scripts'
 import {
   AGE_APP,
   identityFile,
@@ -144,8 +143,8 @@ export function wrap(
 
 export type AskApp = (data: Uint8Array) => Promise<{ status: string; answer: Uint8Array }>
 
-/** A message for the Age app, through maki desktop's socket at `path`. */
-export function askOver(path: string): AskApp {
+/** A message for an app on maki, through maki desktop's socket at `path`: the Age app, unless another's named. */
+export function askOver(path: string, app: string = AGE_APP): AskApp {
   return (data) =>
     new Promise((resolve, reject) => {
       const s = connect(path)
@@ -186,7 +185,7 @@ export function askOver(path: string): AskApp {
         JSON.stringify({
           id: 1,
           type: 'appMessage',
-          app: AGE_APP,
+          app,
           data: Buffer.from(data).toString('base64')
         }) + '\n'
       )
@@ -406,49 +405,18 @@ async function wrapping(io: PluginIo): Promise<number> {
 
 // ---- installing it: a script on the PATH, as age looks for plugins, running this app ----
 
-/** Where age finds it: ~/.local/bin (on Windows, a .cmd in maki's folder, which PATH needs). */
-export function agePluginPath(): string {
-  if (process.platform === 'win32') {
-    return join(
-      process.env['APPDATA'] || join(homedir(), 'AppData', 'Roaming'),
-      'maki',
-      'age-plugin-maki.cmd'
-    )
-  }
-  return join(homedir(), '.local', 'bin', 'age-plugin-maki')
+export const AGE_PLUGIN: Command = {
+  name: 'age-plugin-maki',
+  flag: '--age-plugin-maki',
+  why: 'age starts this to decrypt with maki'
 }
 
-export function agePluginScript({ exe, appPath }: { exe: string; appPath: string | null }): string {
-  if (process.platform === 'win32') {
-    const q = (s: string): string => `"${s.replace(/%/g, '%%')}"`
-    const target = appPath ? `${q(exe)} ${q(appPath)}` : q(exe)
-    return `@echo off\r\nrem written by maki desktop: age starts this to decrypt with maki\r\n${target} --age-plugin-maki %*\r\n`
-  }
-  const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
-  const target = appPath ? `${q(exe)} ${q(appPath)}` : q(exe)
-  return `#!/bin/sh\n# written by maki desktop: age starts this to decrypt with maki\nexec ${target} --ozone-platform=headless --age-plugin-maki "$@"\n`
-}
+export const agePluginPath = (): string => scriptPath(AGE_PLUGIN.name)
 
-export async function agePluginStatus(launch: {
-  exe: string
-  appPath: string | null
-}): Promise<AgePluginStatus> {
-  const path = agePluginPath()
-  const installed = await readFile(path, 'utf8').then(
-    (text) => text === agePluginScript(launch),
-    () => false
-  )
-  const folders = (process.env['PATH'] ?? '').split(delimiter)
-  return { installed, path, onPath: folders.includes(dirname(path)) }
-}
+export const agePluginScript = (launch: Launch): string => scriptText(AGE_PLUGIN, launch)
 
-export async function installAgePlugin(launch: {
-  exe: string
-  appPath: string | null
-}): Promise<AgePluginStatus> {
-  const path = agePluginPath()
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, agePluginScript(launch))
-  await chmod(path, 0o755)
-  return agePluginStatus(launch)
-}
+export const agePluginStatus = (launch: Launch): Promise<AgePluginStatus> =>
+  scriptStatus(AGE_PLUGIN, launch)
+
+export const installAgePlugin = (launch: Launch): Promise<AgePluginStatus> =>
+  installScript(AGE_PLUGIN, launch)

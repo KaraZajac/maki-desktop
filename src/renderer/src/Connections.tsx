@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react'
 import { AGE_APP, identityFile, recipientOf, type AgePluginStatus } from '@shared/age'
 import { SSH_APP, type BrowserStatus } from '@shared/bridge-types'
+import type { CommandStatus } from '@shared/commands'
 import type { Link } from '@shared/link'
+import {
+  keyIdHex,
+  MINISIGN_APP,
+  parseKeyAnswer,
+  publicKeyFile,
+  publicKeyText,
+  type MinisignKey
+} from '@shared/minisign'
 import type { Apps } from './apps-state'
 import type { Page } from './Overview'
 import { Badge, Button, Card, Glyph, Label, PageHeader, Toggle } from './ui'
@@ -32,7 +41,7 @@ export function Connections({
       <PageHeader
         label="connections"
         title="Connections"
-        lede="Browsers, ssh, git and age reach maki through maki desktop, which holds the link: they ask, and maki asks you on its own screen."
+        lede="Browsers, ssh, git, age and minisign reach maki through maki desktop, which holds the link: they ask, and maki asks you on its own screen."
       />
 
       <Card>
@@ -141,6 +150,8 @@ export function Connections({
       </Card>
 
       <Age link={link} apps={apps} go={go} />
+
+      <Minisign link={link} apps={apps} go={go} />
 
       <Card>
         <div className="flex items-start gap-4">
@@ -308,6 +319,152 @@ function Age({
                 <code className="font-mono text-subtext0">age -d -i maki-age.txt notes.age</code>{' '}
                 decrypts, once you say so on maki. The identity file holds nothing secret: it names
                 maki’s key.
+              </p>
+              {problem && <p className="mt-2 text-sm text-yellow">{problem}</p>}
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/** minisign: maki's minisign key, maki-minisign on the PATH, and the public key to publish. */
+function Minisign({
+  link,
+  apps,
+  go
+}: {
+  link: Link
+  apps: Apps
+  go: (page: Page) => void
+}): React.JSX.Element {
+  const installed = apps.apps?.find((a) => a.id === MINISIGN_APP)
+  const linked = link.state.linked
+  const [command, setCommand] = useState<CommandStatus | null>(null)
+  const [key, setKey] = useState<MinisignKey | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    void window.maki.minisign.status().then(setCommand)
+  }, [])
+  // the public key, from maki's Minisign app (it starts out of sight to answer)
+  useEffect(() => {
+    if (!installed || !linked) return
+    link.appMessage(MINISIGN_APP, Uint8Array.of('P'.charCodeAt(0))).then(
+      (r) => {
+        const k = r.status === 'approved' ? parseKeyAnswer(r.answer) : null
+        if (k) setKey(k)
+        else
+          setProblem(
+            r.answer[0] === 3 ? 'maki is locked: enter its PIN' : `maki’s Minisign app: ${r.status}`
+          )
+      },
+      (e: Error) => setProblem(e.message)
+    )
+  }, [link, installed, linked])
+  const text = key ? publicKeyText(key) : null
+
+  return (
+    <Card>
+      <div className="flex items-start gap-4">
+        <div className="rounded-xl border border-surface1 bg-crust p-2.5 text-peach">
+          <Glyph name="file" className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <Label>minisign</Label>
+          {!installed ? (
+            <div className="mt-2 flex items-center justify-between gap-4">
+              <p className="text-sm text-subtext1">
+                With maki’s Minisign app installed, maki keeps a minisign key from your recovery
+                phrase, for signing files and releases: each one waits for your yes on maki.
+              </p>
+              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
+                Get it
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-subtext1">
+                maki keeps a minisign key. maki-minisign signs a file once you say so on maki, which
+                signs when it did by its own clock; anyone checks it with minisign and this key
+                {key ? ` (${keyIdHex(key.id)})` : ''}.
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <code className="selectable min-w-0 flex-1 truncate rounded-lg border border-surface0 bg-crust px-3 py-2 font-mono text-xs text-green">
+                  {text ?? (linked ? 'asking maki…' : 'plug maki in to see its public key')}
+                </code>
+                <Button
+                  small
+                  disabled={!text}
+                  onClick={async () => {
+                    await window.maki.copy(text!)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <ul className="mt-4 divide-y divide-surface0 rounded-xl border border-surface0 bg-crust/40">
+                <li className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="min-w-0 text-sm text-fg">
+                    maki-minisign
+                    {command && (
+                      <span className="ml-2 font-mono text-[0.68rem] text-overlay1">
+                        {command.path}
+                      </span>
+                    )}
+                  </span>
+                  {command?.installed ? (
+                    <Badge kind="built">
+                      <Glyph name="check" className="h-3 w-3" /> installed
+                    </Badge>
+                  ) : (
+                    <Button
+                      small
+                      kind="ghost"
+                      onClick={async () => {
+                        try {
+                          setCommand(await window.maki.minisign.install())
+                          link.note('maki-minisign installed: it can ask maki to sign files')
+                        } catch (e) {
+                          setProblem((e as Error).message)
+                        }
+                      }}
+                    >
+                      Install
+                    </Button>
+                  )}
+                </li>
+                <li className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-sm text-fg">Your public key file, minisign.pub</span>
+                  <Button
+                    small
+                    kind="ghost"
+                    glyph="download"
+                    disabled={!key}
+                    onClick={async () => {
+                      const path = await window.maki.minisign.save(publicKeyFile(key!))
+                      if (path) link.note(`minisign public key saved to ${path}`)
+                    }}
+                  >
+                    Save…
+                  </Button>
+                </li>
+              </ul>
+              {command && command.installed && !command.onPath && (
+                <p className="mt-2 text-xs text-yellow">
+                  Its folder isn’t on your PATH: add it to run maki-minisign by name.
+                </p>
+              )}
+              <p className="mt-3 text-xs leading-relaxed text-overlay1">
+                <code className="font-mono text-subtext0">maki-minisign -Sm release.tar.gz</code>{' '}
+                signs, once you say so on maki;{' '}
+                <code className="font-mono text-subtext0">
+                  minisign -Vm release.tar.gz -P {text ? `${text.slice(0, 10)}…` : 'RW…'}
+                </code>{' '}
+                checks it, anywhere.
               </p>
               {problem && <p className="mt-2 text-sm text-yellow">{problem}</p>}
             </>

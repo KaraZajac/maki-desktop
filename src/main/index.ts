@@ -13,6 +13,9 @@ import { browserStatus, registerBrowser, unregisterBrowser, type Launch } from '
 import { forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
 import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
+import { MINISIGN_COMMAND, runMinisign } from './minisign'
+import { installScript, scriptStatus } from './scripts'
+import { MINISIGN_APP, parsePublicKey } from '../shared/minisign'
 import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
 import { agentSocketPath, serveAgent, SSH_APP } from './ssh-agent'
@@ -337,6 +340,20 @@ function ipc(): void {
     return r.filePath
   })
 
+  // minisign: maki-minisign on the PATH, and maki's public key where the owner says
+  ipcMain.handle('minisign:status', () => scriptStatus(MINISIGN_COMMAND, launch()))
+  ipcMain.handle('minisign:install', () => installScript(MINISIGN_COMMAND, launch()))
+  ipcMain.handle('minisign:save', async (e, text: unknown) => {
+    // only a public key file, as the window makes it from maki's key
+    if (typeof text !== 'string' || text.length > 200 || !parsePublicKey(text)) return null
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = { defaultPath: join(app.getPath('home'), 'minisign.pub'), title: 'Save your minisign public key' }
+    const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, text)
+    return r.filePath
+  })
+
   // Monero: the view key maki shared (for this computer to watch the wallet, and to read and write
   // the Monero GUI's files), and maki desktop's own wallet's state; readable by this user alone
   const xmrFile = (): string => join(app.getPath('userData'), 'monero.json')
@@ -472,6 +489,16 @@ if (process.argv.includes('--age-plugin-maki')) {
     output: process.stdout,
     error: (line) => process.stderr.write(`${line}\n`),
     ask: askOver(socketPath())
+  }).then((code) => app.exit(code))
+} else if (process.argv.includes(MINISIGN_COMMAND.flag)) {
+  // started by maki-minisign on the PATH: minisign's commands, asking maki's Minisign app through
+  // the tray app
+  console.log = console.info = console.debug = console.error
+  app.dock?.hide()
+  void runMinisign(process.argv, {
+    output: (text) => process.stdout.write(text),
+    error: (line) => process.stderr.write(`${line}\n`),
+    ask: askOver(socketPath(), MINISIGN_APP)
   }).then((code) => app.exit(code))
 } else if (process.argv.includes('--native-host')) {
   // started by a browser for the maki extension: relay to the tray app, starting it if needed.
