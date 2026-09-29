@@ -93,6 +93,13 @@ const api = {
     /** a save dialog for the identity file; where it went, or null */
     save: (text: string): Promise<string | null> => ipcRenderer.invoke('age:save', text)
   },
+  gpg: {
+    /** whether maki-gpg is on the PATH, starting this app */
+    status: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('gpg:status'),
+    install: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('gpg:install'),
+    /** a save dialog for maki's public key, armoured; where it went, or null */
+    save: (text: string): Promise<string | null> => ipcRenderer.invoke('gpg:save', text)
+  },
   contacts: {
     /** a save dialog for the people met, as vCards; where they went, or null */
     save: (text: string): Promise<string | null> => ipcRenderer.invoke('contacts:save', text)

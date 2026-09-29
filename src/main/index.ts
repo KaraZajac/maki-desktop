@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron'
 import { spawn } from 'node:child_process'
+import { writeSync } from 'node:fs'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -15,6 +16,8 @@ import { getStartAtLogin, setStartAtLogin } from './login'
 import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
 import { MINISIGN_COMMAND, runMinisign } from './minisign'
 import { runSshKeygen, SSH_KEYGEN_COMMAND, sshKeygenOnPath } from './ssh-keygen'
+import { GPG_COMMAND, gpgOnPath, runGpg } from './gpg'
+import { OPENPGP_APP } from '../shared/openpgp'
 import { installScript, scriptStatus } from './scripts'
 import { MINISIGN_APP, parsePublicKey } from '../shared/minisign'
 import { launchTrayApp, runNativeHost } from './native-host'
@@ -352,6 +355,19 @@ function ipc(): void {
     return r.filePath
   })
 
+  // OpenPGP: maki-gpg on the PATH, which gpg's users and git run, and maki's public key
+  ipcMain.handle('gpg:status', () => scriptStatus(GPG_COMMAND, launch()))
+  ipcMain.handle('gpg:install', () => installScript(GPG_COMMAND, launch()))
+  ipcMain.handle('gpg:save', async (e, text: unknown) => {
+    if (typeof text !== 'string' || text.length > 100_000 || !text.startsWith('-----BEGIN PGP PUBLIC KEY BLOCK-----')) return null
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = { defaultPath: join(app.getPath('home'), 'maki-openpgp.asc'), title: 'Save your OpenPGP public key' }
+    const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, text)
+    return r.filePath
+  })
+
   // git: maki-ssh-keygen on the PATH, which git runs to sign commits with maki's SSH app
   ipcMain.handle('sshKeygen:status', () => scriptStatus(SSH_KEYGEN_COMMAND, launch()))
   ipcMain.handle('sshKeygen:install', () => installScript(SSH_KEYGEN_COMMAND, launch()))
@@ -505,6 +521,19 @@ if (process.argv.includes('--age-plugin-maki')) {
     output: process.stdout,
     error: (line) => process.stderr.write(`${line}\n`),
     ask: askOver(socketPath())
+  }).then((code) => app.exit(code))
+} else if (process.argv.includes(GPG_COMMAND.flag)) {
+  // started by git or anyone, through maki-gpg on the PATH: signing and opening with maki's
+  // OpenPGP app, or gpg's own work
+  console.log = console.info = console.debug = console.error
+  app.dock?.hide()
+  void runGpg(process.argv, {
+    input: process.stdin,
+    output: (bytes) => process.stdout.write(bytes),
+    status: (fd, line) => writeSync(fd, `${line}\n`),
+    error: (line) => process.stderr.write(`${line}\n`),
+    ask: askOver(socketPath(), OPENPGP_APP),
+    gpg: gpgOnPath
   }).then((code) => app.exit(code))
 } else if (process.argv.includes(SSH_KEYGEN_COMMAND.flag)) {
   // started by git, through maki-ssh-keygen on the PATH: signing with maki's SSH app, or

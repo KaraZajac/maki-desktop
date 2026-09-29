@@ -83,6 +83,13 @@ maki's roll for what to do and the green of the nori for what's done.
   Connections page installs `age-plugin-maki` (in `~/.local/bin`, this app in plugin mode) and
   saves an identity file naming maki's key; `age -d -i maki-age.txt file.age` then asks maki,
   which asks you on its screen before it hands over the file's key.
+- **Is gpg, with maki's OpenPGP key.** With maki's OpenPGP app installed, maki keeps an OpenPGP key
+  (Ed25519 to sign, Curve25519 to encrypt) from its recovery phrase, which you name once on the
+  Connections page (maki asks, and certifies it). The page installs `maki-gpg` and saves the
+  public key for `gpg --import` anywhere. git runs `maki-gpg` as its `gpg.program`: each commit goes
+  to maki whole, and maki shows its subject and author before it signs; `maki-gpg --decrypt` opens
+  a message sent to the key once you say so on maki (maki unwraps its session key, and only that).
+  Anything else it hands to gpg as it is, checking signatures included.
 - **Signs files with minisign.** With maki's Minisign app installed, maki keeps a minisign key
   from its recovery phrase. The Connections page installs `maki-minisign` (in `~/.local/bin`, this
   app in minisign mode) and saves `minisign.pub`; `maki-minisign -Sm file` hashes the file as

@@ -11,6 +11,7 @@ import {
   vcards
 } from '@shared/contacts'
 import type { Link } from '@shared/link'
+import { armour, OPENPGP_APP, PGP_OK, pgpSays, userId } from '@shared/openpgp'
 import { NOTE_TEXT, NOTE_TITLE, NOTES_APP, noteMessage, noteSays, noteTitles } from '@shared/notes'
 import {
   keyIdHex,
@@ -50,7 +51,7 @@ export function Connections({
       <PageHeader
         label="connections"
         title="Connections"
-        lede="Browsers, ssh, git, age, minisign, your notes and your card reach maki through maki desktop, which holds the link: they ask, and maki asks you on its own screen."
+        lede="Browsers, ssh, git, gpg, age, minisign, your notes and your card reach maki through maki desktop, which holds the link: they ask, and maki asks you on its own screen."
       />
 
       <Card>
@@ -164,6 +165,8 @@ export function Connections({
       <Age link={link} apps={apps} go={go} />
 
       <Minisign link={link} apps={apps} go={go} />
+
+      <OpenPgp link={link} apps={apps} go={go} />
 
       <Notes link={link} apps={apps} go={go} />
 
@@ -833,6 +836,201 @@ function Contacts({
               </div>
               {said && (
                 <p className={`mt-3 text-sm ${said.ok ? 'text-green' : 'text-yellow'}`}>
+                  {said.text}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/** OpenPGP: maki's key for gpg and git, maki-gpg on the PATH, and the public key to hand out. */
+function OpenPgp({
+  link,
+  apps,
+  go
+}: {
+  link: Link
+  apps: Apps
+  go: (page: Page) => void
+}): React.JSX.Element {
+  const installed = apps.apps?.find((a) => a.id === OPENPGP_APP)
+  const linked = link.state.linked
+  const [command, setCommand] = useState<CommandStatus | null>(null)
+  const [fingerprint, setFingerprint] = useState<string | null>(null)
+  const [key, setKey] = useState<Uint8Array | null>(null)
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    void window.maki.gpg.status().then(setCommand)
+  }, [])
+  const refresh = async (): Promise<void> => {
+    const f = await link.appMessage(OPENPGP_APP, Uint8Array.of('F'.charCodeAt(0)))
+    if (f.status === 'approved' && f.answer[0] === PGP_OK && f.answer.length === 29)
+      setFingerprint(
+        [...f.answer.subarray(1, 21)]
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('')
+          .toUpperCase()
+      )
+    const k = await link.appMessage(OPENPGP_APP, Uint8Array.of('K'.charCodeAt(0)))
+    setKey(k.status === 'approved' && k.answer[0] === PGP_OK ? k.answer.slice(1) : null)
+  }
+  useEffect(() => {
+    if (installed && linked) refresh().catch(() => {})
+  }, [link, installed, linked])
+  const uid = key ? userId(key) : null
+  const nameIt = async (): Promise<void> => {
+    setBusy(true)
+    setSaid(null)
+    try {
+      const r = await link.appMessage(OPENPGP_APP, new TextEncoder().encode(`U${name}`))
+      if (r.status === 'approved' && r.answer[0] === PGP_OK) {
+        setSaid({ ok: true, text: 'Named, and certified on maki.' })
+        setName('')
+        await refresh()
+      } else setSaid({ ok: false, text: r.status === 'approved' ? pgpSays(r.answer[0]) : r.status })
+    } catch (e) {
+      setSaid({ ok: false, text: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const config = [
+    'git config --global gpg.program maki-gpg',
+    `git config --global user.signingkey ${fingerprint ?? 'FINGERPRINT'}`,
+    'git config --global commit.gpgsign true'
+  ].join('\n')
+
+  return (
+    <Card>
+      <div className="flex items-start gap-4">
+        <div className="rounded-xl border border-surface1 bg-crust p-2.5 text-peach">
+          <Glyph name="key" className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <Label>openpgp</Label>
+          {!installed ? (
+            <div className="mt-2 flex items-center justify-between gap-4">
+              <p className="text-sm text-subtext1">
+                With maki’s OpenPGP app installed, maki keeps an OpenPGP key from your recovery
+                phrase, for gpg and git: each commit shows its subject on maki before it’s signed,
+                and each message sent to you opens only once you say so there.
+              </p>
+              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
+                Get it
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-subtext1">
+                maki keeps an OpenPGP key{uid ? `, named ${uid}` : ''}. maki-gpg hands it what’s
+                signed whole (a git commit, say), and messages sent to it, and maki asks you on its
+                screen each time.
+              </p>
+              <code className="selectable mt-3 block break-all rounded-lg border border-surface0 bg-crust px-3 py-2 font-mono text-xs text-green">
+                {fingerprint
+                  ? fingerprint.replace(/(.{4})/g, '$1 ').trim()
+                  : linked
+                    ? 'asking maki…'
+                    : 'plug maki in to see its key'}
+              </code>
+              {!uid && (
+                <div className="mt-4 flex items-end gap-3">
+                  <Field
+                    className="min-w-0 flex-1"
+                    label="Its name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Kara Zajac <kara@example.org>"
+                  />
+                  <Button
+                    small
+                    kind="primary"
+                    disabled={!linked || busy || !name.trim()}
+                    onClick={() => void nameIt()}
+                  >
+                    {busy ? 'Say yes on maki…' : 'Name it'}
+                  </Button>
+                </div>
+              )}
+              <ul className="mt-4 divide-y divide-surface0 rounded-xl border border-surface0 bg-crust/40">
+                <li className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="min-w-0 text-sm text-fg">
+                    maki-gpg
+                    {command && (
+                      <span className="ml-2 font-mono text-[0.68rem] text-overlay1">
+                        {command.path}
+                      </span>
+                    )}
+                  </span>
+                  {command?.installed ? (
+                    <Badge kind="built">
+                      <Glyph name="check" className="h-3 w-3" /> installed
+                    </Badge>
+                  ) : (
+                    <Button
+                      small
+                      kind="ghost"
+                      onClick={async () => {
+                        try {
+                          setCommand(await window.maki.gpg.install())
+                          link.note('maki-gpg installed: gpg and git can use maki’s OpenPGP key')
+                        } catch (e) {
+                          setSaid({ ok: false, text: (e as Error).message })
+                        }
+                      }}
+                    >
+                      Install
+                    </Button>
+                  )}
+                </li>
+                <li className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-sm text-fg">
+                    Your public key, for gpg --import anywhere
+                  </span>
+                  <Button
+                    small
+                    kind="ghost"
+                    glyph="download"
+                    disabled={!key || !uid}
+                    onClick={async () => {
+                      const path = await window.maki.gpg.save(armour('PUBLIC KEY BLOCK', key!))
+                      if (path) link.note(`OpenPGP public key saved to ${path}`)
+                    }}
+                  >
+                    Save…
+                  </Button>
+                </li>
+              </ul>
+              <div className="mt-3 flex items-start gap-2">
+                <pre className="selectable min-w-0 flex-1 overflow-x-auto rounded-lg border border-surface0 bg-crust px-3 py-2 font-mono text-[0.68rem] leading-relaxed text-green">
+                  {config}
+                </pre>
+                <Button
+                  small
+                  disabled={!fingerprint}
+                  onClick={async () => {
+                    await window.maki.copy(config)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-overlay1">
+                <code className="font-mono text-subtext0">maki-gpg --decrypt message.asc</code>{' '}
+                opens a message sent to maki’s key, once you say so on maki; anything else maki-gpg
+                hands to gpg as it is.
+              </p>
+              {said && (
+                <p className={`mt-2 text-sm ${said.ok ? 'text-green' : 'text-yellow'}`}>
                   {said.text}
                 </p>
               )}
