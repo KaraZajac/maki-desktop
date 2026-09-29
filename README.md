@@ -92,6 +92,10 @@ maki's roll for what to do and the green of the nori for what's done.
 - **Sends notes to maki.** With maki's Notes app installed, a secret typed on the Connections page
   (recovery codes, a PIN) goes to maki, which asks you before it keeps it; this app clears it then,
   and sees only the notes' titles after. You read them on maki's screen.
+- **Makes your card, and saves who you met.** With maki's Contacts app installed, the Connections
+  page makes your card (a name and up to three lines), which maki signs and shows as a QR code to
+  swap at the con; "Save the people you met…" saves the cards maki scanned as vCards, once you say
+  yes on maki, each marked as signed by their maki or from a phone.
 - **Is an SSH agent for maki's SSH app.** ssh and git talk to it (`SSH_AUTH_SOCK`, which the
   Connections page shows once the app is installed), and it hands each request to the app on maki, which
   reads what's to be signed, asks you, and signs. The agent holds no keys: `ssh-add -L` shows the

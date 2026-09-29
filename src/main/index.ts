@@ -341,6 +341,17 @@ function ipc(): void {
     return r.filePath
   })
 
+  // contacts: the people met, as vCards, where the owner says
+  ipcMain.handle('contacts:save', async (e, text: unknown) => {
+    if (typeof text !== 'string' || text.length > 1_000_000 || !text.startsWith('BEGIN:VCARD')) return null
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = { defaultPath: join(app.getPath('home'), 'maki-contacts.vcf'), title: 'Save the people you met' }
+    const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, text, { mode: 0o600 })
+    return r.filePath
+  })
+
   // git: maki-ssh-keygen on the PATH, which git runs to sign commits with maki's SSH app
   ipcMain.handle('sshKeygen:status', () => scriptStatus(SSH_KEYGEN_COMMAND, launch()))
   ipcMain.handle('sshKeygen:install', () => installScript(SSH_KEYGEN_COMMAND, launch()))
