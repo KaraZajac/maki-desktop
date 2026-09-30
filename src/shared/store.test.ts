@@ -46,6 +46,7 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Contacts', 'wasm', 'Social'],
       ['Dice', 'wasm', 'Games'],
       ['Ethereum', 'wasm', 'Finance'],
+      ['Magic 8-Ball', 'wasm', 'Games'],
       ['Marble', 'wasm', 'Games'],
       ['Minisign', 'wasm', 'Security'],
       ['Monero', 'wasm', 'Finance'],
@@ -60,6 +61,7 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Solana', 'wasm', 'Finance'],
       ['SSH', 'wasm', 'Security'],
       ['Status', 'wasm', 'Productivity'],
+      ['Sudo', 'wasm', 'Security'],
       ['Tally', 'wasm', 'Tools'],
       ['Wi-Fi', 'wasm', 'Tools']
     ])
@@ -77,10 +79,14 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     // a wallet: its accounts come with it, and what may sign for them (the camera: signing by QR codes)
     const bitcoin = apps.find((a) => a.name === 'Bitcoin')!
     expect(bitcoin.permissions.map((p) => p.permission.name)).toEqual(['link', 'camera', 'wallet'])
-    expect((await store.bundle(bitcoin)).manifest.wallet?.paths).toHaveLength(4)
+    // native SegWit, taproot and multisig (BIP48), on bitcoin and the test networks
+    expect((await store.bundle(bitcoin)).manifest.wallet?.paths).toHaveLength(6)
     // Solana's is an Ed25519 wallet (host API 6), which this app reads too
     const solana = (await store.bundle(apps.find((a) => a.name === 'Solana')!)).manifest
     expect([solana.api, solana.wallet?.curve]).toEqual([6, 'ed25519'])
+    // Sudo asks after pages on maki's review screen (host API 7)
+    const sudo = (await store.bundle(apps.find((a) => a.name === 'Sudo')!)).manifest
+    expect([sudo.api, sudo.permissions.map((p) => p.permission.name)]).toEqual([7, ['ask', 'link', 'keys']])
   })
 })
 
