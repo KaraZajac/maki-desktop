@@ -592,6 +592,13 @@ function ipc(): void {
     const indexVersion = Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
     await writeFile(storeFile(), JSON.stringify({ root, indexVersion }))
   })
+  ipcMain.handle('app:version', () => app.getVersion())
+  // the notices beside the packaged app (electron-builder.yml), or the ones the build wrote
+  ipcMain.handle('app:notices', async () => {
+    const notices = app.isPackaged ? join(process.resourcesPath, 'THIRD-PARTY-NOTICES.md') : join(app.getAppPath(), 'out', 'THIRD-PARTY-NOTICES.md')
+    const failed = await shell.openPath(notices)
+    if (failed) throw new Error(failed)
+  })
   ipcMain.handle('settings:startAtLogin', () => getStartAtLogin())
   ipcMain.handle('settings:setStartAtLogin', async (_e, on: boolean) => {
     await setStartAtLogin(on)

@@ -326,3 +326,11 @@ The protocol is specified in the firmware repo, `libs/maki-proto/PROTOCOL.md`. C
   throttling is off: a throttled hidden window would miss heartbeats.
 - npm here holds install scripts until approved. `esbuild` is approved (`allowScripts` in
   package.json); `electron-winstaller` isn't, since we don't build Squirrel installers.
+
+## License
+
+MIT (`LICENSE`). The code of others maki desktop and the extension carry, with its licenses and
+notices, is in `THIRD-PARTY-NOTICES.md` in each package: beside the app (the window's
+**notices** opens it) and in the extension. `scripts/notices.mjs` writes the app's, from what the
+build bundles and carries, and `extension/build.mjs` the extension's; Electron's and Chromium's
+own are `LICENSE.electron.txt` and `LICENSES.chromium.html`, beside the app.

@@ -8,16 +8,31 @@ directories:
 # exclusions-only matcher, which the packer reads as "everything" and ships the checkout.
 mac:
   files: [out/**/*, resources/**/*, package.json]
+  extraResources:
+    - from: LICENSE
+      to: LICENSE
+    - from: out/THIRD-PARTY-NOTICES.md
+      to: THIRD-PARTY-NOTICES.md
   category: public.app-category.utilities
 linux:
   files: [out/**/*, resources/**/*, package.json]
-  # sudo's approval plugin, where root can read it to set it up (not inside the app's archive)
+  # sudo's approval plugin, where root can read it to set it up (not inside the app's archive);
+  # and the licenses, beside the app: maki desktop's, and the notices of what it carries
   extraResources:
     - from: sudo/target/release/libmaki_sudo.so
       to: maki_sudo.so
+    - from: LICENSE
+      to: LICENSE
+    - from: out/THIRD-PARTY-NOTICES.md
+      to: THIRD-PARTY-NOTICES.md
   syncDesktopName: true
   target: [AppImage]
   category: Utility
 win:
   files: [out/**/*, resources/**/*, package.json]
+  extraResources:
+    - from: LICENSE
+      to: LICENSE
+    - from: out/THIRD-PARTY-NOTICES.md
+      to: THIRD-PARTY-NOTICES.md
   target: [nsis]

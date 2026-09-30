@@ -157,6 +157,12 @@ const api = {
     load: (): Promise<import('../shared/solana').SolState> => ipcRenderer.invoke('sol:load'),
     save: (state: import('../shared/solana').SolState): Promise<void> => ipcRenderer.invoke('sol:save', state)
   },
+  app: {
+    /** maki desktop's version, as its package.json says */
+    version: (): Promise<string> => ipcRenderer.invoke('app:version'),
+    /** open the notices of the code of others it carries (THIRD-PARTY-NOTICES.md) */
+    notices: (): Promise<void> => ipcRenderer.invoke('app:notices')
+  },
   settings: {
     startAtLogin: (): Promise<boolean> => ipcRenderer.invoke('settings:startAtLogin'),
     setStartAtLogin: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setStartAtLogin', on)

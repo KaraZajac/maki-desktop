@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 description = "sudo's approval plugin for maki: each command waits for your yes on maki"
-license = "BSD-3-Clause"
+license = "MIT"
 
 [lib]
 name = "maki_sudo"

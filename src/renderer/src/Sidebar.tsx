@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { Link } from '@shared/link'
 import type { Page } from './Overview'
 import { Dot, Glyph, MakiMark } from './ui'
@@ -23,6 +24,10 @@ export function Sidebar({
   updates: number
 }): React.JSX.Element {
   const s = link.state
+  const [version, setVersion] = useState('')
+  useEffect(() => {
+    void window.maki.app.version().then(setVersion)
+  }, [])
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-surface0 bg-mantle/85">
       <div className="flex items-center gap-3 px-5 pt-6 pb-6">
@@ -78,8 +83,17 @@ export function Sidebar({
       </nav>
 
       <div className="mt-auto px-5 pb-5 font-mono text-[0.62rem] leading-relaxed text-overlay0">
-        <div>maki desktop 0.1.0</div>
-        <div>BSD-3-Clause · .leviathan</div>
+        <div>maki desktop {version}</div>
+        <div>
+          MIT · .leviathan ·{' '}
+          <button
+            className="underline decoration-surface2 underline-offset-2 hover:text-subtext0"
+            title="The code of others maki desktop carries, and its licenses"
+            onClick={() => void window.maki.app.notices()}
+          >
+            notices
+          </button>
+        </div>
       </div>
     </aside>
   )
