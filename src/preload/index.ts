@@ -113,6 +113,11 @@ const api = {
     status: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('sshKeygen:status'),
     install: (): Promise<import('../shared/commands').CommandStatus> => ipcRenderer.invoke('sshKeygen:install')
   },
+  nostr: {
+    /** what maki desktop keeps of its NIP-46 bunker, or null */
+    load: (): Promise<unknown> => ipcRenderer.invoke('nostr:load'),
+    save: (kept: unknown): Promise<void> => ipcRenderer.invoke('nostr:save', kept)
+  },
   sudo: {
     /** whether maki's sudo plugin is set up, and with whose key */
     status: (): Promise<import('../shared/sudo').SudoStatus> => ipcRenderer.invoke('sudo:status'),

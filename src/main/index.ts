@@ -520,6 +520,20 @@ function ipc(): void {
     return r.filePath
   })
 
+  // NIP-46: the bunker's state (its own key, which only carries requests: the Nostr key is maki's)
+  const nostrFile = (): string => join(app.getPath('userData'), 'nostr-bunker.json')
+  ipcMain.handle('nostr:load', async () => {
+    try {
+      return JSON.parse(await readFile(nostrFile(), 'utf8')) as unknown
+    } catch {
+      return null
+    }
+  })
+  ipcMain.handle('nostr:save', async (_e, kept: unknown) => {
+    const text = JSON.stringify(kept)
+    if (text.length > 256 * 1024) throw new Error('too much to keep')
+    await writeFile(nostrFile(), text, { mode: 0o600 })
+  })
   const btcFile = (): string => join(app.getPath('userData'), 'bitcoin.json')
   ipcMain.handle('btc:load', async () => {
     try {

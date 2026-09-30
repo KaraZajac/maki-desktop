@@ -9,8 +9,8 @@
 //       [--dump FILE]
 //
 // --fake connects to a fake maki on 127.0.0.1:7878 first (start it beforehand; MAKI_FAKE_PORT for
-// another port). Then the steps, in order: --click presses the first button whose text includes
-// TEXT (in the section whose heading includes SECTION, if it's given), and waits for the fake to
+// another port). Then the steps, in order: --click presses the first button whose text (or label)
+// includes TEXT (in the section whose heading includes SECTION, if it's given), and waits for the fake to
 // approve; --fill types TEXT into the field whose placeholder is
 // PLACEHOLDER, --choose picks VALUE in the first list that has it, --wait waits MS (for the
 // network, say), --until waits for the page to say TEXT (two
@@ -83,7 +83,7 @@ app.whenReady().then(async () => {
       await run(`(() => {
         const within = ${JSON.stringify(scope)} === null ? document : [...document.querySelectorAll('h2')].find((h) => h.textContent.includes(${JSON.stringify(scope)}))?.closest('section')
         if (!within) return
-        ;[...within.querySelectorAll('button')].find((b) => b.textContent.includes(${JSON.stringify(text)}))?.click()
+        ;[...within.querySelectorAll('button')].find((b) => b.textContent.includes(${JSON.stringify(text)}) || (b.getAttribute('aria-label') ?? '').includes(${JSON.stringify(text)}))?.click()
       })()`)
       await wait(2500) // the fake approves after a moment
     } else {

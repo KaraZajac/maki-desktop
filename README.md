@@ -112,6 +112,15 @@ maki's roll for what to do and the green of the nori for what's done.
   minisign does (BLAKE2b-512) and asks maki, which shows its name and size and asks you, then signs
   it with a trusted comment dated by maki's own clock. `minisign -V` checks it anywhere, as
   `maki-minisign -V` does.
+- **Signs for Nostr apps (NIP-46).** With maki's Nostr app installed and remote signing on (the
+  Connections page), maki desktop is a bunker for Nostr apps on your phone or the web (Coracle,
+  Nostrudel, Amethyst…): they connect with its `bunker://` link (shown as a QR code; good for one
+  app), or you paste theirs (`nostrconnect://`), and maki asks you before an app first sees your
+  key, naming it. Their requests come over relays (relay.nsec.app and relay.damus.io unless you
+  pick others), encrypted to the bunker's own key (NIP-44, or NIP-04 for older apps), which only
+  carries them; each event they'd sign goes to maki's Nostr app, which shows it and signs it with
+  the key it keeps. maki can't encrypt or decrypt with the key yet, and says so. Tested with
+  nostr-tools' own client, over a relay of the tests' own, as far as the fake maki.
 - **Makes sudo wait for maki.** With maki's Sudo app installed, the Connections page sets up
   maki's sudo plugin (Linux, sudo 1.9 or later; `sudo/`, an approval plugin in Rust), asking for
   the admin password: the plugin in `/usr/local/libexec/maki`, maki's key in `/etc/maki/sudo.pub`
@@ -281,6 +290,8 @@ src/main/native-host.ts  --native-host: native messaging on stdio, relayed to th
 src/main/browsers.ts     registering the native host with installed browsers
 src/main/ssh-agent.ts    the SSH agent: each request to maki's SSH app, the answer back
 src/main/sudo.ts         setting up (and taking away) maki's sudo plugin, as root
+src/shared/nip46.ts      NIP-46's bunker, for Nostr apps: requests over relays (relay.ts), NIP-44
+                         and NIP-04 (nip44.ts), events signed with the bunker's key (nostr-events.ts)
 sudo/                    the sudo plugin itself (Rust, a cdylib sudo loads): `cargo test` there;
                          tests/approve.c calls it as sudo does, for the end-to-end tests
 src/renderer/            Web Serial discovery (usb.ts) and the window: a page each (Overview, Apps,

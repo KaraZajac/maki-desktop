@@ -4,6 +4,7 @@ import { Link } from '@shared/link'
 import { Store } from '@shared/store'
 import { Activity } from './Activity'
 import { useApps } from './apps-state'
+import { useBunker } from './bunker-state'
 import { AppsPage } from './AppsPage'
 import { Backups } from './Backups'
 import { Connections } from './Connections'
@@ -74,6 +75,7 @@ export default function App(): React.JSX.Element {
     )
   )
   const apps = useApps(link)
+  const bunker = useBunker(link)
   const [page, setPage] = useState<Page>(savedPage)
   const go = (p: Page): void => {
     setPage(p)
@@ -157,7 +159,9 @@ export default function App(): React.JSX.Element {
               <AppsPage link={link} apps={apps} storeName={storeName} storePrivate={storePrivate} />
             )}
             {page === 'wallets' && <Wallets link={link} apps={apps} />}
-            {page === 'connections' && <Connections link={link} apps={apps} go={go} />}
+            {page === 'connections' && (
+              <Connections link={link} apps={apps} go={go} bunker={bunker} />
+            )}
             {page === 'backups' && <Backups link={link} backup={backup} />}
           </div>
         </main>
