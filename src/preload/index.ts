@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { BrowserStatus } from '../shared/bridge-types'
+import type { BrowserFamily, BrowsersView } from '../shared/bridge-types'
 
 const api = {
   relay: (host: string, port: number, packet: Uint8Array): Promise<Uint8Array> =>
@@ -31,9 +31,13 @@ const api = {
     show: (): Promise<void> => ipcRenderer.invoke('backups:show')
   },
   browsers: {
-    status: (): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:status'),
-    register: (name: string): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:register', name),
-    unregister: (name: string): Promise<BrowserStatus[]> => ipcRenderer.invoke('browsers:unregister', name)
+    status: (): Promise<BrowsersView> => ipcRenderer.invoke('browsers:status'),
+    register: (id: string): Promise<BrowsersView> => ipcRenderer.invoke('browsers:register', id),
+    unregister: (id: string): Promise<BrowsersView> => ipcRenderer.invoke('browsers:unregister', id),
+    /** one the list doesn't know: a folder dialog, then connected; null if cancelled */
+    add: (name: string, family: BrowserFamily): Promise<BrowsersView | null> => ipcRenderer.invoke('browsers:add', name, family),
+    /** forget one added by hand, disconnecting it */
+    remove: (id: string): Promise<BrowsersView> => ipcRenderer.invoke('browsers:remove', id)
   },
   wallet: {
     /** A file dialog for a PSBT; its path and bytes, or null if cancelled. */

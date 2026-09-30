@@ -1,9 +1,15 @@
-import { chmodSync, existsSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
-import { isAbsolute, join } from 'node:path'
-import { parseRequest, type BridgeRequest, type BridgeResponse, type BridgeResult } from '../shared/bridge-types'
+import { dirname, isAbsolute, join } from 'node:path'
+import {
+  EXTENSION_REQUESTS,
+  parseRequest,
+  type BridgeRequest,
+  type BridgeResponse,
+  type BridgeResult
+} from '../shared/bridge-types'
 
 /**
  * The app's side of the browser bridge: a local socket the native messaging host connects to.
@@ -17,7 +23,29 @@ export function socketPath(): string {
   return join(dir, `maki-${userInfo().uid}.sock`)
 }
 
+/**
+ * Where browsers in a Flatpak sandbox reach this app, relative to $XDG_RUNTIME_DIR: a folder of its
+ * own, which a user override shares with each such browser (browsers.ts), and in it a socket that
+ * answers the extension's requests and nothing else. A folder, not the socket, so a sandbox that
+ * started before this app still sees the socket it makes.
+ */
+export const BROWSER_SOCKET = ['maki', 'browser.sock'] as const
+
+/** The sandboxed browsers' socket; null where there's no $XDG_RUNTIME_DIR, or no Flatpak. */
+export function browserSocketPath(): string | null {
+  const run = process.env['XDG_RUNTIME_DIR']
+  return process.platform === 'linux' && run ? join(run, ...BROWSER_SOCKET) : null
+}
+
 export type Handler = (request: BridgeRequest) => Promise<BridgeResult>
+
+/** The extension's requests only, as the native messaging host passes them: for the browsers' socket. */
+export function extensionOnly(handler: Handler): Handler {
+  return (request) =>
+    (EXTENSION_REQUESTS as readonly string[]).includes(request.type)
+      ? handler(request)
+      : Promise.reject(new Error('not for the extension'))
+}
 
 /**
  * A request as the window takes it. `maki install` names a file, which the window can't read:
@@ -33,6 +61,11 @@ export async function forWindow(request: BridgeRequest): Promise<BridgeRequest> 
 
 /** One JSON object per line in both directions; requests may overlap. */
 export function serveBridge(handler: Handler, path = socketPath()): Promise<Server> {
+  if (process.platform !== 'win32' && path.endsWith(join(...BROWSER_SOCKET))) {
+    // the folder a sandbox may have made already (xdg-run/maki:create), kept to this user
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    chmodSync(dirname(path), 0o700)
+  }
   if (process.platform !== 'win32' && existsSync(path)) unlinkSync(path) // stale, from a crash
   const server = createServer((socket: Socket) => {
     socket.setEncoding('utf8')

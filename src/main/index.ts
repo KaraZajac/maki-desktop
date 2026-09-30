@@ -5,15 +5,23 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import { fromBase64, toBase64, type BridgeRequest, type BridgeResult } from '../shared/bridge-types'
+import { fromBase64, toBase64, type BridgeRequest, type BridgeResult, type BrowserFamily } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { SOL_NETWORKS, type SolState } from '../shared/solana'
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
-import { browserStatus, pkexec, registerBrowser, unregisterBrowser, type Launch } from './browsers'
+import {
+  addCustomBrowser,
+  browserStatus,
+  pkexec,
+  registerBrowser,
+  removeCustomBrowser,
+  unregisterBrowser,
+  type Launch
+} from './browsers'
 import { sudoOff, sudoOn, sudoStatus } from './sudo'
-import { forWindow, serveBridge, socketPath } from './bridge'
+import { browserSocketPath, extensionOnly, forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, setStartAtLogin } from './login'
 import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
 import { MINISIGN_COMMAND, runMinisign } from './minisign'
@@ -182,8 +190,19 @@ function ipc(): void {
   ipcMain.handle('backups:info', () => backupInfo())
   ipcMain.handle('backups:show', () => showBackups())
   ipcMain.handle('browsers:status', () => browserStatus())
-  ipcMain.handle('browsers:register', (_e, name: string) => registerBrowser(name, launch()))
-  ipcMain.handle('browsers:unregister', (_e, name: string) => unregisterBrowser(name))
+  ipcMain.handle('browsers:register', (_e, id: string) => registerBrowser(id, launch()))
+  ipcMain.handle('browsers:unregister', (_e, id: string) => unregisterBrowser(id))
+  // a browser the list doesn't know: the folder it reads helpers from, chosen here
+  ipcMain.handle('browsers:add', async (_e, name: string, family: BrowserFamily) => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: `${name}: its folder, or where it looks for browser helpers`,
+      defaultPath: join(process.env['XDG_CONFIG_HOME'] || join(app.getPath('home'), '.config')),
+      properties: ['openDirectory', 'createDirectory', 'showHiddenFiles']
+    })
+    if (r.canceled || !r.filePaths[0]) return null
+    return addCustomBrowser({ name, family, dir: r.filePaths[0] }, launch())
+  })
+  ipcMain.handle('browsers:remove', (_e, id: string) => removeCustomBrowser(id))
   // sudo: maki's sudo plugin, set up (and taken away) as root, for this user
   const sudoPlugin = (): string =>
     app.isPackaged ? join(process.resourcesPath, 'maki_sudo.so') : join(app.getAppPath(), 'sudo/target/release/libmaki_sudo.so')
@@ -674,6 +693,14 @@ if (process.argv.includes('--age-plugin-maki')) {
     ipc()
     createWindow()
     serveBridge(askWindow).catch((e) => console.error(`browser bridge unavailable: ${(e as Error).message}`))
+    // browsers in a Flatpak sandbox, through the one folder shared with them: the extension's
+    // requests only (browsers.ts)
+    const sandboxed = browserSocketPath()
+    if (sandboxed) {
+      serveBridge(extensionOnly(askWindow), sandboxed).catch((e) =>
+        console.error(`sandboxed browsers' bridge unavailable: ${(e as Error).message}`)
+      )
+    }
     // ssh and git, through maki's SSH app
     serveAgent(async (message) => {
       const r = await askWindow({ id: 0, type: 'appMessage', app: SSH_APP, data: message })

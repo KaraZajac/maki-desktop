@@ -137,10 +137,28 @@ export function parseRequest(value: unknown): BridgeRequest | null {
   }
 }
 
+/** Which extension a browser takes: the Chrome one, or the Firefox one. */
+export type BrowserFamily = 'chromium' | 'firefox'
+
 /** A browser the extension can be connected through, as the settings list it. */
 export interface BrowserStatus {
+  /** how the settings name it to connect it: `chrome`, `flatpak:app.zen_browser.zen`, `custom:1` */
+  id: string
   name: string
+  family: BrowserFamily
+  /** installed the usual way, as a Flatpak (sandboxed), or added by hand by the folder it reads */
+  kind: 'native' | 'flatpak' | 'custom'
   registered: boolean
   /** setting it up asks for an admin password */
   system: boolean
+  /** the other browsers that read the same registration, so connect and disconnect together */
+  shares: string[]
+  /** a Flatpak running since before it was connected: it takes its new permission once restarted */
+  restart: boolean
+}
+
+/** The browsers, and whether one the list doesn't know can be added by the folder it reads. */
+export interface BrowsersView {
+  browsers: BrowserStatus[]
+  custom: boolean
 }

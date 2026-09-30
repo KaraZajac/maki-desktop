@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AGE_APP, identityFile, recipientOf, type AgePluginStatus } from '@shared/age'
-import { SSH_APP, type BrowserStatus } from '@shared/bridge-types'
+import { SSH_APP } from '@shared/bridge-types'
 import type { CommandStatus } from '@shared/commands'
 import {
   CARD_LINES,
@@ -15,6 +15,7 @@ import { armour, OPENPGP_APP, PGP_OK, pgpSays, userId } from '@shared/openpgp'
 import { NOTE_TEXT, NOTE_TITLE, NOTES_APP, noteMessage, noteSays, noteTitles } from '@shared/notes'
 import { keyLines, keyOf, SUDO_APP, type SudoStatus } from '@shared/sudo'
 import { NOSTR_APP } from '@shared/nostr'
+import { BrowsersCard } from './Browsers'
 import type { BunkerView } from './bunker-state'
 import { Qr } from './Qr'
 import {
@@ -41,12 +42,10 @@ export function Connections({
   go: (page: Page) => void
   bunker: BunkerView
 }): React.JSX.Element {
-  const [browsers, setBrowsers] = useState<BrowserStatus[] | null>(null)
   const [agent, setAgent] = useState<string | null>(null)
   const [startAtLogin, setStartAtLogin] = useState<boolean | null>(null)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
-    void window.maki.browsers.status().then(setBrowsers)
     void window.maki.ssh.socket().then(setAgent)
     void window.maki.settings.startAtLogin().then(setStartAtLogin)
   }, [])
@@ -60,61 +59,7 @@ export function Connections({
         lede="Browsers, ssh, git, gpg, age, minisign, sudo, Nostr apps, your notes and your card reach maki through maki desktop, which holds the link: they ask, and maki asks you on its own screen."
       />
 
-      <Card>
-        <div className="flex items-start gap-4">
-          <div className="rounded-xl border border-surface1 bg-crust p-2.5 text-peach">
-            <Glyph name="globe" className="h-5 w-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <Label>browsers</Label>
-            <p className="mt-2 text-sm text-subtext1">
-              The maki extension fills logins and codes once you approve them on maki, and gives
-              sites maki’s Ethereum account. Each browser needs to be able to reach maki desktop
-              first.
-            </p>
-            {browsers === null ? null : browsers.length === 0 ? (
-              <p className="mt-4 text-sm text-overlay1">
-                No supported browser found on this computer.
-              </p>
-            ) : (
-              <ul className="mt-4 divide-y divide-surface0 rounded-xl border border-surface0 bg-crust/40">
-                {browsers.map((b) => (
-                  <li key={b.name} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <span className="text-sm text-fg">{b.name}</span>
-                    {b.registered ? (
-                      <Badge kind="built">
-                        <Glyph name="check" className="h-3 w-3" /> connected
-                      </Badge>
-                    ) : (
-                      <Button
-                        small
-                        kind="ghost"
-                        title={
-                          b.system
-                            ? `${b.name} only looks for browser helpers in a system folder`
-                            : undefined
-                        }
-                        onClick={async () => {
-                          try {
-                            setBrowsers(await window.maki.browsers.register(b.name))
-                            link.note(
-                              `${b.name} can reach maki desktop: add the maki extension to finish`
-                            )
-                          } catch (e) {
-                            link.note(`${b.name} setup failed: ${(e as Error).message}`)
-                          }
-                        }}
-                      >
-                        {b.system ? 'Set up (asks for admin password)' : 'Set up'}
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </Card>
+      <BrowsersCard link={link} />
 
       <Card>
         <div className="flex items-start gap-4">

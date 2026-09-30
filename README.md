@@ -170,11 +170,29 @@ page ── content script ── background ══ native messaging ══ maki
   pages (`inpage.ts`, in the page's own world), which ask through the same path.
 - The browser starts this app with `--native-host` (headless, no window) as a relay to the
   running tray app, starting that if needed. The extension hangs up after 30 s idle.
-- **Set up** (Browsers, in the window) registers the relay with each installed browser. Firefox
-  with its profile in `~/.config/mozilla` (new installs since Firefox 147) only reads these
-  registrations from `~/.mozilla`, and creating `~/.mozilla` would switch it back to the old
-  layout and an empty profile, so for that Firefox the registration goes in the system folder
-  (`/usr/lib64/mozilla` or `/usr/lib/mozilla`) and asks for an admin password once.
+- **Connect** (Connections, Browsers, in the window) registers the relay with a browser, and
+  **Disconnect** takes it away. The list is every browser `src/main/browsers.ts` knows that's on
+  this computer: Chrome (and its Beta and Dev), Chromium, Brave, Edge, Vivaldi, Opera, Thorium,
+  Firefox, Zen, Floorp and LibreWolf, installed the usual way or as a Flatpak. **Another
+  browser…** adds one by the folder it reads registrations from (or its own folder, which the
+  usual name is added to), kept in `~/.local/share/maki/browsers.json`.
+- Firefox with its profile in `~/.config/mozilla` (new installs since Firefox 147) only reads
+  these registrations from `~/.mozilla` (Mozilla's bug 2005167), and creating `~/.mozilla` would
+  switch it back to the old layout and an empty profile, so for that Firefox the registration
+  goes in the system folder (`/usr/lib64/mozilla` or `/usr/lib/mozilla`) and asks for an admin
+  password once. Zen and Floorp read Firefox's registration, so they connect with it.
+- A **Flatpak** browser's sandbox sees neither those folders nor this app, and can't start
+  anything outside it. Connecting one puts the registration where it looks inside its sandbox
+  (`~/.var/app/ID/.mozilla/native-messaging-hosts`, say), naming a relay written into the app's
+  own folder (`~/.var/app/ID/maki/maki-native-host`, Python, which the Flatpak runtimes have), and
+  gives the sandbox one folder with `flatpak override --user --filesystem=xdg-run/maki:create`
+  (and `--persist=.mozilla` for a Firefox-based one that doesn't keep it). There this app serves
+  `$XDG_RUNTIME_DIR/maki/browser.sock`, which answers the extension's requests and nothing else.
+  The relay can't start this app from in there, so it says when it isn't running. A sandbox that
+  was running before takes the folder once restarted, and the window says so until it is (from
+  the running sandbox's own record, `$XDG_RUNTIME_DIR/.flatpak/*/info`). Disconnecting takes the
+  folder back (`--nofilesystem`). Checked with Zen's Flatpak: a sandbox of its own started the
+  relay for the extension, which reached maki.
 - On **Windows** the registration is a registry key per browser (under `HKCU\Software\...\
   NativeMessagingHosts`, set with `reg.exe`) naming a manifest in `%APPDATA%\maki`, which points
   at a `maki-native-host.cmd` that starts this app as the relay; the local socket is a named
@@ -287,7 +305,7 @@ extension/src/inpage.ts  the page's Ethereum provider (the page's own world, EIP
 src/main/                tray, window, Roughtime UDP relay, start-at-login, dev TCP transport
 src/main/bridge.ts       the local socket the native host connects to
 src/main/native-host.ts  --native-host: native messaging on stdio, relayed to the socket
-src/main/browsers.ts     registering the native host with installed browsers
+src/main/browsers.ts     registering the native host with installed browsers, Flatpaks' relay
 src/main/ssh-agent.ts    the SSH agent: each request to maki's SSH app, the answer back
 src/main/sudo.ts         setting up (and taking away) maki's sudo plugin, as root
 src/shared/nip46.ts      NIP-46's bunker, for Nostr apps: requests over relays (relay.ts), NIP-44
