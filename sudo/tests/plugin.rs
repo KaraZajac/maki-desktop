@@ -247,6 +247,9 @@ fn a_user_it_isnt_for_goes_ahead_and_a_bad_setup_stops_sudo() {
     let (dir2, _) = stand_in("setup", Says::Yes);
     assert_eq!(run(&dir2, &["colour=blue"], "kara", INFO, ARGV, ENVP).0, -1);
     assert_eq!(run(&dir2, &["timeout=1"], "kara", INFO, ARGV, ENVP).0, -1);
+    // users= naming no one isn't a way to leave everyone out
+    assert_eq!(run(&dir2, &["users="], "kara", INFO, ARGV, ENVP).0, -1);
+    assert_eq!(run(&dir2, &["users= , "], "kara", INFO, ARGV, ENVP).0, -1);
     std::fs::set_permissions(
         dir2.join("sudo.pub"),
         std::fs::Permissions::from_mode(0o666),

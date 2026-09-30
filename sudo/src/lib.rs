@@ -165,11 +165,16 @@ fn opened(
         match name {
             "key" => key = PathBuf::from(v),
             "users" => {
-                users = Some(
-                    v.split(',')
-                        .map(|u| u.trim().as_bytes().to_vec())
-                        .collect::<Vec<_>>(),
-                )
+                let named: Vec<Vec<u8>> = v
+                    .split(',')
+                    .map(|u| u.trim().as_bytes().to_vec())
+                    .filter(|u| !u.is_empty())
+                    .collect();
+                // naming no one would leave everyone to sudoers alone: not a way to turn it off
+                if named.is_empty() {
+                    return Err("users= names no one".into());
+                }
+                users = Some(named)
             }
             "timeout" => {
                 let s = v
