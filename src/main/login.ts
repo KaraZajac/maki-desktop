@@ -8,7 +8,11 @@ import { join } from 'node:path'
  * ~/.config/autostart, which Electron doesn't manage, so we write the entry ourselves.
  */
 
-const autostartFile = join(process.env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config'), 'autostart', 'maki.desktop')
+const autostartFile = join(
+  process.env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config'),
+  'autostart',
+  'maki.desktop'
+)
 
 function command(): string {
   // an AppImage runs from a temporary mount; APPIMAGE is the file the user actually has
@@ -37,6 +41,15 @@ export async function setStartAtLogin(on: boolean): Promise<void> {
   await mkdir(join(autostartFile, '..'), { recursive: true })
   await writeFile(
     autostartFile,
-    ['[Desktop Entry]', 'Type=Application', 'Name=maki', 'Comment=The link between this computer and maki', `Exec=${command()}`, 'Terminal=false', 'X-GNOME-Autostart-enabled=true', ''].join('\n')
+    [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=maki',
+      'Comment=The link between this computer and maki',
+      `Exec=${command()}`,
+      'Terminal=false',
+      'X-GNOME-Autostart-enabled=true',
+      ''
+    ].join('\n')
   )
 }

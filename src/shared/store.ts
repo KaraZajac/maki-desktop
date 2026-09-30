@@ -40,9 +40,11 @@ const ROOT_DOMAIN = utf8.encode('maki store root v1\0')
 const REVOKED_DOMAIN = utf8.encode('maki store revocations v1\0')
 const INDEX_DOMAIN = utf8.encode('maki store index v1\0')
 
-export const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((x, i) => x === b[i])
+export const equal = (a: Uint8Array, b: Uint8Array): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i])
 
-export const hex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
+export const hex = (b: Uint8Array): string =>
+  [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
 
 function unhex(s: unknown, bytes: number): Uint8Array | null {
   if (typeof s !== 'string' || !new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(s)) return null
@@ -54,10 +56,21 @@ export async function sha256(b: Uint8Array): Promise<Uint8Array> {
 }
 
 /** An Ed25519 signature by `key` over `domain` and the SHA-256 of `body`, as the store signs. */
-async function verify(key: Uint8Array, domain: Uint8Array, body: Uint8Array, signature: Uint8Array): Promise<boolean> {
+async function verify(
+  key: Uint8Array,
+  domain: Uint8Array,
+  body: Uint8Array,
+  signature: Uint8Array
+): Promise<boolean> {
   const message = new Uint8Array([...domain, ...(await sha256(body))])
   try {
-    const k = await crypto.subtle.importKey('raw', new Uint8Array(key), { name: 'Ed25519' }, false, ['verify'])
+    const k = await crypto.subtle.importKey(
+      'raw',
+      new Uint8Array(key),
+      { name: 'Ed25519' },
+      false,
+      ['verify']
+    )
     return await crypto.subtle.verify({ name: 'Ed25519' }, k, new Uint8Array(signature), message)
   } catch {
     return false
@@ -69,13 +82,16 @@ function read<T>(what: string, bytes: Uint8Array, magic: Uint8Array, f: (r: Read
   try {
     if (!equal(r.fixed(8), magic)) throw new StoreError(`not a store ${what}`)
     const format = r.u8()
-    if (format !== FORMAT) throw new StoreError(`store ${what} format ${format}, newer than this app reads`)
+    if (format !== FORMAT)
+      throw new StoreError(`store ${what} format ${format}, newer than this app reads`)
     const out = f(r)
     r.end()
     return out
   } catch (e) {
-    if (e instanceof Truncated) throw new StoreError(`the store's ${what} is cut short, or has bytes after it`)
-    if (e instanceof TypeError) throw new StoreError(`the store's ${what} has text that isn't UTF-8`)
+    if (e instanceof Truncated)
+      throw new StoreError(`the store's ${what} is cut short, or has bytes after it`)
+    if (e instanceof TypeError)
+      throw new StoreError(`the store's ${what} has text that isn't UTF-8`)
     throw e
   }
 }
@@ -115,8 +131,16 @@ export function decodeRoot(bytes: Uint8Array): SignedRoot {
     const body = bytes.slice(0, r.offset)
     const count = r.u8()
     if (count > 2 * MAX_ROOT_KEYS) throw new StoreError('the store root has too many signatures')
-    const signatures = Array.from({ length: count }, () => ({ key: r.fixed(32), signature: r.fixed(64) }))
-    return { root: { version, threshold, keys, catalogue, catalogueExpires }, body, signatures, bytes }
+    const signatures = Array.from({ length: count }, () => ({
+      key: r.fixed(32),
+      signature: r.fixed(64)
+    }))
+    return {
+      root: { version, threshold, keys, catalogue, catalogueExpires },
+      body,
+      signatures,
+      bytes
+    }
   })
 }
 
@@ -139,16 +163,20 @@ export async function trustFirst(signed: SignedRoot): Promise<Root> {
   const { root } = signed
   const distinct = root.keys.every((k, i) => !root.keys.slice(0, i).some((o) => equal(o, k)))
   if (root.threshold < 1 || root.threshold > root.keys.length || !distinct) {
-    throw new StoreError(`store root ${root.version} can't be trusted: a threshold nobody can meet, or a key twice`)
+    throw new StoreError(
+      `store root ${root.version} can't be trusted: a threshold nobody can meet, or a key twice`
+    )
   }
-  if ((await signers(root, signed)) < root.threshold) throw new StoreError(`store root ${root.version} isn't signed by its own keys`)
+  if ((await signers(root, signed)) < root.threshold)
+    throw new StoreError(`store root ${root.version} isn't signed by its own keys`)
   return root
 }
 
 /** A root that replaces `current`: newer, and signed by `threshold` of `current`'s keys and of its own. */
 export async function replaces(signed: SignedRoot, current: Root): Promise<Root> {
   const v = signed.root.version
-  if (v <= current.version) throw new StoreError(`store root ${v} is older than root ${current.version}`)
+  if (v <= current.version)
+    throw new StoreError(`store root ${v} is older than root ${current.version}`)
   await trustFirst(signed)
   if ((await signers(current, signed)) < current.threshold) {
     throw new StoreError(`store root ${v} isn't signed by root ${current.version}'s keys`)
@@ -194,7 +222,9 @@ export function decodeRevocations(bytes: Uint8Array): Revocations {
             : tag === 3
               ? { kind: 'developer', key: r.fixed(32) }
               : (() => {
-                  throw new StoreError("the store's revocation list has an entry this app doesn't know")
+                  throw new StoreError(
+                    "the store's revocation list has an entry this app doesn't know"
+                  )
                 })()
       entries.push({ what, why: r.str8() })
     }
@@ -209,9 +239,18 @@ export function revocationsSigned(list: Revocations, root: Root): Promise<boolea
 }
 
 /** Why the store revoked this app, or null. */
-export function revoked(list: Revocations | null, id: string, version: number, developer: Uint8Array): string | null {
+export function revoked(
+  list: Revocations | null,
+  id: string,
+  version: number,
+  developer: Uint8Array
+): string | null {
   const hit = list?.entries.find(({ what }) =>
-    what.kind === 'app' ? what.id === id : what.kind === 'up to' ? what.id === id && version <= what.version : equal(what.key, developer)
+    what.kind === 'app'
+      ? what.id === id
+      : what.kind === 'up to'
+        ? what.id === id && version <= what.version
+        : equal(what.key, developer)
   )
   return hit?.why ?? null
 }
@@ -260,14 +299,38 @@ export const STORE_PATH = /^[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0
 
 function storeApp(e: Record<string, unknown>): StoreApp | null {
   const str = (k: string): string | null => (typeof e[k] === 'string' ? (e[k] as string) : null)
-  const num = (k: string): number | null => (Number.isSafeInteger(e[k]) && (e[k] as number) >= 0 ? (e[k] as number) : null)
-  const [id, name, label, description, path] = ['id', 'name', 'label', 'description', 'path'].map(str)
-  const [version, storageKib, memoryKib, bytes] = ['version', 'storage_kib', 'memory_kib', 'bytes'].map(num)
+  const num = (k: string): number | null =>
+    Number.isSafeInteger(e[k]) && (e[k] as number) >= 0 ? (e[k] as number) : null
+  const [id, name, label, description, path] = ['id', 'name', 'label', 'description', 'path'].map(
+    str
+  )
+  const [version, storageKib, memoryKib, bytes] = [
+    'version',
+    'storage_kib',
+    'memory_kib',
+    'bytes'
+  ].map(num)
   const developer = unhex(e.developer, 32)
   const hash = unhex(e.sha256, 32)
-  if (id === null || !APP_ID.test(id) || !name || label === null || description === null || !version) return null
+  if (
+    id === null ||
+    !APP_ID.test(id) ||
+    !name ||
+    label === null ||
+    description === null ||
+    !version
+  )
+    return null
   if (path === null || !STORE_PATH.test(path) || !path.endsWith('.maki')) return null
-  if (storageKib === null || memoryKib === null || !bytes || bytes > MAX_BUNDLE || !developer || !hash) return null
+  if (
+    storageKib === null ||
+    memoryKib === null ||
+    !bytes ||
+    bytes > MAX_BUNDLE ||
+    !developer ||
+    !hash
+  )
+    return null
   if (!Array.isArray(e.permissions) || typeof e.backup !== 'boolean') return null
   const permissions: StoreApp['permissions'] = []
   for (const p of e.permissions as unknown[]) {
@@ -281,8 +344,13 @@ function storeApp(e: Record<string, unknown>): StoreApp | null {
   const category = typeof e.category === 'string' && e.category.length <= 32 ? e.category : null
   const s = e.source as Record<string, unknown> | undefined
   const source =
-    s && typeof s === 'object' && typeof s.repo === 'string' && /^https:\/\/[^\s]+$/.test(s.repo) &&
-    typeof s.commit === 'string' && /^[0-9a-f]{40}$/.test(s.commit) && typeof s.path === 'string'
+    s &&
+    typeof s === 'object' &&
+    typeof s.repo === 'string' &&
+    /^https:\/\/[^\s]+$/.test(s.repo) &&
+    typeof s.commit === 'string' &&
+    /^[0-9a-f]{40}$/.test(s.commit) &&
+    typeof s.path === 'string'
       ? { repo: s.repo, commit: s.commit, path: s.path }
       : null
   let icon: Uint32Array | null = null
@@ -321,7 +389,12 @@ export function sourcePage(source: NonNullable<StoreApp['source']>): string {
 }
 
 /** The index, if `root`'s catalogue key signed it and it hasn't expired (`nowS`: unix seconds). */
-export async function checkIndex(root: Root, file: Uint8Array, signature: Uint8Array, nowS: number): Promise<Index> {
+export async function checkIndex(
+  root: Root,
+  file: Uint8Array,
+  signature: Uint8Array,
+  nowS: number
+): Promise<Index> {
   if (signature.length !== 64 || !(await verify(root.catalogue, INDEX_DOMAIN, file, signature))) {
     throw new StoreError("the store's index isn't signed by the maki store")
   }
@@ -331,15 +404,24 @@ export async function checkIndex(root: Root, file: Uint8Array, signature: Uint8A
   } catch {
     throw new StoreError("the store's index isn't JSON")
   }
-  if (json.format !== 1) throw new StoreError(`the store's index is format ${String(json.format)}, newer than this app reads`)
+  if (json.format !== 1)
+    throw new StoreError(
+      `the store's index is format ${String(json.format)}, newer than this app reads`
+    )
   const version = json.version
   const expires = json.expires
-  if (!Number.isSafeInteger(version) || !Number.isSafeInteger(expires) || !Array.isArray(json.apps)) {
+  if (
+    !Number.isSafeInteger(version) ||
+    !Number.isSafeInteger(expires) ||
+    !Array.isArray(json.apps)
+  ) {
     throw new StoreError("the store's index is missing its version, expiry or apps")
   }
   if ((expires as number) <= nowS) {
     const when = new Date((expires as number) * 1000).toLocaleDateString()
-    throw new StoreError(`the store's index expired on ${when}, so it may be out of date: try again later`)
+    throw new StoreError(
+      `the store's index expired on ${when}, so it may be out of date: try again later`
+    )
   }
   const apps: StoreApp[] = []
   let skipped = 0
@@ -431,18 +513,25 @@ export class Store {
       taken = next
     }
     const nowS = Math.floor(this.now().getTime() / 1000)
-    if (root.catalogueExpires <= nowS) throw new StoreError("the store's signing key has expired: update maki desktop")
-    const [file, signature] = await Promise.all([this.source.get('index.json'), this.source.get('index.sig')])
+    if (root.catalogueExpires <= nowS)
+      throw new StoreError("the store's signing key has expired: update maki desktop")
+    const [file, signature] = await Promise.all([
+      this.source.get('index.json'),
+      this.source.get('index.sig')
+    ])
     if (!file || !signature) throw new StoreError('the store has no index')
     const index = await checkIndex(root, file, signature, nowS)
     if (index.version < kept.indexVersion) {
-      throw new StoreError(`the store's index is older than one seen before (${index.version}, not ${kept.indexVersion}): try again later`)
+      throw new StoreError(
+        `the store's index is older than one seen before (${index.version}, not ${kept.indexVersion}): try again later`
+      )
     }
     const listFile = await this.source.get('revocations.bin')
     let list: Revocations | null = null
     if (listFile) {
       list = decodeRevocations(listFile)
-      if (!(await revocationsSigned(list, root))) throw new StoreError("the store's revocation list isn't signed by the maki store")
+      if (!(await revocationsSigned(list, root)))
+        throw new StoreError("the store's revocation list isn't signed by the maki store")
     }
     await this.keeper.save({ root: taken ?? kept.root, indexVersion: index.version })
     this.root = root
@@ -460,7 +549,8 @@ export class Store {
     if (!this.root) return { locked: false, notes: [] }
     let r: StoreUpdate = await client.storeUpdate()
     if (r.status === 'locked') return { locked: true, notes: [] }
-    if (r.status !== 'approved') return { locked: false, notes: [`maki can't take the store's records: ${r.status}`] }
+    if (r.status !== 'approved')
+      return { locked: false, notes: [`maki can't take the store's records: ${r.status}`] }
     const notes: string[] = []
     let rooted = false
     for (let v = r.state.root + 1; v <= this.root.version; v++) {
@@ -468,7 +558,10 @@ export class Store {
       if (!bytes) return { locked: false, notes: [...notes, `the store has no root ${v}`] }
       r = await client.storeUpdate(bytes)
       if (r.status !== 'approved') {
-        return { locked: r.status === 'locked', notes: [...notes, `maki didn't take the store's root ${v}: ${r.reason || r.status}`] }
+        return {
+          locked: r.status === 'locked',
+          notes: [...notes, `maki didn't take the store's root ${v}: ${r.reason || r.status}`]
+        }
       }
       notes.push(`maki took the store's root ${v}`)
       rooted = true
@@ -493,7 +586,12 @@ export class Store {
       throw new StoreError(`${app.name} from the store isn't what its index says`)
     }
     const b = readBundle(bytes)
-    if (b.manifest.id !== app.id || b.manifest.version !== app.version || !equal(b.developer, app.developer) || !b.stamp) {
+    if (
+      b.manifest.id !== app.id ||
+      b.manifest.version !== app.version ||
+      !equal(b.developer, app.developer) ||
+      !b.stamp
+    ) {
       throw new StoreError(`${app.name} from the store isn't what its index says`)
     }
     return b

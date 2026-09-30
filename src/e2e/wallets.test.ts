@@ -245,48 +245,51 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, Monero', () => {
   }, 180_000)
 })
 
-describe.skipIf(!E2E || !FAKE_BUILT || !MAKI_STORE_THERE)('the Wallets page, on a maki without the apps', () => {
-  let fake: { port: number; proc: ChildProcess }
-  let home = ''
+describe.skipIf(!E2E || !FAKE_BUILT || !MAKI_STORE_THERE)(
+  'the Wallets page, on a maki without the apps',
+  () => {
+    let fake: { port: number; proc: ChildProcess }
+    let home = ''
 
-  beforeAll(async () => {
-    build()
-    fake = await startFake()
-    home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
-  }, 180_000)
-  afterAll(() => {
-    fake?.proc.kill()
-    if (home) rmSync(home, { recursive: true, force: true })
-  })
+    beforeAll(async () => {
+      build()
+      fake = await startFake()
+      home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
+    }, 180_000)
+    afterAll(() => {
+      fake?.proc.kill()
+      if (home) rmSync(home, { recursive: true, force: true })
+    })
 
-  it('offers the Bitcoin app from the maki store, and has the account once maki installs it', async () => {
-    // the test phrase's first address (BIP84's vector) holds 50,000 satoshis, on a stand-in chain
-    const chain = pretendChain('bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', 50_000)
-    const esplora = await serveEsplora(chain.esplora)
-    let said = ''
-    try {
-      said = await driveApp(
-        home,
-        fake.port,
-        [
-          ...['--click', 'Wallets', '--until', 'Bitcoin app isn’t installed'],
-          ...['--click', 'Add Bitcoin', '--gone', 'Bitcoin app isn’t installed'],
-          ...['--click', 'Add from maki', '--until', '0.0005']
-        ],
-        { MAKI_STORE, MAKI_ESPLORA: esplora.url }
-      )
-    } finally {
-      esplora.close()
-    }
-    // the account's coin, from the stand-in chain
-    expect(said).toMatch(/0\.0005/)
-    const t = await TcpTransport.open(fake.port)
-    try {
-      const apps = (await new MakiClient(t).appList()).apps
-      // from the store, as the store's
-      expect(apps.map((a) => [a.id, a.fromStore])).toContainEqual([BITCOIN_APP, true])
-    } finally {
-      await t.close()
-    }
-  }, 180_000)
-})
+    it('offers the Bitcoin app from the maki store, and has the account once maki installs it', async () => {
+      // the test phrase's first address (BIP84's vector) holds 50,000 satoshis, on a stand-in chain
+      const chain = pretendChain('bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', 50_000)
+      const esplora = await serveEsplora(chain.esplora)
+      let said = ''
+      try {
+        said = await driveApp(
+          home,
+          fake.port,
+          [
+            ...['--click', 'Wallets', '--until', 'Bitcoin app isn’t installed'],
+            ...['--click', 'Add Bitcoin', '--gone', 'Bitcoin app isn’t installed'],
+            ...['--click', 'Add from maki', '--until', '0.0005']
+          ],
+          { MAKI_STORE, MAKI_ESPLORA: esplora.url }
+        )
+      } finally {
+        esplora.close()
+      }
+      // the account's coin, from the stand-in chain
+      expect(said).toMatch(/0\.0005/)
+      const t = await TcpTransport.open(fake.port)
+      try {
+        const apps = (await new MakiClient(t).appList()).apps
+        // from the store, as the store's
+        expect(apps.map((a) => [a.id, a.fromStore])).toContainEqual([BITCOIN_APP, true])
+      } finally {
+        await t.close()
+      }
+    }, 180_000)
+  }
+)

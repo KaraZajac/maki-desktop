@@ -2,7 +2,14 @@ import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { storeSource } from '../main/store-source'
 import type { Transport } from './client'
-import { DEV_STORE, DEV_STORE_THERE, FAKE_BUILT, FAKE_NAME, startFake, TcpTransport as Tcp } from './test-support'
+import {
+  DEV_STORE,
+  DEV_STORE_THERE,
+  FAKE_BUILT,
+  FAKE_NAME,
+  startFake,
+  TcpTransport as Tcp
+} from './test-support'
 import { Link, PROBE_TIMEOUT_MS } from './link'
 import { TimeState } from './protocol'
 import { Store } from './store'

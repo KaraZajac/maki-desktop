@@ -92,7 +92,11 @@ export class MakiClient {
   }
 
   /** Send one request and wait for its reply. Requests may overlap; replies find them by id. */
-  async request(kind: number, body: Uint8Array = new Uint8Array(), timeoutMs = 5000): Promise<Packet> {
+  async request(
+    kind: number,
+    body: Uint8Array = new Uint8Array(),
+    timeoutMs = 5000
+  ): Promise<Packet> {
     const id = this.nextId
     this.nextId = this.nextId === 0xffff ? 1 : this.nextId + 1
     const reply = new Promise<Packet>((resolve, reject) => {
@@ -112,7 +116,9 @@ export class MakiClient {
       throw new MakiError(r.u8(), r.str8())
     }
     if (packet.kind !== (kind | Kind.REPLY)) {
-      throw new Error(`expected reply 0x${(kind | Kind.REPLY).toString(16)}, got 0x${packet.kind.toString(16)}`)
+      throw new Error(
+        `expected reply 0x${(kind | Kind.REPLY).toString(16)}, got 0x${packet.kind.toString(16)}`
+      )
     }
     return packet
   }
@@ -147,7 +153,10 @@ export class MakiClient {
     return challenges
   }
 
-  async timeProof(tzOffsetS: number, answers: { id: number; response: Uint8Array }[]): Promise<ProofResult> {
+  async timeProof(
+    tzOffsetS: number,
+    answers: { id: number; response: Uint8Array }[]
+  ): Promise<ProofResult> {
     const w = new Writer().i32(tzOffsetS).u8(answers.length)
     for (const a of answers) w.u8(a.id).bytes16(a.response)
     // verifying three Ed25519 chains takes the badge a moment
@@ -167,16 +176,40 @@ export class MakiClient {
   static readonly INSTALL_TIMEOUT_MS = 330_000
 
   /** Ask maki for the login saved for `site`; the owner approves on maki's screen. */
-  async getLogin(site: string): Promise<{ approval: ApprovalValue; username: string; password: string }> {
-    const r = new Reader((await this.request(Kind.GET_LOGIN, new Writer().str8(site).finish(), MakiClient.APPROVAL_TIMEOUT_MS)).body)
-    const out = { approval: Approval[r.u8()] ?? 'unavailable', username: r.str8(), password: r.str8() }
+  async getLogin(
+    site: string
+  ): Promise<{ approval: ApprovalValue; username: string; password: string }> {
+    const r = new Reader(
+      (
+        await this.request(
+          Kind.GET_LOGIN,
+          new Writer().str8(site).finish(),
+          MakiClient.APPROVAL_TIMEOUT_MS
+        )
+      ).body
+    )
+    const out = {
+      approval: Approval[r.u8()] ?? 'unavailable',
+      username: r.str8(),
+      password: r.str8()
+    }
     r.end()
     return out
   }
 
   /** Ask maki for the current code for `site`. */
-  async getTotp(site: string): Promise<{ approval: ApprovalValue; code: string; validForS: number }> {
-    const r = new Reader((await this.request(Kind.GET_TOTP, new Writer().str8(site).finish(), MakiClient.APPROVAL_TIMEOUT_MS)).body)
+  async getTotp(
+    site: string
+  ): Promise<{ approval: ApprovalValue; code: string; validForS: number }> {
+    const r = new Reader(
+      (
+        await this.request(
+          Kind.GET_TOTP,
+          new Writer().str8(site).finish(),
+          MakiClient.APPROVAL_TIMEOUT_MS
+        )
+      ).body
+    )
     const out = { approval: Approval[r.u8()] ?? 'unavailable', code: r.str8(), validForS: r.u8() }
     r.end()
     return out
@@ -185,7 +218,9 @@ export class MakiClient {
   /** Offer maki a login to keep; the owner approves on maki's screen. */
   async saveLogin(site: string, username: string, password: string): Promise<ApprovalValue> {
     const body = new Writer().str8(site).str8(username).str8(password).finish()
-    const r = new Reader((await this.request(Kind.SAVE_LOGIN, body, MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const r = new Reader(
+      (await this.request(Kind.SAVE_LOGIN, body, MakiClient.APPROVAL_TIMEOUT_MS)).body
+    )
     const approval = Approval[r.u8()] ?? 'unavailable'
     r.end()
     return approval
@@ -201,14 +236,17 @@ export class MakiClient {
     let total = 0
     do {
       // the first piece seals a fresh backup, which takes maki a moment
-      const r = new Reader((await this.request(Kind.BACKUP_GET, new Writer().u32(offset).finish(), 20_000)).body)
+      const r = new Reader(
+        (await this.request(Kind.BACKUP_GET, new Writer().u32(offset).finish(), 20_000)).body
+      )
       const status = Approval[r.u8()] ?? 'unavailable'
       total = r.u32()
       const at = r.u32()
       const piece = r.bytes16()
       r.end()
       if (status !== 'approved') return { status, data: new Uint8Array() }
-      if (at !== offset || (piece.length === 0 && offset < total)) return { status: 'unavailable', data: new Uint8Array() }
+      if (at !== offset || (piece.length === 0 && offset < total))
+        return { status: 'unavailable', data: new Uint8Array() }
       parts.push(piece)
       offset += piece.length
     } while (offset < total)
@@ -223,12 +261,17 @@ export class MakiClient {
 
   /** Send a backup back to maki; the owner approves the restore on maki's screen. Passkeys are
    * matched by credential ID; maki keeps what it has. */
-  async restore(blob: Uint8Array): Promise<{ approval: ApprovalValue; logins: number; codes: number; passkeys: number }> {
-    for (let offset = 0; offset < blob.length || offset === 0; ) {
+  async restore(
+    blob: Uint8Array
+  ): Promise<{ approval: ApprovalValue; logins: number; codes: number; passkeys: number }> {
+    for (let offset = 0; offset < blob.length || offset === 0;) {
       const piece = blob.subarray(offset, offset + BACKUP_PIECE)
       const last = offset + piece.length >= blob.length
       const body = new Writer().u32(blob.length).u32(offset).bytes16(piece).finish()
-      const r = new Reader((await this.request(Kind.BACKUP_PUT, body, last ? MakiClient.APPROVAL_TIMEOUT_MS : 10_000)).body)
+      const r = new Reader(
+        (await this.request(Kind.BACKUP_PUT, body, last ? MakiClient.APPROVAL_TIMEOUT_MS : 10_000))
+          .body
+      )
       const done = r.u8() === 1
       const approval = Approval[r.u8()] ?? 'unavailable'
       const logins = r.u16()
@@ -246,7 +289,9 @@ export class MakiClient {
   async appList(): Promise<{ status: ApprovalValue; apps: InstalledApp[] }> {
     const apps: InstalledApp[] = []
     for (let index = 0; ; index++) {
-      const r = new Reader((await this.request(Kind.APP_LIST, new Writer().u32(index).finish())).body)
+      const r = new Reader(
+        (await this.request(Kind.APP_LIST, new Writer().u32(index).finish())).body
+      )
       const status = Approval[r.u8()] ?? 'unavailable'
       const count = r.u32()
       const present = r.u8() === 1
@@ -290,11 +335,14 @@ export class MakiClient {
    * installs it if they say so. Refused ones come back with maki's reason.
    */
   async appInstall(bundle: Uint8Array): Promise<{ approval: ApprovalValue; reason: string }> {
-    for (let offset = 0; offset < bundle.length; ) {
+    for (let offset = 0; offset < bundle.length;) {
       const piece = bundle.subarray(offset, offset + APP_PIECE)
       const last = offset + piece.length >= bundle.length
       const body = new Writer().u32(bundle.length).u32(offset).bytes16(piece).finish()
-      const r = new Reader((await this.request(Kind.APP_INSTALL, body, last ? MakiClient.INSTALL_TIMEOUT_MS : 10_000)).body)
+      const r = new Reader(
+        (await this.request(Kind.APP_INSTALL, body, last ? MakiClient.INSTALL_TIMEOUT_MS : 10_000))
+          .body
+      )
       const done = r.u8() === 1
       const approval = Approval[r.u8()] ?? 'unavailable'
       const reason = r.str8()
@@ -307,7 +355,15 @@ export class MakiClient {
 
   /** Remove an app and its data, once the owner says so on maki ('no match' if there's no such app). */
   async appRemove(id: string): Promise<ApprovalValue> {
-    const r = new Reader((await this.request(Kind.APP_REMOVE, new Writer().str8(id).finish(), MakiClient.APPROVAL_TIMEOUT_MS)).body)
+    const r = new Reader(
+      (
+        await this.request(
+          Kind.APP_REMOVE,
+          new Writer().str8(id).finish(),
+          MakiClient.APPROVAL_TIMEOUT_MS
+        )
+      ).body
+    )
     const approval = Approval[r.u8()] ?? 'unavailable'
     r.end()
     return approval
@@ -325,7 +381,8 @@ export class MakiClient {
     message: Uint8Array,
     timeoutMs = MakiClient.APPROVAL_TIMEOUT_MS
   ): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
-    if (message.length > MAX_APP_MESSAGE) throw new Error(`messages to apps are at most ${MAX_APP_MESSAGE} bytes`)
+    if (message.length > MAX_APP_MESSAGE)
+      throw new Error(`messages to apps are at most ${MAX_APP_MESSAGE} bytes`)
     const body = new Writer().str8(id).bytes16(message).finish()
     const r = new Reader((await this.request(Kind.APP_MESSAGE, body, timeoutMs)).body)
     const status = Approval[r.u8()] ?? 'unavailable'
@@ -340,8 +397,9 @@ export class MakiClient {
    * 'approved': taken (or nothing sent); 'refused' with maki's reason; 'locked'; 'unavailable'.
    */
   async storeUpdate(record: Uint8Array = new Uint8Array()): Promise<StoreUpdate> {
-    if (record.length > MAX_STORE_RECORD) throw new Error(`store records are at most ${MAX_STORE_RECORD / 1024} KiB`)
-    for (let offset = 0; ; ) {
+    if (record.length > MAX_STORE_RECORD)
+      throw new Error(`store records are at most ${MAX_STORE_RECORD / 1024} KiB`)
+    for (let offset = 0; ;) {
       const piece = record.subarray(offset, offset + STORE_PIECE)
       const body = new Writer().u32(record.length).u32(offset).bytes16(piece).finish()
       const r = new Reader((await this.request(Kind.STORE_UPDATE, body, 10_000)).body)
@@ -358,7 +416,10 @@ export class MakiClient {
 
   /** The host's own clock. Refused (false) once the badge holds a verified time. */
   async timeUnverified(utcMs: number, tzOffsetS: number): Promise<boolean> {
-    const r = new Reader((await this.request(Kind.TIME_UNVERIFIED, new Writer().u64(utcMs).i32(tzOffsetS).finish())).body)
+    const r = new Reader(
+      (await this.request(Kind.TIME_UNVERIFIED, new Writer().u64(utcMs).i32(tzOffsetS).finish()))
+        .body
+    )
     const refused = r.u8()
     r.end()
     return refused === 0
@@ -433,7 +494,11 @@ export interface SyncReport {
  * Set the badge's clock: signed Roughtime answers if enough servers reply, otherwise this
  * computer's clock, which the badge marks as unverified (and refuses over a verified one).
  */
-export async function syncTime(client: MakiClient, relay: Relay, tzOffsetS = localTzOffsetS()): Promise<SyncReport> {
+export async function syncTime(
+  client: MakiClient,
+  relay: Relay,
+  tzOffsetS = localTzOffsetS()
+): Promise<SyncReport> {
   const challenges = await client.timeChallenge()
   const settled = await Promise.allSettled(challenges.map((c) => relay(c.host, c.port, c.request)))
   const answers = challenges.flatMap((c, i) => {

@@ -22,7 +22,9 @@ describe.skipIf(!FAKE_BUILT)('backups', () => {
     const [a, ta] = await client()
     for (let i = 0; i < 40; i++) {
       // enough to take more than one piece
-      expect(await a.saveLogin(`site${i}.example.com`, `user${i}`, 'x'.repeat(200))).toBe('approved')
+      expect(await a.saveLogin(`site${i}.example.com`, `user${i}`, 'x'.repeat(200))).toBe(
+        'approved'
+      )
     }
     const { status, data } = await a.backup()
     expect(status).toBe('approved')
@@ -31,16 +33,31 @@ describe.skipIf(!FAKE_BUILT)('backups', () => {
 
     const [b, tb] = await client()
     expect((await b.getLogin('site7.example.com')).approval).toBe('no match')
-    expect(await b.restore(data)).toEqual({ approval: 'approved', logins: 40, codes: 0, passkeys: 0 })
-    expect(await b.getLogin('site7.example.com')).toMatchObject({ approval: 'approved', username: 'user7' })
+    expect(await b.restore(data)).toEqual({
+      approval: 'approved',
+      logins: 40,
+      codes: 0,
+      passkeys: 0
+    })
+    expect(await b.getLogin('site7.example.com')).toMatchObject({
+      approval: 'approved',
+      username: 'user7'
+    })
     // nothing new the second time: nothing to ask about
-    expect(await b.restore(data)).toEqual({ approval: 'approved', logins: 0, codes: 0, passkeys: 0 })
+    expect(await b.restore(data)).toEqual({
+      approval: 'approved',
+      logins: 0,
+      codes: 0,
+      passkeys: 0
+    })
     await tb.close()
   }, 60_000)
 
   it('refuses what isn’t a backup of its own, and restores nothing the owner refuses', async () => {
     const [a, ta] = await client(['--deny'])
-    expect(await a.restore(new TextEncoder().encode('not a backup'))).toMatchObject({ approval: 'not yours' })
+    expect(await a.restore(new TextEncoder().encode('not a backup'))).toMatchObject({
+      approval: 'not yours'
+    })
     await ta.close()
   })
 })
@@ -49,7 +66,10 @@ describe.skipIf(!FAKE_BUILT)('the link keeps backups', () => {
   it('backs up on linking, and restores to another maki', async () => {
     const { Link } = await import('./link')
     const kept: Uint8Array[] = []
-    const store = { save: async (d: Uint8Array) => void kept.push(d), latest: async () => kept.at(-1) ?? null }
+    const store = {
+      save: async (d: Uint8Array) => void kept.push(d),
+      latest: async () => kept.at(-1) ?? null
+    }
     const offline = async (): Promise<never> => {
       throw new Error('offline')
     }
@@ -57,7 +77,13 @@ describe.skipIf(!FAKE_BUILT)('the link keeps backups', () => {
     const link = new Link(offline, undefined, store)
     link.autoSync = false
     expect(await link.attach(await TcpTransport.open(a.port), 'fake maki')).toBe(true)
-    await link.fromBrowser({ id: 1, type: 'saveLogin', site: 'github.com', username: 'kara', password: 'pw' })
+    await link.fromBrowser({
+      id: 1,
+      type: 'saveLogin',
+      site: 'github.com',
+      username: 'kara',
+      password: 'pw'
+    })
     expect(await link.backupNow()).toBe(true)
     expect(kept).toHaveLength(1)
     link.drop()

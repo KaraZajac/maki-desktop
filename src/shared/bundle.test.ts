@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { BundleError, fingerprint, formatPath, iconPixels, readBundle, walletCoins } from './bundle'
 import { APP_FIXTURES, APP_FIXTURES_THERE } from './test-support'
 
-const fixture = (name: string): Uint8Array => new Uint8Array(readFileSync(join(APP_FIXTURES, `${name}.maki`)))
+const fixture = (name: string): Uint8Array =>
+  new Uint8Array(readFileSync(join(APP_FIXTURES, `${name}.maki`)))
 
 describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
   it('read as maki reads them', async () => {
@@ -38,21 +39,32 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
     expect(btc.api).toBe(3)
     expect(btc.permissions.map((p) => p.permission.name)).toEqual(['link', 'camera', 'wallet'])
     // native SegWit, taproot and multisig (BIP48), on bitcoin and the test networks
-    expect(btc.wallet!.paths.map(formatPath)).toEqual(["m/84'/0'", "m/86'/0'", "m/48'/0'", "m/84'/1'", "m/86'/1'", "m/48'/1'"])
+    expect(btc.wallet!.paths.map(formatPath)).toEqual([
+      "m/84'/0'",
+      "m/86'/0'",
+      "m/48'/0'",
+      "m/84'/1'",
+      "m/86'/1'",
+      "m/48'/1'"
+    ])
     expect(walletCoins(btc.wallet!.paths)).toEqual(['Bitcoin', 'test networks'])
     const eth = readBundle(fixture('ethereum')).manifest
     expect(eth.wallet!.paths.map(formatPath)).toEqual(["m/44'/60'"])
     expect(walletCoins(eth.wallet!.paths)).toEqual(['Ethereum'])
     const xmr = readBundle(fixture('monero')).manifest
-    expect([xmr.api, xmr.wallet!.paths.map(formatPath), walletCoins(xmr.wallet!.paths)]).toEqual([5, ["m/44'/128'"], ['Monero']])
+    expect([xmr.api, xmr.wallet!.paths.map(formatPath), walletCoins(xmr.wallet!.paths)]).toEqual([
+      5,
+      ["m/44'/128'"],
+      ['Monero']
+    ])
     // Solana's: Ed25519 keys (host API 6)
     const sol = readBundle(fixture('solana')).manifest
-    expect([sol.api, sol.wallet!.curve, sol.wallet!.paths.map(formatPath), walletCoins(sol.wallet!.paths)]).toEqual([
-      6,
-      'ed25519',
-      ["m/44'/501'"],
-      ['Solana']
-    ])
+    expect([
+      sol.api,
+      sol.wallet!.curve,
+      sol.wallet!.paths.map(formatPath),
+      walletCoins(sol.wallet!.paths)
+    ]).toEqual([6, 'ed25519', ["m/44'/501'"], ['Solana']])
     expect(btc.wallet!.curve).toBe('secp256k1')
     // an app without the permission has no paths
     expect(readBundle(fixture('dice')).manifest.wallet).toBeNull()

@@ -20,8 +20,11 @@ export async function saveBackup(data: Uint8Array): Promise<void> {
   await writeFile(join(dir, 'latest.makibak'), data, { mode: 0o600 })
   const day = new Date().toISOString().slice(0, 10)
   await writeFile(join(dir, `maki-${day}.makibak`), data, { mode: 0o600 })
-  const daily = (await readdir(dir)).filter((f) => /^maki-\d{4}-\d{2}-\d{2}\.makibak$/.test(f)).sort()
-  for (const old of daily.slice(0, Math.max(0, daily.length - KEEP_DAYS))) await rm(join(dir, old), { force: true })
+  const daily = (await readdir(dir))
+    .filter((f) => /^maki-\d{4}-\d{2}-\d{2}\.makibak$/.test(f))
+    .sort()
+  for (const old of daily.slice(0, Math.max(0, daily.length - KEEP_DAYS)))
+    await rm(join(dir, old), { force: true })
 }
 
 export async function latestBackup(): Promise<Uint8Array | null> {

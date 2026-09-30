@@ -14,7 +14,9 @@ async function tryPort(link: Link, port: SerialPort): Promise<void> {
   }
   if (!(await link.attach(transport, 'USB', { probe: true }))) {
     notMaki.add(port)
-    link.note('a Baochip device on USB didn’t answer as maki (stock DC34 firmware?); leaving it alone')
+    link.note(
+      'a Baochip device on USB didn’t answer as maki (stock DC34 firmware?); leaving it alone'
+    )
   }
 }
 

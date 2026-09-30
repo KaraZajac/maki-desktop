@@ -21,7 +21,14 @@ import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from '.
 import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
-import { BitcoinApp, EthereumApp, MoneroApp, SolanaApp, type MoneroNetworkValue, type MoneroOutput } from './wallet-apps'
+import {
+  BitcoinApp,
+  EthereumApp,
+  MoneroApp,
+  SolanaApp,
+  type MoneroNetworkValue,
+  type MoneroOutput
+} from './wallet-apps'
 import type { MultisigWallet } from './multisig'
 import { memorySolStore, Solana, type SolRpc, type SolStore } from './solana'
 import { SolWallet } from './sol-wallet'
@@ -49,8 +56,7 @@ export interface BackupStore {
 export type Via = 'USB' | 'fake maki'
 
 export type LinkState =
-  | { linked: false }
-  | { linked: true; via: Via; hello: Hello; status: Status & { at: number } }
+  { linked: false } | { linked: true; via: Via; hello: Hello; status: Status & { at: number } }
 
 export class Link {
   state: LinkState = { linked: false }
@@ -98,14 +104,25 @@ export class Link {
     private relay: Relay,
     private now: () => Date = () => new Date(),
     private backups: BackupStore | null = null,
-    eth: { rpc: Rpc; store: EthStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memoryStore() },
-    sol: { rpc: SolRpc; store: SolStore } = { rpc: async () => Promise.reject(new ProviderError(4900, 'no network')), store: memorySolStore() }
+    eth: { rpc: Rpc; store: EthStore } = {
+      rpc: async () => Promise.reject(new ProviderError(4900, 'no network')),
+      store: memoryStore()
+    },
+    sol: { rpc: SolRpc; store: SolStore } = {
+      rpc: async () => Promise.reject(new ProviderError(4900, 'no network')),
+      store: memorySolStore()
+    }
   ) {
-    const send = (app: string, message: Uint8Array, timeoutMs?: number) => this.appMessage(app, message, timeoutMs)
+    const send = (app: string, message: Uint8Array, timeoutMs?: number) =>
+      this.appMessage(app, message, timeoutMs)
     this.bitcoin = new BitcoinApp(send)
     this.ethereumApp = new EthereumApp(send)
     this.monero = new MoneroApp(send)
-    this.ethereum = new Ethereum(() => (this.state.linked ? this.ethereumApp : null), eth.rpc, eth.store)
+    this.ethereum = new Ethereum(
+      () => (this.state.linked ? this.ethereumApp : null),
+      eth.rpc,
+      eth.store
+    )
     this.ethWallet = new EthWallet(this.ethereum, eth.rpc)
     this.nostr = new Nostr(send)
     this.solanaApp = new SolanaApp(send)
@@ -196,7 +213,13 @@ export class Link {
         return true
       }
       if (!quiet || !(status === 'locked' || status === 'no phrase')) {
-        this.note(status === 'locked' ? 'no backup: maki is locked' : status === 'no phrase' ? 'no backup: maki has no recovery phrase yet' : `no backup: ${status}`)
+        this.note(
+          status === 'locked'
+            ? 'no backup: maki is locked'
+            : status === 'no phrase'
+              ? 'no backup: maki has no recovery phrase yet'
+              : `no backup: ${status}`
+        )
       }
       return false
     } catch (e) {
@@ -323,7 +346,10 @@ export class Link {
   }
 
   /** Install a .maki bundle, once the owner has gone through it on maki's screen. */
-  async appInstall(name: string, bundle: Uint8Array): Promise<{ approval: ApprovalValue; reason: string }> {
+  async appInstall(
+    name: string,
+    bundle: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string }> {
     const client = this.linkedClient()
     this.note(`${name}: go through it on maki to install`)
     const r = await client.appInstall(bundle)
@@ -341,7 +367,11 @@ export class Link {
    * A message for an app on maki with the link permission, and its answer. Not logged: what an
    * app and the software talking to it say is theirs.
    */
-  async appMessage(id: string, message: Uint8Array, timeoutMs?: number): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
+  async appMessage(
+    id: string,
+    message: Uint8Array,
+    timeoutMs?: number
+  ): Promise<{ status: ApprovalValue; answer: Uint8Array }> {
     return this.linkedClient().appMessage(id, message, timeoutMs)
   }
 
@@ -362,7 +392,11 @@ export class Link {
     this.linkedClient()
     this.note('sharing the Bitcoin account: approve on maki')
     const r = await this.bitcoin.account(network, account)
-    this.note(r.approval === 'approved' ? 'Bitcoin account shared' : `Bitcoin account: ${Link.walletSays(r.approval, 'Bitcoin')}`)
+    this.note(
+      r.approval === 'approved'
+        ? 'Bitcoin account shared'
+        : `Bitcoin account: ${Link.walletSays(r.approval, 'Bitcoin')}`
+    )
     return r.approval === 'approved' ? { zpub: r.zpub, descriptor: r.descriptor } : null
   }
 
@@ -403,7 +437,10 @@ export class Link {
    * Put a Monero address on maki's screen (account 0's `index`: 0 is the primary address); the
    * owner says whether it matches this computer's.
    */
-  async moneroAddress(network: MoneroNetworkValue, index: number): Promise<{ approval: ApprovalValue; address: string }> {
+  async moneroAddress(
+    network: MoneroNetworkValue,
+    index: number
+  ): Promise<{ approval: ApprovalValue; address: string }> {
     this.linkedClient()
     const which = index === 0 ? 'Monero primary address' : `Monero subaddress #${index}`
     this.note(`${which} is on maki's screen: compare it`)
@@ -425,7 +462,11 @@ export class Link {
     this.linkedClient()
     this.note('watching the Monero wallet: approve on maki')
     const r = await this.monero.watch(network)
-    this.note(r.approval === 'approved' ? 'this computer watches the Monero wallet' : `Monero: ${Link.walletSays(r.approval, 'Monero')}`)
+    this.note(
+      r.approval === 'approved'
+        ? 'this computer watches the Monero wallet'
+        : `Monero: ${Link.walletSays(r.approval, 'Monero')}`
+    )
     return r
   }
 
@@ -433,7 +474,11 @@ export class Link {
   async moneroKeyImages(
     outputs: MoneroOutput[],
     progress?: (done: number) => void
-  ): Promise<{ approval: ApprovalValue; reason: string; images: { image: Uint8Array; proof: Uint8Array }[] }> {
+  ): Promise<{
+    approval: ApprovalValue
+    reason: string
+    images: { image: Uint8Array; proof: Uint8Array }[]
+  }> {
     this.linkedClient()
     const r = await this.monero.keyImages(outputs, progress)
     this.note(
@@ -471,7 +516,11 @@ export class Link {
     this.linkedClient()
     this.note('sharing maki’s multisig key: approve on maki')
     const r = await this.bitcoin.cosigner(network)
-    this.note(r.approval === 'approved' ? 'multisig key shared' : `multisig key: ${Link.walletSays(r.approval, 'Bitcoin')}`)
+    this.note(
+      r.approval === 'approved'
+        ? 'multisig key shared'
+        : `multisig key: ${Link.walletSays(r.approval, 'Bitcoin')}`
+    )
     return r.approval === 'approved' ? r.key : null
   }
 
@@ -503,7 +552,11 @@ export class Link {
   }
 
   /** A multisig wallet's address on maki's screen, to compare with this computer's. */
-  async btcMultisigAddress(id: string, change: boolean, index: number): Promise<{ approval: ApprovalValue; address: string }> {
+  async btcMultisigAddress(
+    id: string,
+    change: boolean,
+    index: number
+  ): Promise<{ approval: ApprovalValue; address: string }> {
     this.linkedClient()
     this.note('address on maki’s screen: compare it with your wallet software’s')
     return this.bitcoin.multisigAddress(id, change, index)
@@ -540,15 +593,24 @@ export class Link {
    */
   async fromBrowser(request: BridgeRequest): Promise<BridgeResult> {
     if (request.type === 'status') {
-      return { type: 'status', linked: this.state.linked, timeState: this.state.linked ? this.state.status.timeState : null }
+      return {
+        type: 'status',
+        linked: this.state.linked,
+        timeState: this.state.linked ? this.state.status.timeState : null
+      }
     }
     if (request.type === 'eth') return this.fromSite(request.site, request.method, request.params)
-    if (request.type === 'sol') return this.fromSolSite(request.site, request.method, request.params)
+    if (request.type === 'sol')
+      return this.fromSolSite(request.site, request.method, request.params)
     if (request.type === 'nostr') {
       // a page's promise rejects with the reason, as NIP-07 pages expect: nothing is thrown past here
       try {
-        if (request.method === 'signEvent') this.note(`${request.site} asked to sign a Nostr event: see maki`)
-        return { type: 'nostr', result: await this.nostr.request(request.site, request.method, request.params) }
+        if (request.method === 'signEvent')
+          this.note(`${request.site} asked to sign a Nostr event: see maki`)
+        return {
+          type: 'nostr',
+          result: await this.nostr.request(request.site, request.method, request.params)
+        }
       } catch (e) {
         return { type: 'nostr', error: { message: (e as Error).message } }
       }
@@ -585,7 +647,10 @@ export class Link {
         this.note(`${request.site}: save ${approval}`)
         if (approval === 'approved' && this.backups) {
           if (this.backupSoon) clearTimeout(this.backupSoon)
-          this.backupSoon = setTimeout(() => void this.backupNow({ quiet: true }), BACKUP_AFTER_SAVE_MS)
+          this.backupSoon = setTimeout(
+            () => void this.backupNow({ quiet: true }),
+            BACKUP_AFTER_SAVE_MS
+          )
         }
         return { type: 'saveLogin', approval }
       }
@@ -607,10 +672,16 @@ export class Link {
     if (asks) this.note(`${site} ${asks}: approve on maki`)
     try {
       const result = await this.ethereum.request(site, method, params)
-      if (asks) this.note(`${site}: ${method === 'eth_sendTransaction' ? `sent, ${String(result)}` : 'done'}`)
+      if (asks)
+        this.note(
+          `${site}: ${method === 'eth_sendTransaction' ? `sent, ${String(result)}` : 'done'}`
+        )
       return { type: 'eth', result }
     } catch (e) {
-      const error = e instanceof ProviderError ? { code: e.code, message: e.message } : { code: -32603, message: (e as Error).message }
+      const error =
+        e instanceof ProviderError
+          ? { code: e.code, message: e.message }
+          : { code: -32603, message: (e as Error).message }
       if (asks) this.note(`${site}: ${error.message}`)
       return { type: 'eth', error }
     }
@@ -625,16 +696,27 @@ export class Link {
   }
 
   /** A request from a site's Solana wallet (the extension's). Its errors go back to the page as they are. */
-  private async fromSolSite(site: string, method: string, params: unknown[]): Promise<BridgeResult> {
-    const quiet = method === 'connect' && (params[0] as { silent?: unknown } | undefined)?.silent === true
+  private async fromSolSite(
+    site: string,
+    method: string,
+    params: unknown[]
+  ): Promise<BridgeResult> {
+    const quiet =
+      method === 'connect' && (params[0] as { silent?: unknown } | undefined)?.silent === true
     const asks = quiet ? undefined : Link.SOL_ASKS[method]
     if (asks) this.note(`${site} ${asks}: approve on maki`)
     try {
       const result = await this.solana.request(site, method, params)
-      if (asks) this.note(`${site}: ${method === 'signAndSendTransaction' ? `sent, ${(result as { signature: string }).signature}` : 'done'}`)
+      if (asks)
+        this.note(
+          `${site}: ${method === 'signAndSendTransaction' ? `sent, ${(result as { signature: string }).signature}` : 'done'}`
+        )
       return { type: 'sol', result }
     } catch (e) {
-      const error = e instanceof ProviderError ? { code: e.code, message: e.message } : { code: -32603, message: (e as Error).message }
+      const error =
+        e instanceof ProviderError
+          ? { code: e.code, message: e.message }
+          : { code: -32603, message: (e as Error).message }
       if (asks) this.note(`${site}: ${error.message}`)
       return { type: 'sol', error }
     }

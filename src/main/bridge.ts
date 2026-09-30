@@ -55,8 +55,13 @@ export async function forWindow(request: BridgeRequest): Promise<BridgeRequest> 
   if (request.type === 'installBundle') throw new Error('malformed request')
   if (request.type !== 'install') return request
   if (!isAbsolute(request.path)) throw new Error('give the bundle’s full path')
-  if ((await stat(request.path)).size > 512 * 1024) throw new Error('that file is bigger than any app maki takes (512 KiB)')
-  return { id: request.id, type: 'installBundle', data: new Uint8Array(await readFile(request.path)) }
+  if ((await stat(request.path)).size > 512 * 1024)
+    throw new Error('that file is bigger than any app maki takes (512 KiB)')
+  return {
+    id: request.id,
+    type: 'installBundle',
+    data: new Uint8Array(await readFile(request.path))
+  }
 }
 
 /** One JSON object per line in both directions; requests may overlap. */
@@ -84,7 +89,10 @@ export function serveBridge(handler: Handler, path = socketPath()): Promise<Serv
         let id = -1
         try {
           const parsed: unknown = JSON.parse(line)
-          id = typeof (parsed as { id?: unknown })?.id === 'number' ? (parsed as { id: number }).id : -1
+          id =
+            typeof (parsed as { id?: unknown })?.id === 'number'
+              ? (parsed as { id: number }).id
+              : -1
           request = parseRequest(parsed)
         } catch {
           /* not JSON */

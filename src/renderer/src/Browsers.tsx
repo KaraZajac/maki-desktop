@@ -5,12 +5,17 @@ import { Badge, Button, Card, Field, Glyph, Label, Segmented } from './ui'
 
 /** What a browser's row says under its name. */
 function detail(b: BrowserStatus): string {
-  const parts = [b.family === 'firefox' ? 'Takes the Firefox extension' : 'Takes the Chrome extension']
+  const parts = [
+    b.family === 'firefox' ? 'Takes the Firefox extension' : 'Takes the Chrome extension'
+  ]
   if (b.kind === 'flatpak') parts.push('a Flatpak: maki desktop shares one folder with its sandbox')
   if (b.kind === 'custom') parts.push('added by its folder')
-  if (b.shares.length) parts.push(`connected together with ${b.shares.join(' and ')}, which read the same place`)
-  if (b.restart) parts.push(`restart ${b.name} to finish: it was running before it could reach maki desktop`)
-  else if (!b.registered && b.system) parts.push('it only looks in a system folder, so connecting asks for your admin password')
+  if (b.shares.length)
+    parts.push(`connected together with ${b.shares.join(' and ')}, which read the same place`)
+  if (b.restart)
+    parts.push(`restart ${b.name} to finish: it was running before it could reach maki desktop`)
+  else if (!b.registered && b.system)
+    parts.push('it only looks in a system folder, so connecting asks for your admin password')
   return parts.join('; ') + '.'
 }
 
@@ -90,7 +95,9 @@ export function BrowsersCard({ link }: { link: Link }): React.JSX.Element {
             the extension there.
           </p>
           {view === null ? null : view.browsers.length === 0 ? (
-            <p className="mt-4 text-sm text-overlay1">No browser this list knows is on this computer.</p>
+            <p className="mt-4 text-sm text-overlay1">
+              No browser this list knows is on this computer.
+            </p>
           ) : (
             <ul className="mt-4 divide-y divide-surface0 rounded-xl border border-surface0 bg-crust/40">
               {view.browsers.map((b) => (
@@ -175,7 +182,12 @@ export function BrowsersCard({ link }: { link: Link }): React.JSX.Element {
                   under ~/.var/app, and maki desktop shares one folder with its sandbox.
                 </p>
                 <div className="flex gap-2">
-                  <Button small kind="primary" disabled={!name.trim() || busy !== null} onClick={() => void add()}>
+                  <Button
+                    small
+                    kind="primary"
+                    disabled={!name.trim() || busy !== null}
+                    onClick={() => void add()}
+                  >
                     {busy === 'add' ? 'Connecting…' : 'Choose its folder…'}
                   </Button>
                   <Button small onClick={() => setAdding(false)}>

@@ -29,7 +29,10 @@ import { DEV_STORE, DEV_STORE_THERE, MAKI_STORE, MAKI_STORE_THERE } from './test
 const NOW = new Date(1_790_600_000_000)
 
 /** A source that changes what it hands out: `change(path, bytes)` returns what to hand instead. */
-function changed(source: StoreSource, change: (path: string, bytes: Uint8Array | null) => Uint8Array | null): StoreSource {
+function changed(
+  source: StoreSource,
+  change: (path: string, bytes: Uint8Array | null) => Uint8Array | null
+): StoreSource {
   return { get: async (path) => change(path, await source.get(path)) }
 }
 
@@ -67,7 +70,9 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     ])
     // what they may do, from their manifests, as the store's grid shows it
     const status = apps.find((a) => a.name === 'Status')!
-    expect((await store.bundle(status)).manifest.permissions.map((p) => p.permission.name)).toEqual(['link'])
+    expect((await store.bundle(status)).manifest.permissions.map((p) => p.permission.name)).toEqual(
+      ['link']
+    )
     const pomodoro = apps.find((a) => a.name === 'Pomodoro')!
     expect(pomodoro.source?.repo).toBe('https://github.com/KaraZajac/maki-firmware')
     expect(pomodoro.source?.commit).toMatch(/^[0-9a-f]{40}$/)
@@ -86,7 +91,10 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     expect([solana.api, solana.wallet?.curve]).toEqual([6, 'ed25519'])
     // Sudo asks after pages on maki's review screen (host API 7)
     const sudo = (await store.bundle(apps.find((a) => a.name === 'Sudo')!)).manifest
-    expect([sudo.api, sudo.permissions.map((p) => p.permission.name)]).toEqual([7, ['ask', 'link', 'keys']])
+    expect([sudo.api, sudo.permissions.map((p) => p.permission.name)]).toEqual([
+      7,
+      ['ask', 'link', 'keys']
+    ])
   })
 })
 
@@ -94,7 +102,9 @@ describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
   const source = (): StoreSource => storeSource(DEV_STORE)
 
   it('is where the firmware starts: this app carries the same first root', () => {
-    expect(Buffer.from(fromBase64(FIRST_ROOT)!)).toEqual(readFileSync(join(DEV_STORE, 'roots/1.bin')))
+    expect(Buffer.from(fromBase64(FIRST_ROOT)!)).toEqual(
+      readFileSync(join(DEV_STORE, 'roots/1.bin'))
+    )
   })
 
   it('checks out: root 2 replaces root 1, and its catalogue key signed the index and the revocation list', async () => {
@@ -113,7 +123,9 @@ describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
     expect(sensors.permissions.map((p) => p.permission.name)).toEqual(['camera', 'motion'])
     expect(sensors.icon).toHaveLength(128)
     expect(store.revocations?.version).toBe(1)
-    expect(revoked(store.revocations, 'com.leviathan.maki.tally', 1, new Uint8Array(32))).toMatch(/revokes Tally/)
+    expect(revoked(store.revocations, 'com.leviathan.maki.tally', 1, new Uint8Array(32))).toMatch(
+      /revokes Tally/
+    )
     expect(revoked(store.revocations, 'com.leviathan.maki.tally', 2, new Uint8Array(32))).toBeNull()
     // it keeps root 2 and the index's version
     const kept = await keeper.load()
@@ -143,8 +155,12 @@ describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
         c[at] ^= 1
         return c
       })
-    await expect(new Store(flip('index.json', 20), memoryKeeper(), () => NOW).refresh()).rejects.toThrow(/isn't signed/)
-    await expect(new Store(flip('revocations.bin', 20), memoryKeeper(), () => NOW).refresh()).rejects.toThrow(/isn't signed/)
+    await expect(
+      new Store(flip('index.json', 20), memoryKeeper(), () => NOW).refresh()
+    ).rejects.toThrow(/isn't signed/)
+    await expect(
+      new Store(flip('revocations.bin', 20), memoryKeeper(), () => NOW).refresh()
+    ).rejects.toThrow(/isn't signed/)
     // root 2's last signature: one of its keys too few
     const root2 = readFileSync(join(DEV_STORE, 'roots/2.bin'))
     const store = new Store(flip('roots/2.bin', root2.length - 1), memoryKeeper(), () => NOW)
@@ -153,14 +169,20 @@ describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
 
     const seen = memoryKeeper()
     await seen.save({ root: null, indexVersion: 1000 })
-    await expect(new Store(source(), seen, () => NOW).refresh()).rejects.toThrow(/older than one seen before/)
+    await expect(new Store(source(), seen, () => NOW).refresh()).rejects.toThrow(
+      /older than one seen before/
+    )
   })
 
   it("won't use an index past its expiry", async () => {
     const store = new Store(source(), memoryKeeper(), () => NOW)
     await store.refresh()
-    const [file, sig] = ['index.json', 'index.sig'].map((f) => new Uint8Array(readFileSync(join(DEV_STORE, f))))
-    await expect(checkIndex(store.root!, file, sig, store.index!.expires)).rejects.toThrow(/expired/)
+    const [file, sig] = ['index.json', 'index.sig'].map(
+      (f) => new Uint8Array(readFileSync(join(DEV_STORE, f)))
+    )
+    await expect(checkIndex(store.root!, file, sig, store.index!.expires)).rejects.toThrow(
+      /expired/
+    )
     // and root 1's catalogue key didn't sign it
     const root1 = await trustFirst(decodeRoot(fromBase64(FIRST_ROOT)!))
     await expect(checkIndex(root1, file, sig, 0)).rejects.toThrow(StoreError)
@@ -179,7 +201,9 @@ describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
   })
 
   it('has sideloaded bundles without a stamp', () => {
-    const plain = readBundle(new Uint8Array(readFileSync(join(DEV_STORE, '../../maki-wasm/tests/fixtures/dice.maki'))))
+    const plain = readBundle(
+      new Uint8Array(readFileSync(join(DEV_STORE, '../../maki-wasm/tests/fixtures/dice.maki')))
+    )
     expect(plain.stamp).toBeNull()
   })
 })
@@ -212,7 +236,10 @@ function rootBody(r: Root): Uint8Array {
 
 function signRoot(r: Root, by: Key[]): Uint8Array {
   const body = rootBody(r)
-  const message = Buffer.concat([Buffer.from('maki store root v1\0'), createHash('sha256').update(body).digest()])
+  const message = Buffer.concat([
+    Buffer.from('maki store root v1\0'),
+    createHash('sha256').update(body).digest()
+  ])
   const sigs = by.map((k) => Buffer.concat([k.public, edSign(null, message, k.private)]))
   return new Uint8Array(Buffer.concat([body, Buffer.from([sigs.length]), ...sigs]))
 }
@@ -230,24 +257,38 @@ describe('store roots', () => {
   it('need their threshold of their own keys', async () => {
     expect((await trustFirst(decodeRoot(signRoot(root(1), [k1, k3])))).version).toBe(1)
     for (const by of [[k1], [k1, k1], [k1, k4]]) {
-      await expect(trustFirst(decodeRoot(signRoot(root(1), by)))).rejects.toThrow(/isn't signed by its own keys/)
+      await expect(trustFirst(decodeRoot(signRoot(root(1), by)))).rejects.toThrow(
+        /isn't signed by its own keys/
+      )
     }
-    await expect(trustFirst(decodeRoot(signRoot(root(1, [k1, k2, k3], 4), [k1, k2, k3])))).rejects.toThrow(/threshold/)
-    await expect(trustFirst(decodeRoot(signRoot(root(1, [k1, k1, k2]), [k1, k2])))).rejects.toThrow(/a key twice/)
+    await expect(
+      trustFirst(decodeRoot(signRoot(root(1, [k1, k2, k3], 4), [k1, k2, k3])))
+    ).rejects.toThrow(/threshold/)
+    await expect(trustFirst(decodeRoot(signRoot(root(1, [k1, k1, k2]), [k1, k2])))).rejects.toThrow(
+      /a key twice/
+    )
   })
 
   it('replace another only when its keys and their own both signed, and only going forward', async () => {
     const current = root(1)
     const next = root(2, [k4, k5, k6])
     expect((await replaces(decodeRoot(signRoot(next, [k1, k2, k4, k5])), current)).version).toBe(2)
-    await expect(replaces(decodeRoot(signRoot(next, [k4, k5])), current)).rejects.toThrow(/isn't signed by root 1's keys/)
-    await expect(replaces(decodeRoot(signRoot(next, [k1, k2])), current)).rejects.toThrow(/its own keys/)
-    await expect(replaces(decodeRoot(signRoot(root(1), [k1, k2])), current)).rejects.toThrow(/older/)
+    await expect(replaces(decodeRoot(signRoot(next, [k4, k5])), current)).rejects.toThrow(
+      /isn't signed by root 1's keys/
+    )
+    await expect(replaces(decodeRoot(signRoot(next, [k1, k2])), current)).rejects.toThrow(
+      /its own keys/
+    )
+    await expect(replaces(decodeRoot(signRoot(root(1), [k1, k2])), current)).rejects.toThrow(
+      /older/
+    )
   })
 
   it("aren't anything else", () => {
     expect(() => decodeRoot(new TextEncoder().encode('MAKIROOT'))).toThrow(/cut short/)
     expect(() => decodeRoot(new TextEncoder().encode('MAKIROOT\x02'))).toThrow(/format 2/)
-    expect(() => decodeRevocations(new TextEncoder().encode('not a list at all'))).toThrow(/not a store/)
+    expect(() => decodeRevocations(new TextEncoder().encode('not a list at all'))).toThrow(
+      /not a store/
+    )
   })
 })

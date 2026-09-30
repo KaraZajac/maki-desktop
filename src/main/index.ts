@@ -1,11 +1,28 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  session,
+  shell,
+  Tray
+} from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync, writeSync } from 'node:fs'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import { fromBase64, toBase64, type BridgeRequest, type BridgeResult, type BrowserFamily } from '../shared/bridge-types'
+import {
+  fromBase64,
+  toBase64,
+  type BridgeRequest,
+  type BridgeResult,
+  type BrowserFamily
+} from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { SOL_NETWORKS, type SolState } from '../shared/solana'
 import { polite } from '../shared/polite'
@@ -63,20 +80,30 @@ if (offscreen) {
   // Chromium writes the last of it as it shuts down, after this process's own exit handlers: a
   // watcher sweeps it up once the process is gone, crashed or not
   if (process.env['MAKI_OFFSCREEN_KEEP'] !== '1' && process.platform !== 'win32') {
-    spawn('sh', ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.5; done; rm -rf "$0"`, scratch], {
-      detached: true,
-      stdio: 'ignore'
-    }).unref()
+    spawn(
+      'sh',
+      ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.5; done; rm -rf "$0"`, scratch],
+      {
+        detached: true,
+        stdio: 'ignore'
+      }
+    ).unref()
   }
 }
 
 const resource = (name: string): string => join(app.getAppPath(), 'resources', name)
 
 /** How to start this app again: an AppImage runs from a temporary mount, so use the file itself. */
-const launch = (): Launch => ({ exe: process.env['APPIMAGE'] ?? process.execPath, appPath: app.isPackaged ? null : app.getAppPath() })
+const launch = (): Launch => ({
+  exe: process.env['APPIMAGE'] ?? process.execPath,
+  appPath: app.isPackaged ? null : app.getAppPath()
+})
 
 /** Browser requests waiting on the window, which owns the link. */
-const fromBrowser = new Map<number, (r: { ok: true; result: BridgeResult } | { ok: false; error: string }) => void>()
+const fromBrowser = new Map<
+  number,
+  (r: { ok: true; result: BridgeResult } | { ok: false; error: string }) => void
+>()
 let nextBrowserRequest = 1
 
 async function askWindow(request: BridgeRequest): Promise<BridgeResult> {
@@ -129,7 +156,12 @@ function showWindow(): void {
 
 function trayStatus(): string {
   if (!link.linked) return 'Looking for maki…'
-  const time = link.timeState === 2 ? 'time verified' : link.timeState === 1 ? 'time unverified' : 'time not set'
+  const time =
+    link.timeState === 2
+      ? 'time verified'
+      : link.timeState === 1
+        ? 'time unverified'
+        : 'time not set'
   return `maki linked · ${time}`
 }
 
@@ -143,7 +175,11 @@ async function refreshTray(): Promise<void> {
       { label: trayStatus(), enabled: false },
       { type: 'separator' },
       { label: 'Show maki', click: showWindow },
-      { label: 'Sync time now', enabled: link.linked, click: () => win?.webContents.send('tray:sync') },
+      {
+        label: 'Sync time now',
+        enabled: link.linked,
+        click: () => win?.webContents.send('tray:sync')
+      },
       { type: 'separator' },
       {
         label: 'Start at login',
@@ -169,7 +205,9 @@ function allowSerial(): void {
     event.preventDefault()
     callback(ours(webContents) && ports.length > 0 ? ports[0].portId : '')
   })
-  session.defaultSession.setPermissionCheckHandler((wc, permission) => permission === 'serial' && ours(wc))
+  session.defaultSession.setPermissionCheckHandler(
+    (wc, permission) => permission === 'serial' && ours(wc)
+  )
   session.defaultSession.setDevicePermissionHandler((details) => details.deviceType === 'serial')
 }
 
@@ -181,10 +219,17 @@ function ipc(): void {
     link = report
     void refreshTray()
   })
-  ipcMain.on('browser:response', (_e, key: number, response: { ok: true; result: BridgeResult } | { ok: false; error: string }) => {
-    fromBrowser.get(key)?.(response)
-    fromBrowser.delete(key)
-  })
+  ipcMain.on(
+    'browser:response',
+    (
+      _e,
+      key: number,
+      response: { ok: true; result: BridgeResult } | { ok: false; error: string }
+    ) => {
+      fromBrowser.get(key)?.(response)
+      fromBrowser.delete(key)
+    }
+  )
   ipcMain.handle('backups:save', (_e, data: Uint8Array) => saveBackup(data))
   ipcMain.handle('backups:latest', () => latestBackup())
   ipcMain.handle('backups:info', () => backupInfo())
@@ -205,12 +250,17 @@ function ipc(): void {
   ipcMain.handle('browsers:remove', (_e, id: string) => removeCustomBrowser(id))
   // sudo: maki's sudo plugin, set up (and taken away) as root, for this user
   const sudoPlugin = (): string =>
-    app.isPackaged ? join(process.resourcesPath, 'maki_sudo.so') : join(app.getAppPath(), 'sudo/target/release/libmaki_sudo.so')
+    app.isPackaged
+      ? join(process.resourcesPath, 'maki_sudo.so')
+      : join(app.getAppPath(), 'sudo/target/release/libmaki_sudo.so')
   ipcMain.handle('sudo:status', () => sudoStatus())
   ipcMain.handle('sudo:on', async (_e, key: unknown, name: unknown) => {
     if (typeof key !== 'string') throw new Error('no key from maki')
     const plugin = sudoPlugin()
-    if (!existsSync(plugin)) throw new Error('this maki desktop was built without its sudo plugin: cargo build --release, in sudo/')
+    if (!existsSync(plugin))
+      throw new Error(
+        'this maki desktop was built without its sudo plugin: cargo build --release, in sudo/'
+      )
     await sudoOn(plugin, key, typeof name === 'string' ? name : null, userInfo().username, pkexec)
     return sudoStatus()
   })
@@ -230,13 +280,18 @@ function ipc(): void {
     })
     if (r.canceled || r.filePaths.length === 0) return null
     const path = r.filePaths[0]
-    if ((await stat(path)).size > 64 * 1024) throw new Error('that file is too big to be a multisig wallet')
+    if ((await stat(path)).size > 64 * 1024)
+      throw new Error('that file is too big to be a multisig wallet')
     return { path, text: await readFile(path, 'utf8') }
   })
   // maki's multisig key, as the file Coldcard exports one in, for Sparrow
   ipcMain.handle('btc:saveText', async (_e, name: unknown, text: unknown) => {
-    if (typeof name !== 'string' || typeof text !== 'string' || !/^[\w.-]{1,64}$/.test(name)) throw new Error('not a file to save')
-    const r = await dialog.showSaveDialog(win!, { defaultPath: join(app.getPath('home'), name), title: 'Save maki’s multisig key' })
+    if (typeof name !== 'string' || typeof text !== 'string' || !/^[\w.-]{1,64}$/.test(name))
+      throw new Error('not a file to save')
+    const r = await dialog.showSaveDialog(win!, {
+      defaultPath: join(app.getPath('home'), name),
+      title: 'Save maki’s multisig key'
+    })
     if (r.canceled || !r.filePath) return null
     await writeFile(r.filePath, text)
     return r.filePath
@@ -253,7 +308,8 @@ function ipc(): void {
     if (r.canceled || r.filePaths.length === 0) return null
     const path = r.filePaths[0]
     // base64 of maki's largest PSBT (512 KiB) is under 700 KiB
-    if ((await stat(path)).size > 1024 * 1024) throw new Error('that file is too big to be a PSBT maki takes')
+    if ((await stat(path)).size > 1024 * 1024)
+      throw new Error('that file is too big to be a PSBT maki takes')
     return { path, data: new Uint8Array(await readFile(path)) }
   })
   ipcMain.handle('ssh:socket', () => agentSocketPath())
@@ -268,7 +324,8 @@ function ipc(): void {
     })
     if (r.canceled || r.filePaths.length === 0) return null
     const path = r.filePaths[0]
-    if ((await stat(path)).size > 512 * 1024) throw new Error('that file is bigger than any app maki takes (512 KiB)')
+    if ((await stat(path)).size > 512 * 1024)
+      throw new Error('that file is bigger than any app maki takes (512 KiB)')
     return { path, data: new Uint8Array(await readFile(path)) }
   })
   ipcMain.handle('wallet:save', async (_e, defaultPath: string, data: Uint8Array) => {
@@ -293,11 +350,15 @@ function ipc(): void {
     const o = v as EthState | null
     const strings = (r: unknown): boolean =>
       typeof r === 'object' && r !== null && Object.values(r).every((x) => typeof x === 'string')
-    return o && strings(o.connected) && strings(o.chains) ? { connected: o.connected, chains: o.chains } : null
+    return o && strings(o.connected) && strings(o.chains)
+      ? { connected: o.connected, chains: o.chains }
+      : null
   }
   ipcMain.handle('eth:load', async () => {
     try {
-      return ethState(JSON.parse(await readFile(ethFile(), 'utf8'))) ?? { connected: {}, chains: {} }
+      return (
+        ethState(JSON.parse(await readFile(ethFile(), 'utf8'))) ?? { connected: {}, chains: {} }
+      )
     } catch {
       return { connected: {}, chains: {} }
     }
@@ -313,7 +374,9 @@ function ipc(): void {
     // its servers in turn: the next when one can't be reached, not when one answers "no";
     // MAKI_ETH_RPC (tests) is a server to use instead, for every network
     let unreachable = ''
-    const servers = process.env['MAKI_ETH_RPC'] ? [process.env['MAKI_ETH_RPC']] : [network.rpc, ...network.fallbacks]
+    const servers = process.env['MAKI_ETH_RPC']
+      ? [process.env['MAKI_ETH_RPC']]
+      : [network.rpc, ...network.fallbacks]
     for (const server of servers) {
       try {
         const res = await fetch(server, {
@@ -323,8 +386,17 @@ function ipc(): void {
           signal: AbortSignal.timeout(20_000)
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const body = (await res.json()) as { result?: unknown; error?: { code?: number; message?: string } }
-        if (body.error) return { error: { code: body.error.code ?? -32603, message: body.error.message ?? 'the network refused it' } }
+        const body = (await res.json()) as {
+          result?: unknown
+          error?: { code?: number; message?: string }
+        }
+        if (body.error)
+          return {
+            error: {
+              code: body.error.code ?? -32603,
+              message: body.error.message ?? 'the network refused it'
+            }
+          }
         return { result: body.result ?? null }
       } catch (e) {
         unreachable = (e as Error).message
@@ -336,7 +408,11 @@ function ipc(): void {
   const solFile = (): string => join(app.getPath('userData'), 'solana.json')
   const solState = (v: unknown): SolState | null => {
     const c = (v as SolState | null)?.connected
-    return typeof c === 'object' && c !== null && Object.values(c).every((x) => typeof x === 'string') ? { connected: c } : null
+    return typeof c === 'object' &&
+      c !== null &&
+      Object.values(c).every((x) => typeof x === 'string')
+      ? { connected: c }
+      : null
   }
   ipcMain.handle('sol:load', async () => {
     try {
@@ -354,7 +430,9 @@ function ipc(): void {
     const network = SOL_NETWORKS.find((n) => n.rpc === url)
     if (!network) return { error: { code: 4901, message: 'unknown network' } }
     let unreachable = ''
-    const servers = process.env['MAKI_SOL_RPC'] ? [process.env['MAKI_SOL_RPC']] : [network.rpc, ...network.fallbacks]
+    const servers = process.env['MAKI_SOL_RPC']
+      ? [process.env['MAKI_SOL_RPC']]
+      : [network.rpc, ...network.fallbacks]
     for (const server of servers) {
       try {
         const res = await fetch(server, {
@@ -364,8 +442,17 @@ function ipc(): void {
           signal: AbortSignal.timeout(20_000)
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const body = (await res.json()) as { result?: unknown; error?: { code?: number; message?: string } }
-        if (body.error) return { error: { code: body.error.code ?? -32603, message: body.error.message ?? 'the network refused it' } }
+        const body = (await res.json()) as {
+          result?: unknown
+          error?: { code?: number; message?: string }
+        }
+        if (body.error)
+          return {
+            error: {
+              code: body.error.code ?? -32603,
+              message: body.error.message ?? 'the network refused it'
+            }
+          }
         return { result: body.result ?? null }
       } catch (e) {
         unreachable = (e as Error).message
@@ -375,8 +462,12 @@ function ipc(): void {
   })
   // Bitcoin: mempool.space's Esplora API, for the wallet (only these paths, and a broadcast), and
   // the accounts' descriptors maki shared, kept so the balance shows without asking maki again
-  const ESPLORA = { bitcoin: 'https://mempool.space/api', test: 'https://mempool.space/testnet4/api' }
-  const ESPLORA_PATH = /^\/(address\/[a-zA-Z0-9]{14,90}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
+  const ESPLORA = {
+    bitcoin: 'https://mempool.space/api',
+    test: 'https://mempool.space/testnet4/api'
+  }
+  const ESPLORA_PATH =
+    /^\/(address\/[a-zA-Z0-9]{14,90}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
   // a wallet's first look can be a hundred requests, and mempool.space turns away bursts (and
   // then stops answering for a while): two a second, and a long wait when it asks for one.
   // MAKI_ESPLORA (tests, your own server) is an Esplora API to use instead, for both networks.
@@ -389,7 +480,8 @@ function ipc(): void {
     try {
       if (network !== 'bitcoin' && network !== 'test') throw new Error('which network?')
       const post = path === '/tx' && typeof body === 'string' && /^[0-9a-f]{20,800000}$/.test(body)
-      if (!post && (typeof path !== 'string' || !ESPLORA_PATH.test(path))) throw new Error('not something the wallet asks')
+      if (!post && (typeof path !== 'string' || !ESPLORA_PATH.test(path)))
+        throw new Error('not something the wallet asks')
       let res: Response
       try {
         res = await esplora(`${ownEsplora ?? ESPLORA[network]}${path}`, {
@@ -401,9 +493,17 @@ function ipc(): void {
         throw new Error('mempool.space can’t be reached')
       }
       const text = await res.text()
-      if (res.status === 429) throw new Error('mempool.space has had too many requests from this computer: try again in a minute')
+      if (res.status === 429)
+        throw new Error(
+          'mempool.space has had too many requests from this computer: try again in a minute'
+        )
       // Esplora says what's wrong in a line of text (a broadcast it turns down, say); anything else, just the status
-      if (!res.ok) throw new Error(/^[^<]{1,300}$/.test(text.trim()) ? `mempool.space: ${text.trim()}` : `mempool.space answered ${res.status}`)
+      if (!res.ok)
+        throw new Error(
+          /^[^<]{1,300}$/.test(text.trim())
+            ? `mempool.space: ${text.trim()}`
+            : `mempool.space answered ${res.status}`
+        )
       return { text }
     } catch (e) {
       return { error: (e as Error).message }
@@ -421,7 +521,12 @@ function ipc(): void {
       const res = await fetch(pricesUrl(c), { signal: AbortSignal.timeout(15_000) }).catch(() => {
         throw new Error('CoinGecko can’t be reached')
       })
-      if (!res.ok) throw new Error(res.status === 429 ? 'CoinGecko is busy: prices in a minute' : `CoinGecko answered ${res.status}`)
+      if (!res.ok)
+        throw new Error(
+          res.status === 429
+            ? 'CoinGecko is busy: prices in a minute'
+            : `CoinGecko answered ${res.status}`
+        )
       const prices = readPrices(await res.json(), c)
       priced.set(c, { at: Date.now(), prices })
       return { prices }
@@ -435,9 +540,17 @@ function ipc(): void {
   ipcMain.handle('age:install', () => installAgePlugin(launch()))
   ipcMain.handle('age:save', async (e, text: unknown) => {
     // only an identity file, as the window makes it from maki's recipient
-    if (typeof text !== 'string' || text.length > 1000 || !/^AGE-PLUGIN-MAKI-1[0-9A-Z]+$/m.test(text)) return null
+    if (
+      typeof text !== 'string' ||
+      text.length > 1000 ||
+      !/^AGE-PLUGIN-MAKI-1[0-9A-Z]+$/m.test(text)
+    )
+      return null
     const win = BrowserWindow.fromWebContents(e.sender)
-    const options = { defaultPath: join(app.getPath('home'), 'maki-age.txt'), title: 'Save your age identity' }
+    const options = {
+      defaultPath: join(app.getPath('home'), 'maki-age.txt'),
+      title: 'Save your age identity'
+    }
     const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
     if (r.canceled || !r.filePath) return null
     await writeFile(r.filePath, text, { mode: 0o600 })
@@ -446,9 +559,13 @@ function ipc(): void {
 
   // contacts: the people met, as vCards, where the owner says
   ipcMain.handle('contacts:save', async (e, text: unknown) => {
-    if (typeof text !== 'string' || text.length > 1_000_000 || !text.startsWith('BEGIN:VCARD')) return null
+    if (typeof text !== 'string' || text.length > 1_000_000 || !text.startsWith('BEGIN:VCARD'))
+      return null
     const win = BrowserWindow.fromWebContents(e.sender)
-    const options = { defaultPath: join(app.getPath('home'), 'maki-contacts.vcf'), title: 'Save the people you met' }
+    const options = {
+      defaultPath: join(app.getPath('home'), 'maki-contacts.vcf'),
+      title: 'Save the people you met'
+    }
     const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
     if (r.canceled || !r.filePath) return null
     await writeFile(r.filePath, text, { mode: 0o600 })
@@ -459,9 +576,17 @@ function ipc(): void {
   ipcMain.handle('gpg:status', () => scriptStatus(GPG_COMMAND, launch()))
   ipcMain.handle('gpg:install', () => installScript(GPG_COMMAND, launch()))
   ipcMain.handle('gpg:save', async (e, text: unknown) => {
-    if (typeof text !== 'string' || text.length > 100_000 || !text.startsWith('-----BEGIN PGP PUBLIC KEY BLOCK-----')) return null
+    if (
+      typeof text !== 'string' ||
+      text.length > 100_000 ||
+      !text.startsWith('-----BEGIN PGP PUBLIC KEY BLOCK-----')
+    )
+      return null
     const win = BrowserWindow.fromWebContents(e.sender)
-    const options = { defaultPath: join(app.getPath('home'), 'maki-openpgp.asc'), title: 'Save your OpenPGP public key' }
+    const options = {
+      defaultPath: join(app.getPath('home'), 'maki-openpgp.asc'),
+      title: 'Save your OpenPGP public key'
+    }
     const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
     if (r.canceled || !r.filePath) return null
     await writeFile(r.filePath, text)
@@ -479,7 +604,10 @@ function ipc(): void {
     // only a public key file, as the window makes it from maki's key
     if (typeof text !== 'string' || text.length > 200 || !parsePublicKey(text)) return null
     const win = BrowserWindow.fromWebContents(e.sender)
-    const options = { defaultPath: join(app.getPath('home'), 'minisign.pub'), title: 'Save your minisign public key' }
+    const options = {
+      defaultPath: join(app.getPath('home'), 'minisign.pub'),
+      title: 'Save your minisign public key'
+    }
     const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
     if (r.canceled || !r.filePath) return null
     await writeFile(r.filePath, text)
@@ -498,15 +626,19 @@ function ipc(): void {
   })
   ipcMain.handle('xmr:save', async (_e, state: unknown) => {
     const text = JSON.stringify(state)
-    if (typeof state !== 'object' || state === null || text.length > 64 * 1024 * 1024) throw new Error('not a Monero wallet state')
+    if (typeof state !== 'object' || state === null || text.length > 64 * 1024 * 1024)
+      throw new Error('not a Monero wallet state')
     await writeFile(xmrFile(), text, { mode: 0o600 })
   })
   // a Monero node, as maki desktop's wallet asks it (the page can't reach one itself): POST to
   // one of its paths, the answer's bytes; http for your own node, https or http for others
   ipcMain.handle('xmr:node', async (_e, url: unknown, path: unknown, body: unknown) => {
-    if (typeof url !== 'string' || !/^https?:\/\/[^\s/]+\/?$/.test(url)) throw new Error('not a node’s address')
-    if (typeof path !== 'string' || !/^\/[a-z_./]+$/.test(path)) throw new Error('not a node’s path')
-    if (typeof body !== 'string' && !(body instanceof Uint8Array)) throw new Error('nothing to send the node')
+    if (typeof url !== 'string' || !/^https?:\/\/[^\s/]+\/?$/.test(url))
+      throw new Error('not a node’s address')
+    if (typeof path !== 'string' || !/^\/[a-z_./]+$/.test(path))
+      throw new Error('not a node’s path')
+    if (typeof body !== 'string' && !(body instanceof Uint8Array))
+      throw new Error('nothing to send the node')
     const r = await fetch(`${url.replace(/\/$/, '')}${path}`, {
       method: 'POST',
       body,
@@ -523,21 +655,25 @@ function ipc(): void {
     })
     if (r.canceled || r.filePaths.length === 0) return null
     const path = r.filePaths[0]
-    if ((await stat(path)).size > 64 * 1024 * 1024) throw new Error('that file is too big to be one of the Monero GUI’s')
+    if ((await stat(path)).size > 64 * 1024 * 1024)
+      throw new Error('that file is too big to be one of the Monero GUI’s')
     return { path, data: new Uint8Array(await readFile(path)) }
   })
-  ipcMain.handle('xmr:saveFile', async (_e, title: unknown, defaultPath: unknown, data: unknown, keyImages: unknown) => {
-    if (!(data instanceof Uint8Array)) throw new Error('nothing to save')
-    const r = await dialog.showSaveDialog(win!, {
-      title: typeof title === 'string' ? title : 'Save',
-      defaultPath: typeof defaultPath === 'string' ? defaultPath : undefined
-    })
-    if (r.canceled || !r.filePath) return null
-    await writeFile(r.filePath, data)
-    // the Monero GUI imports a signed transaction's key images from beside it as it submits it
-    if (keyImages instanceof Uint8Array) await writeFile(`${r.filePath}_keyImages`, keyImages)
-    return r.filePath
-  })
+  ipcMain.handle(
+    'xmr:saveFile',
+    async (_e, title: unknown, defaultPath: unknown, data: unknown, keyImages: unknown) => {
+      if (!(data instanceof Uint8Array)) throw new Error('nothing to save')
+      const r = await dialog.showSaveDialog(win!, {
+        title: typeof title === 'string' ? title : 'Save',
+        defaultPath: typeof defaultPath === 'string' ? defaultPath : undefined
+      })
+      if (r.canceled || !r.filePath) return null
+      await writeFile(r.filePath, data)
+      // the Monero GUI imports a signed transaction's key images from beside it as it submits it
+      if (keyImages instanceof Uint8Array) await writeFile(`${r.filePath}_keyImages`, keyImages)
+      return r.filePath
+    }
+  )
 
   // NIP-46: the bunker's state (its own key, which only carries requests: the Nostr key is maki's)
   const nostrFile = (): string => join(app.getPath('userData'), 'nostr-bunker.json')
@@ -557,13 +693,17 @@ function ipc(): void {
   ipcMain.handle('btc:load', async () => {
     try {
       const kept = JSON.parse(await readFile(btcFile(), 'utf8')) as { descriptors?: unknown }
-      return Array.isArray(kept.descriptors) ? kept.descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300) : []
+      return Array.isArray(kept.descriptors)
+        ? kept.descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300)
+        : []
     } catch {
       return []
     }
   })
   ipcMain.handle('btc:save', async (_e, descriptors: unknown) => {
-    const list = Array.isArray(descriptors) ? descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300) : []
+    const list = Array.isArray(descriptors)
+      ? descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300)
+      : []
     await writeFile(btcFile(), JSON.stringify({ descriptors: list.slice(0, 8) }))
   })
 
@@ -574,11 +714,21 @@ function ipc(): void {
   const store = storeSource(where, token)
   const storeFile = (): string => join(app.getPath('userData'), 'store.json')
   // whether it may need a token: the renderer says so if the store can't be read
-  ipcMain.handle('store:where', () => ({ where, name: storeName(where), github: onGithub(where), token: token !== null }))
-  ipcMain.handle('store:get', (_e, path: unknown) => (store && typeof path === 'string' ? store.get(path) : null))
+  ipcMain.handle('store:where', () => ({
+    where,
+    name: storeName(where),
+    github: onGithub(where),
+    token: token !== null
+  }))
+  ipcMain.handle('store:get', (_e, path: unknown) =>
+    store && typeof path === 'string' ? store.get(path) : null
+  )
   ipcMain.handle('store:load', async () => {
     try {
-      const kept = JSON.parse(await readFile(storeFile(), 'utf8')) as { root?: unknown; indexVersion?: unknown }
+      const kept = JSON.parse(await readFile(storeFile(), 'utf8')) as {
+        root?: unknown
+        indexVersion?: unknown
+      }
       return {
         root: typeof kept.root === 'string' ? fromBase64(kept.root) : null,
         indexVersion: Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
@@ -595,7 +745,9 @@ function ipc(): void {
   ipcMain.handle('app:version', () => app.getVersion())
   // the notices beside the packaged app (electron-builder.yml), or the ones the build wrote
   ipcMain.handle('app:notices', async () => {
-    const notices = app.isPackaged ? join(process.resourcesPath, 'THIRD-PARTY-NOTICES.md') : join(app.getAppPath(), 'out', 'THIRD-PARTY-NOTICES.md')
+    const notices = app.isPackaged
+      ? join(process.resourcesPath, 'THIRD-PARTY-NOTICES.md')
+      : join(app.getAppPath(), 'out', 'THIRD-PARTY-NOTICES.md')
     const failed = await shell.openPath(notices)
     if (failed) throw new Error(failed)
   })
@@ -626,7 +778,9 @@ function ipc(): void {
     'dev:send',
     (_e, bytes: Uint8Array) =>
       new Promise<void>((resolve, reject) =>
-        devSocket ? devSocket.write(bytes, (err) => (err ? reject(err) : resolve())) : reject(new Error('not connected'))
+        devSocket
+          ? devSocket.write(bytes, (err) => (err ? reject(err) : resolve()))
+          : reject(new Error('not connected'))
       )
   )
   ipcMain.handle('dev:close', () => devSocket?.destroy())
@@ -699,7 +853,9 @@ if (process.argv.includes('--age-plugin-maki')) {
     allowSerial()
     ipc()
     createWindow()
-    serveBridge(askWindow).catch((e) => console.error(`browser bridge unavailable: ${(e as Error).message}`))
+    serveBridge(askWindow).catch((e) =>
+      console.error(`browser bridge unavailable: ${(e as Error).message}`)
+    )
     // browsers in a Flatpak sandbox, through the one folder shared with them: the extension's
     // requests only (browsers.ts)
     const sandboxed = browserSocketPath()

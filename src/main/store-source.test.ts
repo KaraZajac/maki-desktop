@@ -15,7 +15,14 @@ describe('the store source', () => {
     const source = storeSource(dir)
     expect(Array.from((await source.get('roots/1.bin'))!)).toEqual([1, 2, 3])
     expect(await source.get('roots/2.bin')).toBeNull()
-    for (const path of ['../maki-outside.txt', 'roots/../../maki-outside.txt', '/etc/passwd', 'roots//1.bin', '.hidden', 'a\\b']) {
+    for (const path of [
+      '../maki-outside.txt',
+      'roots/../../maki-outside.txt',
+      '/etc/passwd',
+      'roots//1.bin',
+      '.hidden',
+      'a\\b'
+    ]) {
       await expect(source.get(path)).rejects.toThrow('not a store path')
     }
   })
@@ -40,7 +47,7 @@ describe('the store source', () => {
     expect(storeName('/home/me/maki-apps/store')).toBe('/home/me/maki-apps/store')
   })
 
-  it('sends its token to GitHub\'s file server only', async () => {
+  it("sends its token to GitHub's file server only", async () => {
     const seen: { url: string; auth: string | null }[] = []
     const real = globalThis.fetch
     globalThis.fetch = (async (url: URL, init: RequestInit) => {

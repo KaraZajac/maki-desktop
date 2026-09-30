@@ -42,8 +42,21 @@ export const TimeState = { UNSET: 0, UNVERIFIED: 1, VERIFIED: 2 } as const
 export type TimeStateValue = (typeof TimeState)[keyof typeof TimeState]
 
 export const ProofStatus = { SET: 0, TOO_FEW_VERIFIED: 1, DISAGREE: 2 } as const
-export const AnswerStatus = ['verified', 'unknown server', 'duplicate', 'invalid', 'too imprecise'] as const
-export const ErrorCode = ['', 'malformed', 'unknown kind', 'no challenge', 'challenge expired', 'bad argument'] as const
+export const AnswerStatus = [
+  'verified',
+  'unknown server',
+  'duplicate',
+  'invalid',
+  'too imprecise'
+] as const
+export const ErrorCode = [
+  '',
+  'malformed',
+  'unknown kind',
+  'no challenge',
+  'challenge expired',
+  'bad argument'
+] as const
 export const Approval = [
   'approved',
   'denied',

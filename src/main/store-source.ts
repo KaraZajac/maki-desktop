@@ -49,20 +49,28 @@ export function storeName(where: string): string {
 function remote(where: string): URL | null {
   if (!/^[a-z]+:\/\//i.test(where)) return null
   const url = new URL(where.endsWith('/') ? where : `${where}/`)
-  const local = url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-  if (url.protocol !== 'https:' && !local) throw new Error('the maki store must be on https (or http on this computer)')
+  const local =
+    url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  if (url.protocol !== 'https:' && !local)
+    throw new Error('the maki store must be on https (or http on this computer)')
   return url
 }
 
 export function storeSource(where: string, token: string | null = null): StoreSource {
   const base = remote(where)
   const headers: Record<string, string> =
-    base && token && base.protocol === 'https:' && base.hostname === GITHUB_FILES ? { authorization: `token ${token}` } : {}
+    base && token && base.protocol === 'https:' && base.hostname === GITHUB_FILES
+      ? { authorization: `token ${token}` }
+      : {}
   return {
     async get(path: string): Promise<Uint8Array | null> {
       if (!STORE_PATH.test(path)) throw new Error(`not a store path: ${path}`)
       if (base) {
-        const r = await fetch(new URL(path, base), { redirect: 'error', headers, signal: AbortSignal.timeout(30_000) })
+        const r = await fetch(new URL(path, base), {
+          redirect: 'error',
+          headers,
+          signal: AbortSignal.timeout(30_000)
+        })
         if (r.status === 404) return null
         if (!r.ok) throw new Error(`the maki store answered ${r.status} for ${path}`)
         const length = Number(r.headers.get('content-length') ?? 0)
@@ -73,7 +81,8 @@ export function storeSource(where: string, token: string | null = null): StoreSo
       }
       const file = join(resolve(where), ...path.split('/'))
       try {
-        if ((await stat(file)).size > MAX_STORE_FILE) throw new Error(`${path} in the maki store is too big`)
+        if ((await stat(file)).size > MAX_STORE_FILE)
+          throw new Error(`${path} in the maki store is too big`)
         return new Uint8Array(await readFile(file))
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null

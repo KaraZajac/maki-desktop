@@ -11,7 +11,13 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { BtcAccount, Network } from './protocol'
 import { readPsbt, toBase64 } from './psbt'
-import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import {
+  APP_FIXTURES,
+  APP_FIXTURES_THERE,
+  FAKE_BUILT,
+  startFake,
+  TcpTransport
+} from './test-support'
 import { coldcardFile, looksLikeWallet, parseCosigner } from './multisig'
 import { BitcoinApp } from './wallet-apps'
 
@@ -108,9 +114,9 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the walle
     expect(a.descriptor).toMatch(
       /^tr\(\[73c5da0a\/86h\/0h\/0h\]xpub6BgBgses.*\/<0;1>\/\*\)#[a-z0-9]{8}$/
     )
-    expect(
-      (await maki.account(Network.TESTNET, BtcAccount.TAPROOT)).zpub.startsWith('tpub')
-    ).toBe(true)
+    expect((await maki.account(Network.TESTNET, BtcAccount.TAPROOT)).zpub.startsWith('tpub')).toBe(
+      true
+    )
     expect(await maki.address(Network.BITCOIN, false, 0, BtcAccount.TAPROOT)).toEqual({
       approval: 'approved',
       address: 'bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr'
@@ -143,10 +149,7 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the walle
     const r = await maki.sign(Network.TESTNET, fixture('abandon-unsigned.psbt'))
     expect(r.approval).toBe('refused')
     expect(r.reason).toMatch(/^input 0 isn't this wallet's/)
-    const garbage = await maki.sign(
-      Network.BITCOIN,
-      new TextEncoder().encode('psbt\xffnot really')
-    )
+    const garbage = await maki.sign(Network.BITCOIN, new TextEncoder().encode('psbt\xffnot really'))
     expect(garbage.approval).toBe('refused')
     expect(garbage.reason).toMatch(/^not a PSBT maki can read/)
   })
@@ -164,7 +167,11 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the walle
     const key = parseCosigner(cosigner.key)!
     expect(key).toMatchObject({ fingerprint: '73C5DA0A', path: "m/48'/1'/0'/2'" })
     expect(key.key.startsWith('Vpub5n95dMZrDHj6')).toBe(true)
-    expect(JSON.parse(coldcardFile(key).text)).toEqual({ p2wsh_deriv: "m/48'/1'/0'/2'", p2wsh: key.key, xfp: '73C5DA0A' })
+    expect(JSON.parse(coldcardFile(key).text)).toEqual({
+      p2wsh_deriv: "m/48'/1'/0'/2'",
+      p2wsh: key.key,
+      xfp: '73C5DA0A'
+    })
 
     // not added yet: its transactions aren't signed
     const unsigned = fixture('multisig-unsigned.psbt')
@@ -178,10 +185,18 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the walle
     const added = await maki.addMultisig(Network.TESTNET, '', file)
     expect(added).toMatchObject({ approval: 'approved', name: 'Family vault' })
     expect(added.id).toMatch(/^[0-9a-f]{8}$/)
-    const again = await maki.addMultisig(Network.TESTNET, 'x', new TextDecoder().decode(fixture('multisig.txt')))
+    const again = await maki.addMultisig(
+      Network.TESTNET,
+      'x',
+      new TextDecoder().decode(fixture('multisig.txt'))
+    )
     expect(again.id).toBe(added.id)
-    expect((await maki.multisigs()).wallets).toEqual([{ id: added.id, network: 1, threshold: 2, keys: 3, name: 'Family vault' }])
-    expect((await maki.multisigAddress(added.id, false, 0)).address).toMatch(/^tb1q[02-9ac-hj-np-z]{58}$/)
+    expect((await maki.multisigs()).wallets).toEqual([
+      { id: added.id, network: 1, threshold: 2, keys: 3, name: 'Family vault' }
+    ])
+    expect((await maki.multisigAddress(added.id, false, 0)).address).toMatch(
+      /^tb1q[02-9ac-hj-np-z]{58}$/
+    )
 
     // and now its transaction, signed exactly as the firmware signs it
     const r = await maki.sign(Network.TESTNET, unsigned)
@@ -191,7 +206,10 @@ describe.skipIf(!FAKE_BUILT || !HAVE_FIXTURES || !APP_FIXTURES_THERE)('the walle
 
   it('won’t add a wallet maki’s key isn’t in', async () => {
     const maki = await client()
-    const theirs = new TextDecoder().decode(fixture('multisig.txt')).split('#')[0].replace('73c5da0a/', '73c5da0b/')
+    const theirs = new TextDecoder()
+      .decode(fixture('multisig.txt'))
+      .split('#')[0]
+      .replace('73c5da0a/', '73c5da0b/')
     const r = await maki.addMultisig(Network.TESTNET, 'theirs', theirs)
     expect(r.approval).toBe('refused')
     expect(r.reason).toMatch(/isn't one of its keys/)

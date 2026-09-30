@@ -25,7 +25,15 @@ export type BridgeRequest =
   | { id: number; type: 'appMessage'; app: string; data: Uint8Array }
 
 /** What the browser extension may ask: the native messaging host passes on nothing else. */
-export const EXTENSION_REQUESTS = ['status', 'getLogin', 'getTotp', 'saveLogin', 'eth', 'nostr', 'sol'] as const
+export const EXTENSION_REQUESTS = [
+  'status',
+  'getLogin',
+  'getTotp',
+  'saveLogin',
+  'eth',
+  'nostr',
+  'sol'
+] as const
 
 export type BridgeResult =
   | { type: 'status'; linked: boolean; timeState: number | null }
@@ -42,13 +50,15 @@ export type BridgeResult =
   /** the app's answer, base64, when `status` is 'approved' */
   | { type: 'appMessage'; status: string; data: string }
 
-export type BridgeResponse = ({ id: number; ok: true } & BridgeResult) | { id: number; ok: false; error: string }
+export type BridgeResponse =
+  ({ id: number; ok: true } & BridgeResult) | { id: number; ok: false; error: string }
 
 /** maki's SSH app (the SDK's example `ssh`), which maki desktop's SSH agent talks to. */
 export const SSH_APP = 'com.leviathan.maki.ssh'
 
 /** An app ID as bundles have them: reverse-DNS, lower case. */
-export const APP_ID = /^(?=.{3,64}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+export const APP_ID =
+  /^(?=.{3,64}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
 
 export function toBase64(bytes: Uint8Array): string {
   let s = ''
@@ -130,7 +140,9 @@ export function parseRequest(value: unknown): BridgeRequest | null {
       const site = str('site', 253)
       const username = str('username')
       const password = str('password')
-      return site === null || username === null || password === null ? null : { id, type: 'saveLogin', site, username, password }
+      return site === null || username === null || password === null
+        ? null
+        : { id, type: 'saveLogin', site, username, password }
     }
     default:
       return null

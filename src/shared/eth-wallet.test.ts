@@ -20,7 +20,13 @@ import {
 import { toHex } from './rlp'
 import { tokensOn } from './tokens'
 import { ethStandIn as stand_in, signedBy } from './stand-ins'
-import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import {
+  APP_FIXTURES,
+  APP_FIXTURES_THERE,
+  FAKE_BUILT,
+  startFake,
+  TcpTransport
+} from './test-support'
 import { EthereumApp } from './wallet-apps'
 
 const ADDRESS = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
@@ -81,94 +87,101 @@ describe('addresses', () => {
   })
 })
 
-describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('the Ethereum wallet, with the fake maki', () => {
-  let fake: { port: number; proc: ChildProcess }
-  let maki: EthereumApp
-  let said = ''
-  beforeAll(async () => {
-    fake = await startFake(['--app', join(APP_FIXTURES, 'ethereum.maki')])
-    fake.proc.stdout!.on('data', (d: Buffer) => (said += d.toString()))
-    const client = new MakiClient(await TcpTransport.open(fake.port))
-    maki = new EthereumApp((app, message, timeoutMs) => client.appMessage(app, message, timeoutMs))
-  })
-  afterAll(() => fake?.proc.kill())
-
-  it('connects once the owner says so on maki, and reads what the account holds', async () => {
-    const net = stand_in()
-    const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
-    expect(await wallet.account()).toBeNull()
-    expect(await wallet.connect()).toBe(ADDRESS)
-    expect(await wallet.account()).toBe(ADDRESS)
-    const held = await wallet.holdings(ADDRESS)
-    expect(held.map((h) => h.network.name)).toEqual(NETWORKS.map((n) => n.name))
-    expect(held.every((h) => h.problem === null)).toBe(true)
-    expect(held[0].holdings.map((h) => [h.token?.symbol ?? 'coin', h.amount])).toEqual([
-      ['coin', 10n ** 18n],
-      ['USDC', 1_500_000n]
-    ])
-    // on the others, their coin alone
-    expect(
-      held.slice(1).every((h) => h.holdings.length === 1 && h.holdings[0].token === null)
-    ).toBe(true)
-  })
-
-  it('sends a token: maki spells it out and signs it', async () => {
-    const net = stand_in()
-    const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
-    await wallet.connect()
-    expect(await wallet.send(NETWORKS[0], PAYEE, 1_500_000n, USDC)).toBe('0xfeed')
-    const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')![2][0] as string
-    const { fields, from } = signedBy(raw)
-    expect(from.toLowerCase()).toBe(ADDRESS.toLowerCase())
-    expect(toHex(fields[5]).toLowerCase()).toBe(USDC.contract.toLowerCase())
-    expect(fields[6].length).toBe(0)
-    expect(toHex(fields[7])).toBe(transferData(PAYEE, 1_500_000n))
-    // what the app showed maki's owner: how much of the token, in its own units
-    expect(said).toMatch(
-      /Ethereum shows \[Send tokens\] 1\.5 USDC 0x70997970C51812dc3A010C7d01b50e0d17dc79C8/
-    )
-  })
-
-  it('sends all of a coin: what it holds less the most the fee could be, with those fees', async () => {
-    const net = stand_in()
-    const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
-    await wallet.connect()
-    const { amount, fees } = await wallet.most(NETWORKS[1], PAYEE)
-    // 1 ETH; gas 50,000 and a fifth; the base fee (1 gwei) doubled, and the tip (1 gwei)
-    expect(fees).toEqual({
-      gas: 60_000n,
-      maxFeePerGas: 3_000_000_000n,
-      maxPriorityFeePerGas: 1_000_000_000n
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)(
+  'the Ethereum wallet, with the fake maki',
+  () => {
+    let fake: { port: number; proc: ChildProcess }
+    let maki: EthereumApp
+    let said = ''
+    beforeAll(async () => {
+      fake = await startFake(['--app', join(APP_FIXTURES, 'ethereum.maki')])
+      fake.proc.stdout!.on('data', (d: Buffer) => (said += d.toString()))
+      const client = new MakiClient(await TcpTransport.open(fake.port))
+      maki = new EthereumApp((app, message, timeoutMs) =>
+        client.appMessage(app, message, timeoutMs)
+      )
     })
-    expect(amount).toBe(10n ** 18n - 60_000n * 3_000_000_000n)
-    await wallet.send(NETWORKS[1], PAYEE, amount, null, fees)
-    const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')![2][0] as string
-    const { fields } = signedBy(raw)
-    const n = (b: Uint8Array): bigint => BigInt('0x' + (toHex(b).slice(2) || '0'))
-    // chain, tip, most fee, gas: the value and the gas at the most it costs are all of it
-    expect([n(fields[0]), n(fields[2]), n(fields[3]), n(fields[4])]).toEqual([
-      8453n,
-      1_000_000_000n,
-      3_000_000_000n,
-      60_000n
-    ])
-    expect(n(fields[6]) + n(fields[4]) * n(fields[3])).toBe(10n ** 18n)
-  })
+    afterAll(() => fake?.proc.kill())
 
-  it('sends a coin on another network, and turns away what it can’t send', async () => {
-    const net = stand_in()
-    const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
-    await expect(wallet.send(NETWORKS[1], PAYEE, 1n, null)).rejects.toThrow(/connect maki desktop/)
-    await wallet.connect()
-    const base = NETWORKS.find((n) => n.name === 'Base')!
-    await wallet.send(base, PAYEE, 10n ** 16n, null)
-    const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')![2][0] as string
-    const { fields, from } = signedBy(raw)
-    expect(from.toLowerCase()).toBe(ADDRESS.toLowerCase())
-    expect(BigInt(toHex(fields[0]))).toBe(8453n)
-    expect(toHex(fields[5]).toLowerCase()).toBe(PAYEE.toLowerCase())
-    expect(BigInt(toHex(fields[6]))).toBe(10n ** 16n)
-    await expect(wallet.send(base, '0x1234', 1n, null)).rejects.toThrow(/isn’t an address/)
-    await expect(wallet.send(base, PAYEE, 1n, USDC)).rejects.toThrow(/isn’t on Base/)
-  })
-})
+    it('connects once the owner says so on maki, and reads what the account holds', async () => {
+      const net = stand_in()
+      const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
+      expect(await wallet.account()).toBeNull()
+      expect(await wallet.connect()).toBe(ADDRESS)
+      expect(await wallet.account()).toBe(ADDRESS)
+      const held = await wallet.holdings(ADDRESS)
+      expect(held.map((h) => h.network.name)).toEqual(NETWORKS.map((n) => n.name))
+      expect(held.every((h) => h.problem === null)).toBe(true)
+      expect(held[0].holdings.map((h) => [h.token?.symbol ?? 'coin', h.amount])).toEqual([
+        ['coin', 10n ** 18n],
+        ['USDC', 1_500_000n]
+      ])
+      // on the others, their coin alone
+      expect(
+        held.slice(1).every((h) => h.holdings.length === 1 && h.holdings[0].token === null)
+      ).toBe(true)
+    })
+
+    it('sends a token: maki spells it out and signs it', async () => {
+      const net = stand_in()
+      const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
+      await wallet.connect()
+      expect(await wallet.send(NETWORKS[0], PAYEE, 1_500_000n, USDC)).toBe('0xfeed')
+      const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')![2][0] as string
+      const { fields, from } = signedBy(raw)
+      expect(from.toLowerCase()).toBe(ADDRESS.toLowerCase())
+      expect(toHex(fields[5]).toLowerCase()).toBe(USDC.contract.toLowerCase())
+      expect(fields[6].length).toBe(0)
+      expect(toHex(fields[7])).toBe(transferData(PAYEE, 1_500_000n))
+      // what the app showed maki's owner: how much of the token, in its own units
+      expect(said).toMatch(
+        /Ethereum shows \[Send tokens\] 1\.5 USDC 0x70997970C51812dc3A010C7d01b50e0d17dc79C8/
+      )
+    })
+
+    it('sends all of a coin: what it holds less the most the fee could be, with those fees', async () => {
+      const net = stand_in()
+      const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
+      await wallet.connect()
+      const { amount, fees } = await wallet.most(NETWORKS[1], PAYEE)
+      // 1 ETH; gas 50,000 and a fifth; the base fee (1 gwei) doubled, and the tip (1 gwei)
+      expect(fees).toEqual({
+        gas: 60_000n,
+        maxFeePerGas: 3_000_000_000n,
+        maxPriorityFeePerGas: 1_000_000_000n
+      })
+      expect(amount).toBe(10n ** 18n - 60_000n * 3_000_000_000n)
+      await wallet.send(NETWORKS[1], PAYEE, amount, null, fees)
+      const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')![2][0] as string
+      const { fields } = signedBy(raw)
+      const n = (b: Uint8Array): bigint => BigInt('0x' + (toHex(b).slice(2) || '0'))
+      // chain, tip, most fee, gas: the value and the gas at the most it costs are all of it
+      expect([n(fields[0]), n(fields[2]), n(fields[3]), n(fields[4])]).toEqual([
+        8453n,
+        1_000_000_000n,
+        3_000_000_000n,
+        60_000n
+      ])
+      expect(n(fields[6]) + n(fields[4]) * n(fields[3])).toBe(10n ** 18n)
+    })
+
+    it('sends a coin on another network, and turns away what it can’t send', async () => {
+      const net = stand_in()
+      const wallet = new EthWallet(new Ethereum(() => maki, net.rpc, memoryStore()), net.rpc)
+      await expect(wallet.send(NETWORKS[1], PAYEE, 1n, null)).rejects.toThrow(
+        /connect maki desktop/
+      )
+      await wallet.connect()
+      const base = NETWORKS.find((n) => n.name === 'Base')!
+      await wallet.send(base, PAYEE, 10n ** 16n, null)
+      const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')![2][0] as string
+      const { fields, from } = signedBy(raw)
+      expect(from.toLowerCase()).toBe(ADDRESS.toLowerCase())
+      expect(BigInt(toHex(fields[0]))).toBe(8453n)
+      expect(toHex(fields[5]).toLowerCase()).toBe(PAYEE.toLowerCase())
+      expect(BigInt(toHex(fields[6]))).toBe(10n ** 16n)
+      await expect(wallet.send(base, '0x1234', 1n, null)).rejects.toThrow(/isn’t an address/)
+      await expect(wallet.send(base, PAYEE, 1n, USDC)).rejects.toThrow(/isn’t on Base/)
+    })
+  }
+)

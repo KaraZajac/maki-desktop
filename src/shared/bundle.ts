@@ -20,13 +20,15 @@ export const Permissions = [
     id: 2,
     name: 'link',
     title: 'Talk to your computer',
-    warning: 'It can send and receive messages through maki desktop. Your computer sees what it sends.'
+    warning:
+      'It can send and receive messages through maki desktop. Your computer sees what it sends.'
   },
   {
     id: 3,
     name: 'keys',
     title: 'Keys of its own',
-    warning: "It gets secrets made from your recovery phrase, for this app only: never your wallets' or passkeys'."
+    warning:
+      "It gets secrets made from your recovery phrase, for this app only: never your wallets' or passkeys'."
   },
   {
     id: 4,
@@ -34,13 +36,24 @@ export const Permissions = [
     title: 'Type on your computer',
     warning: "It can type anything into your computer while it's open, commands included."
   },
-  { id: 5, name: 'camera', title: 'Use the camera', warning: "It can see what the camera sees while it's open." },
-  { id: 6, name: 'motion', title: 'Sense motion', warning: 'It can read the accelerometer, which can pick up typing nearby.' },
+  {
+    id: 5,
+    name: 'camera',
+    title: 'Use the camera',
+    warning: "It can see what the camera sees while it's open."
+  },
+  {
+    id: 6,
+    name: 'motion',
+    title: 'Sense motion',
+    warning: 'It can read the accelerometer, which can pick up typing nearby.'
+  },
   {
     id: 7,
     name: 'wallet',
     title: 'Sign for your wallets',
-    warning: 'It can sign for the accounts named next, once you say yes on maki: it could spend what they hold.'
+    warning:
+      'It can sign for the accounts named next, once you say yes on maki: it could spend what they hold.'
   }
 ] as const
 
@@ -89,13 +102,16 @@ function text(v: Uint8Array, what: string): string {
 
 /** Reads a bundle's parts. Doesn't check the signature: maki does. */
 export function readBundle(bytes: Uint8Array): Bundle {
-  if (bytes.length > MAX_BUNDLE) throw new BundleError(`bigger than maki takes (${MAX_BUNDLE / 1024} KiB)`)
-  if (bytes.length < 5 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'MAKI') throw new BundleError('not a .maki bundle')
+  if (bytes.length > MAX_BUNDLE)
+    throw new BundleError(`bigger than maki takes (${MAX_BUNDLE / 1024} KiB)`)
+  if (bytes.length < 5 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'MAKI')
+    throw new BundleError('not a .maki bundle')
   if (bytes[4] !== 1) throw new BundleError(`bundle format ${bytes[4]}, newer than this app reads`)
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let at = 5
   const section = (tag: number): Uint8Array => {
-    if (at + 5 > bytes.length || bytes[at] !== tag) throw new BundleError('sections missing or out of order')
+    if (at + 5 > bytes.length || bytes[at] !== tag)
+      throw new BundleError('sections missing or out of order')
     const len = view.getUint32(at + 1, true)
     if (at + 5 + len > bytes.length) throw new BundleError('cut short')
     const s = bytes.subarray(at + 5, at + 5 + len)
@@ -114,8 +130,16 @@ export function readBundle(bytes: Uint8Array): Bundle {
   }
   const sig = section(255)
   const stamp = bytes[at] === 254 ? section(254).slice() : null
-  if (sig.length !== 96 || at !== bytes.length) throw new BundleError('sections missing or out of order')
-  return { manifest: readManifest(manifestBytes), codeBytes: code.length, icon, developer: sig.slice(0, 32), stamp, bytes }
+  if (sig.length !== 96 || at !== bytes.length)
+    throw new BundleError('sections missing or out of order')
+  return {
+    manifest: readManifest(manifestBytes),
+    codeBytes: code.length,
+    icon,
+    developer: sig.slice(0, 32),
+    stamp,
+    bytes
+  }
 }
 
 function readManifest(b: Uint8Array): Manifest {

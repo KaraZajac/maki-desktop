@@ -71,7 +71,9 @@ export const regExe: Registry = {
     ),
   set: (key, value) =>
     new Promise((resolve, reject) =>
-      execFile('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', value, '/f'], (e) => (e ? reject(e) : resolve()))
+      execFile('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', value, '/f'], (e) =>
+        e ? reject(e) : resolve()
+      )
     ),
   remove: (key) => new Promise((resolve) => execFile('reg', ['delete', key, '/f'], () => resolve()))
 }
@@ -81,7 +83,9 @@ export type AsAdmin = (command: string[]) => Promise<void>
 
 export const pkexec: AsAdmin = (command) =>
   new Promise((resolve, reject) =>
-    execFile('pkexec', command, (e) => (e ? reject(new Error(e.code === 126 ? 'admin approval was refused' : e.message)) : resolve()))
+    execFile('pkexec', command, (e) =>
+      e ? reject(new Error(e.code === 126 ? 'admin approval was refused' : e.message)) : resolve()
+    )
   )
 
 /** Flatpak, as much of it as this needs. */
@@ -121,17 +125,41 @@ export interface Env {
   flatpak: Flatpak
 }
 
-const env = (given: Partial<Env>): Env => ({ asAdmin: pkexec, registry: regExe, flatpak: flatpak(), ...given })
+const env = (given: Partial<Env>): Env => ({
+  asAdmin: pkexec,
+  registry: regExe,
+  flatpak: flatpak(),
+  ...given
+})
 
-const exists = (path: string): Promise<boolean> => stat(path).then(() => true, () => false)
+const exists = (path: string): Promise<boolean> =>
+  stat(path).then(
+    () => true,
+    () => false
+  )
 
 /** Browsers installed as Flatpaks: the app, and where it reads manifests, under its own folder. */
 const FLATPAKS: [app: string, name: string, family: BrowserFamily, folders: string[]][] = [
   ['com.google.Chrome', 'Chrome', 'chromium', ['config/google-chrome/NativeMessagingHosts']],
-  ['com.google.ChromeDev', 'Chrome Dev', 'chromium', ['config/google-chrome-unstable/NativeMessagingHosts']],
+  [
+    'com.google.ChromeDev',
+    'Chrome Dev',
+    'chromium',
+    ['config/google-chrome-unstable/NativeMessagingHosts']
+  ],
   ['org.chromium.Chromium', 'Chromium', 'chromium', ['config/chromium/NativeMessagingHosts']],
-  ['io.github.ungoogled_software.ungoogled_chromium', 'Ungoogled Chromium', 'chromium', ['config/chromium/NativeMessagingHosts']],
-  ['com.brave.Browser', 'Brave', 'chromium', ['config/BraveSoftware/Brave-Browser/NativeMessagingHosts']],
+  [
+    'io.github.ungoogled_software.ungoogled_chromium',
+    'Ungoogled Chromium',
+    'chromium',
+    ['config/chromium/NativeMessagingHosts']
+  ],
+  [
+    'com.brave.Browser',
+    'Brave',
+    'chromium',
+    ['config/BraveSoftware/Brave-Browser/NativeMessagingHosts']
+  ],
   ['com.microsoft.Edge', 'Edge', 'chromium', ['config/microsoft-edge/NativeMessagingHosts']],
   ['com.vivaldi.Vivaldi', 'Vivaldi', 'chromium', ['config/vivaldi/NativeMessagingHosts']],
   ['com.opera.Opera', 'Opera', 'chromium', ['config/opera/NativeMessagingHosts']],
@@ -140,7 +168,12 @@ const FLATPAKS: [app: string, name: string, family: BrowserFamily, folders: stri
   ['app.zen_browser.zen', 'Zen', 'firefox', ['.mozilla/native-messaging-hosts']],
   ['one.ablaze.floorp', 'Floorp', 'firefox', ['.mozilla/native-messaging-hosts']],
   // its own folder while its profiles are there, Firefox's once they're in ~/.config
-  ['io.gitlab.librewolf-community', 'LibreWolf', 'firefox', ['.librewolf/native-messaging-hosts', '.mozilla/native-messaging-hosts']]
+  [
+    'io.gitlab.librewolf-community',
+    'LibreWolf',
+    'firefox',
+    ['.librewolf/native-messaging-hosts', '.mozilla/native-messaging-hosts']
+  ]
 ]
 
 /** A browser added by hand: the folder it reads manifests from. */
@@ -188,12 +221,18 @@ function sandboxOf(dir: string): string | null {
 
 async function browsers(fp: Flatpak): Promise<Browser[]> {
   const home = homedir()
-  const added = (await customs()).map(
-    (c): Browser => {
-      const app = sandboxOf(c.dir)
-      return { id: c.id, name: c.name, family: c.family, kind: 'custom', detect: [], targets: [{ dir: c.dir }], ...(app ? { sandbox: app } : {}) }
+  const added = (await customs()).map((c): Browser => {
+    const app = sandboxOf(c.dir)
+    return {
+      id: c.id,
+      name: c.name,
+      family: c.family,
+      kind: 'custom',
+      detect: [],
+      targets: [{ dir: c.dir }],
+      ...(app ? { sandbox: app } : {})
     }
-  )
+  })
   if (process.platform === 'win32') {
     const local = process.env['LOCALAPPDATA'] || join(home, 'AppData', 'Local')
     const roaming = process.env['APPDATA'] || join(home, 'AppData', 'Roaming')
@@ -243,8 +282,22 @@ async function browsers(fp: Flatpak): Promise<Browser[]> {
       chromium('brave', 'Brave', 'BraveSoftware/Brave-Browser'),
       chromium('edge', 'Edge', 'Microsoft Edge'),
       chromium('vivaldi', 'Vivaldi', 'Vivaldi'),
-      { id: 'firefox', name: 'Firefox', family: 'firefox', kind: 'native', detect: [join(s, 'Firefox')], targets: [mozilla] },
-      { id: 'zen', name: 'Zen', family: 'firefox', kind: 'native', detect: [join(s, 'zen')], targets: [mozilla] },
+      {
+        id: 'firefox',
+        name: 'Firefox',
+        family: 'firefox',
+        kind: 'native',
+        detect: [join(s, 'Firefox')],
+        targets: [mozilla]
+      },
+      {
+        id: 'zen',
+        name: 'Zen',
+        family: 'firefox',
+        kind: 'native',
+        detect: [join(s, 'zen')],
+        targets: [mozilla]
+      },
       ...added
     ]
   }
@@ -263,10 +316,18 @@ async function browsers(fp: Flatpak): Promise<Browser[]> {
     ? { dir: join(legacy, 'native-messaging-hosts') }
     : {
         // where Firefox looks: /usr/lib64 on distributions that have it (Fedora, openSUSE)
-        dir: join((await exists('/usr/lib64/mozilla')) ? '/usr/lib64/mozilla' : '/usr/lib/mozilla', 'native-messaging-hosts'),
+        dir: join(
+          (await exists('/usr/lib64/mozilla')) ? '/usr/lib64/mozilla' : '/usr/lib/mozilla',
+          'native-messaging-hosts'
+        ),
         system: true
       }
-  const firefox = (id: string, name: string, dirs: string[], targets: Target[] = [mozilla]): Browser => ({
+  const firefox = (
+    id: string,
+    name: string,
+    dirs: string[],
+    targets: Target[] = [mozilla]
+  ): Browser => ({
     id,
     name,
     family: 'firefox',
@@ -275,17 +336,15 @@ async function browsers(fp: Flatpak): Promise<Browser[]> {
     targets
   })
   const librewolf = join(home, '.librewolf')
-  const flatpaks = FLATPAKS.map(
-    ([app, name, family, folders]): Browser => ({
-      id: `flatpak:${app}`,
-      name,
-      family,
-      kind: 'flatpak',
-      detect: fp.installations.map((i) => join(i, 'app', app)),
-      targets: folders.map((f) => ({ dir: join(home, '.var', 'app', app, ...f.split('/')) })),
-      sandbox: app
-    })
-  )
+  const flatpaks = FLATPAKS.map(([app, name, family, folders]): Browser => ({
+    id: `flatpak:${app}`,
+    name,
+    family,
+    kind: 'flatpak',
+    detect: fp.installations.map((i) => join(i, 'app', app)),
+    targets: folders.map((f) => ({ dir: join(home, '.var', 'app', app, ...f.split('/')) })),
+    sandbox: app
+  }))
   return [
     chromium('chrome', 'Chrome', 'google-chrome'),
     chromium('chrome-beta', 'Chrome Beta', 'google-chrome-beta'),
@@ -336,10 +395,16 @@ export interface Launch {
 /** Where the manifests point: a small script, since a browser runs one executable with no arguments. */
 export function launcherPath(): string {
   if (process.platform === 'win32') {
-    return join(process.env['APPDATA'] || join(homedir(), 'AppData', 'Roaming'), 'maki', 'maki-native-host.cmd')
+    return join(
+      process.env['APPDATA'] || join(homedir(), 'AppData', 'Roaming'),
+      'maki',
+      'maki-native-host.cmd'
+    )
   }
   const base =
-    process.platform === 'darwin' ? join(homedir(), 'Library', 'Application Support', 'maki') : join(dataHome(), 'maki')
+    process.platform === 'darwin'
+      ? join(homedir(), 'Library', 'Application Support', 'maki')
+      : join(dataHome(), 'maki')
   return join(base, 'maki-native-host')
 }
 
@@ -461,7 +526,9 @@ function manifest(b: Browser): string {
         description: 'maki desktop: the link between your browser and maki',
         path: b.sandbox ? relayPath(b.sandbox) : launcherPath(),
         type: 'stdio',
-        ...(b.family === 'firefox' ? { allowed_extensions: [FIREFOX_EXTENSION_ID] } : { allowed_origins: [`chrome-extension://${CHROME_EXTENSION_ID}/`] })
+        ...(b.family === 'firefox'
+          ? { allowed_extensions: [FIREFOX_EXTENSION_ID] }
+          : { allowed_origins: [`chrome-extension://${CHROME_EXTENSION_ID}/`] })
       },
       null,
       2
@@ -476,7 +543,10 @@ async function ours(t: Target, b: Browser): Promise<boolean> {
   const text = await readFile(hostFile(t), 'utf8').catch(() => null)
   if (text === null) return false
   try {
-    return (JSON.parse(text) as { path?: unknown }).path === (b.sandbox ? relayPath(b.sandbox) : launcherPath())
+    return (
+      (JSON.parse(text) as { path?: unknown }).path ===
+      (b.sandbox ? relayPath(b.sandbox) : launcherPath())
+    )
   } catch {
     return false
   }
@@ -513,7 +583,8 @@ const entries = (k: Keyfile | null, key: string): string[] =>
 /** The folder this app shares with a sandboxed browser: xdg-run/maki. */
 const SHARED = `xdg-run/${BROWSER_SOCKET[0]}`
 
-const shares = (filesystems: string[]): boolean => filesystems.some((f) => f === SHARED || f.startsWith(`${SHARED}:`))
+const shares = (filesystems: string[]): boolean =>
+  filesystems.some((f) => f === SHARED || f.startsWith(`${SHARED}:`))
 
 async function appMetadata(fp: Flatpak, app: string): Promise<Keyfile | null> {
   for (const i of fp.installations) {
@@ -563,7 +634,9 @@ async function checkPython(fp: Flatpak, b: Browser): Promise<void> {
     const files = join(i, 'runtime', runtime, 'active', 'files')
     if (await exists(files)) {
       if (await exists(join(files, 'bin', 'python3'))) return
-      throw new Error(`${b.name}'s Flatpak runtime (${runtime}) has no Python, which maki's relay needs in its sandbox`)
+      throw new Error(
+        `${b.name}'s Flatpak runtime (${runtime}) has no Python, which maki's relay needs in its sandbox`
+      )
     }
   }
 }
@@ -576,7 +649,10 @@ async function registered(b: Browser, e: Env): Promise<boolean> {
   for (const t of b.targets) if (!(await ours(t, b))) return false
   if (b.sandbox) {
     if (!(await exists(relayPath(b.sandbox)))) return false
-    return grants(await readKeyfile(join(e.flatpak.overrides, b.sandbox)), await persistsNeeded(e.flatpak, b))
+    return grants(
+      await readKeyfile(join(e.flatpak.overrides, b.sandbox)),
+      await persistsNeeded(e.flatpak, b)
+    )
   }
   return true
 }
@@ -599,7 +675,9 @@ export async function browserStatus(given: Partial<Env> = {}): Promise<BrowsersV
       kind: b.kind,
       registered: isRegistered,
       system: b.targets.some((t) => t.system),
-      shares: present.filter((o) => o !== b && registration(o).some((r) => mine.has(r))).map((o) => o.name),
+      shares: present
+        .filter((o) => o !== b && registration(o).some((r) => mine.has(r)))
+        .map((o) => o.name),
       restart: isRegistered && !!b.sandbox && (await runningWithout(e.flatpak, b))
     })
   }
@@ -607,7 +685,11 @@ export async function browserStatus(given: Partial<Env> = {}): Promise<BrowsersV
 }
 
 /** Connect one installed browser, by its ID. */
-export async function registerBrowser(id: string, launch: Launch, given: Partial<Env> = {}): Promise<BrowsersView> {
+export async function registerBrowser(
+  id: string,
+  launch: Launch,
+  given: Partial<Env> = {}
+): Promise<BrowsersView> {
   const e = env(given)
   const b = (await browsers(e.flatpak)).find((x) => x.id === id)
   if (!b || !(await installed(b))) throw new Error(`${b?.name ?? id} isn't installed`)
@@ -626,7 +708,10 @@ export async function registerBrowser(id: string, launch: Launch, given: Partial
   for (const t of b.targets) {
     if (t.system) {
       if (await ours(t, b)) continue // another browser that reads it connected already
-      const staged = join(dirname(launcherPath()), `${HOST_NAME}.${b.id.replace(/[^A-Za-z0-9.-]/g, '-')}.json`)
+      const staged = join(
+        dirname(launcherPath()),
+        `${HOST_NAME}.${b.id.replace(/[^A-Za-z0-9.-]/g, '-')}.json`
+      )
       await mkdir(dirname(staged), { recursive: true })
       await writeFile(staged, manifest(b))
       await e.asAdmin(['/usr/bin/install', '-D', '-m', '0644', staged, hostFile(t)])
@@ -638,17 +723,25 @@ export async function registerBrowser(id: string, launch: Launch, given: Partial
   if (b.regKey) await e.registry.set(b.regKey, hostFile(b.targets[0]))
   if (b.sandbox) {
     const persists = await persistsNeeded(e.flatpak, b)
-    await e.flatpak.override([`--filesystem=${SHARED}:create`, ...persists.map((p) => `--persist=${p}`), b.sandbox])
+    await e.flatpak.override([
+      `--filesystem=${SHARED}:create`,
+      ...persists.map((p) => `--persist=${p}`),
+      b.sandbox
+    ])
   }
   return browserStatus(given)
 }
 
-export async function unregisterBrowser(id: string, given: Partial<Env> = {}): Promise<BrowsersView> {
+export async function unregisterBrowser(
+  id: string,
+  given: Partial<Env> = {}
+): Promise<BrowsersView> {
   const e = env(given)
   const b = (await browsers(e.flatpak)).find((x) => x.id === id)
   if (b?.regKey) {
     // the key only: the manifest file may serve the browser's siblings (Vivaldi shares Chrome's)
-    if ((await e.registry.get(b.regKey)) === hostFile(b.targets[0])) await e.registry.remove(b.regKey)
+    if ((await e.registry.get(b.regKey)) === hostFile(b.targets[0]))
+      await e.registry.remove(b.regKey)
   } else if (b) {
     for (const t of b.targets) {
       if (!(await ours(t, b))) continue
@@ -673,16 +766,31 @@ export async function addCustomBrowser(
   launch: Launch,
   given: Partial<Env> = {}
 ): Promise<BrowsersView> {
-  if (process.platform === 'win32') throw new Error('on Windows, browsers find maki desktop through the registry: only the listed ones')
-  const name = input.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40)
+  if (process.platform === 'win32')
+    throw new Error(
+      'on Windows, browsers find maki desktop through the registry: only the listed ones'
+    )
+  const name = input.name
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, 40)
   if (!name) throw new Error('give the browser a name')
-  if (input.family !== 'chromium' && input.family !== 'firefox') throw new Error('say which extension it takes')
+  if (input.family !== 'chromium' && input.family !== 'firefox')
+    throw new Error('say which extension it takes')
   if (!isAbsolute(input.dir)) throw new Error('choose the browser’s folder')
   const leaves = ['NativeMessagingHosts', 'native-messaging-hosts']
-  const leaf = input.family === 'firefox' && process.platform === 'linux' ? 'native-messaging-hosts' : 'NativeMessagingHosts'
+  const leaf =
+    input.family === 'firefox' && process.platform === 'linux'
+      ? 'native-messaging-hosts'
+      : 'NativeMessagingHosts'
   const dir = leaves.includes(basename(input.dir)) ? input.dir : join(input.dir, leaf)
-  const known = (await browsers(env(given).flatpak)).find((b) => b.targets.some((t) => t.dir === dir))
-  if (known) throw new Error(`that's where ${known.name} looks, which is on the list already: connect it there`)
+  const known = (await browsers(env(given).flatpak)).find((b) =>
+    b.targets.some((t) => t.dir === dir)
+  )
+  if (known)
+    throw new Error(
+      `that's where ${known.name} looks, which is on the list already: connect it there`
+    )
   const list = await customs()
   const next = list.reduce((n, c) => Math.max(n, Number(c.id.split(':')[1]) || 0), 0) + 1
   const added: Custom = { id: `custom:${next}`, name, family: input.family, dir }
@@ -696,7 +804,10 @@ export async function addCustomBrowser(
 }
 
 /** Disconnect one added by hand, and forget it. */
-export async function removeCustomBrowser(id: string, given: Partial<Env> = {}): Promise<BrowsersView> {
+export async function removeCustomBrowser(
+  id: string,
+  given: Partial<Env> = {}
+): Promise<BrowsersView> {
   if (!id.startsWith('custom:')) throw new Error('only a browser added by hand can be removed')
   await unregisterBrowser(id, given)
   await saveCustoms((await customs()).filter((c) => c.id !== id))

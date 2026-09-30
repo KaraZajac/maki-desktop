@@ -64,9 +64,17 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
 
   it('keeps a login it is given, and hands it back for the same site and its subdomains', async () => {
     const [c, t] = await client()
-    expect(await c.getLogin('github.com')).toEqual({ approval: 'no match', username: '', password: '' })
+    expect(await c.getLogin('github.com')).toEqual({
+      approval: 'no match',
+      username: '',
+      password: ''
+    })
     expect(await c.saveLogin('github.com', 'kara', 'correct horse')).toBe('approved')
-    expect(await c.getLogin('github.com')).toEqual({ approval: 'approved', username: 'kara', password: 'correct horse' })
+    expect(await c.getLogin('github.com')).toEqual({
+      approval: 'approved',
+      username: 'kara',
+      password: 'correct horse'
+    })
     expect((await c.getLogin('gist.github.com')).username).toBe('kara')
     expect((await c.getLogin('evilgithub.com')).approval).toBe('no match')
     await t.close()
@@ -75,7 +83,11 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
   it('gives no code on this computer’s word for the time', async () => {
     const [c, t] = await client()
     expect((await c.status()).timeState).toBe(TimeState.UNVERIFIED)
-    expect(await c.getTotp('example.com')).toEqual({ approval: 'clock not verified', code: '', validForS: 0 })
+    expect(await c.getTotp('example.com')).toEqual({
+      approval: 'clock not verified',
+      code: '',
+      validForS: 0
+    })
     await t.close()
   })
 
@@ -91,17 +103,20 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
     await t.close()
   })
 
-  it.skipIf(process.env.MAKI_LIVE !== '1')('syncs verified time through the real Roughtime servers', async () => {
-    const [c, t] = await client()
-    const report = await syncTime(c, relay, 3600)
-    expect(report.verified).toBe(true)
-    expect(report.servers.filter((s) => s.result === 'verified').length).toBeGreaterThanOrEqual(2)
-    expect(Math.abs(report.utcMs - Date.now())).toBeLessThan(10_000)
-    expect((await c.status()).timeState).toBe(TimeState.VERIFIED)
-    expect(await c.timeUnverified(Date.now() + 3_600_000, 0)).toBe(false)
-    expect((await c.getTotp('example.com')).approval).toBe('approved')
-    await t.close()
-  })
+  it.skipIf(process.env.MAKI_LIVE !== '1')(
+    'syncs verified time through the real Roughtime servers',
+    async () => {
+      const [c, t] = await client()
+      const report = await syncTime(c, relay, 3600)
+      expect(report.verified).toBe(true)
+      expect(report.servers.filter((s) => s.result === 'verified').length).toBeGreaterThanOrEqual(2)
+      expect(Math.abs(report.utcMs - Date.now())).toBeLessThan(10_000)
+      expect((await c.status()).timeState).toBe(TimeState.VERIFIED)
+      expect(await c.timeUnverified(Date.now() + 3_600_000, 0)).toBe(false)
+      expect((await c.getTotp('example.com')).approval).toBe('approved')
+      await t.close()
+    }
+  )
 })
 
 describe.skipIf(!FAKE_BUILT)('with a verified clock', () => {
@@ -143,7 +158,8 @@ describe.skipIf(!FAKE_BUILT)('when the owner says no', () => {
 
 describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki', () => {
   let fake: { port: number; proc: ChildProcess }
-  const bundle = (name: string): Uint8Array => new Uint8Array(readFileSync(join(APP_FIXTURES, `${name}.maki`)))
+  const bundle = (name: string): Uint8Array =>
+    new Uint8Array(readFileSync(join(APP_FIXTURES, `${name}.maki`)))
 
   beforeAll(async () => {
     fake = await startFake()
@@ -171,7 +187,12 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki
     ])
     expect(await c.appSpace()).toEqual({
       status: 'approved',
-      space: { apps: 2, maxApps: 32, space: 2 * 1024 * 1024, taken: apps.reduce((n, a) => n + a.bundle + a.storage, 0) }
+      space: {
+        apps: 2,
+        maxApps: 32,
+        space: 2 * 1024 * 1024,
+        taken: apps.reduce((n, a) => n + a.bundle + a.storage, 0)
+      }
     })
 
     // the same version again, and one changed after it was signed
@@ -202,73 +223,116 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki
     expect(Array.from(r.answer.subarray(0, 5))).toEqual([12, 0, 0, 0, 1])
     // its one key: the app's secret for "ssh" from the phrase (the BIP39 test phrase here), made
     // into an Ed25519 key, worked out here apart from maki's code
-    const seed = pbkdf2Sync(Array(11).fill('abandon').concat('about').join(' '), 'mnemonic', 2048, 64, 'sha512')
+    const seed = pbkdf2Sync(
+      Array(11).fill('abandon').concat('about').join(' '),
+      'mnemonic',
+      2048,
+      64,
+      'sha512'
+    )
     const id = Buffer.from('com.leviathan.maki.ssh')
     const developer = Buffer.from(readBundle(ssh).developer)
-    const info = Buffer.concat([Buffer.from('app v1'), Buffer.from([id.length]), id, developer, Buffer.from([3]), Buffer.from('ssh')])
+    const info = Buffer.concat([
+      Buffer.from('app v1'),
+      Buffer.from([id.length]),
+      id,
+      developer,
+      Buffer.from([3]),
+      Buffer.from('ssh')
+    ])
     const secret = Buffer.from(hkdfSync('sha256', seed, 'maki', info, 32))
     const pkcs8 = Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), secret])
-    const spki = createPublicKey(createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' })).export({ format: 'der', type: 'spki' })
-    const blob = Buffer.concat([Buffer.from([0, 0, 0, 11]), Buffer.from('ssh-ed25519'), Buffer.from([0, 0, 0, 32]), spki.subarray(-32)])
+    const spki = createPublicKey(
+      createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' })
+    ).export({ format: 'der', type: 'spki' })
+    const blob = Buffer.concat([
+      Buffer.from([0, 0, 0, 11]),
+      Buffer.from('ssh-ed25519'),
+      Buffer.from([0, 0, 0, 32]),
+      spki.subarray(-32)
+    ])
     expect(Buffer.from(r.answer.subarray(9, 9 + blob.length))).toEqual(blob)
 
     // an app without the link permission, no such app, and no app ID
-    expect((await c.appMessage('com.leviathan.maki.tally', new Uint8Array([1]))).status).toBe('refused')
+    expect((await c.appMessage('com.leviathan.maki.tally', new Uint8Array([1]))).status).toBe(
+      'refused'
+    )
     expect((await c.appMessage('com.example.none', new Uint8Array([1]))).status).toBe('no match')
     await expect(c.appMessage('Not An ID', new Uint8Array([1]))).rejects.toThrow('bad argument')
-    await expect(c.appMessage('com.leviathan.maki.ssh', new Uint8Array(4097))).rejects.toThrow('4096')
+    await expect(c.appMessage('com.leviathan.maki.ssh', new Uint8Array(4097))).rejects.toThrow(
+      '4096'
+    )
     await t.close()
   })
 })
 
-describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !DEV_STORE_THERE)('the maki store, against the fake maki', () => {
-  let fake: { port: number; proc: ChildProcess }
+describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !DEV_STORE_THERE)(
+  'the maki store, against the fake maki',
+  () => {
+    let fake: { port: number; proc: ChildProcess }
 
-  beforeAll(async () => {
-    // records from the catalogue key need a verified clock on maki
-    fake = await startFake(['--clock-verified'])
-  })
-  afterAll(() => fake?.proc.kill())
+    beforeAll(async () => {
+      // records from the catalogue key need a verified clock on maki
+      fake = await startFake(['--clock-verified'])
+    })
+    afterAll(() => fake?.proc.kill())
 
-  it('hands maki the store’s newest root and revocation list, then installs store apps as the store’s', async () => {
-    const t = await TcpTransport.open(fake.port)
-    const c = new MakiClient(t)
-    // the firmware's root, and no list yet
-    expect(await c.storeUpdate()).toEqual({ status: 'approved', reason: '', state: { root: 1, revocations: 0, revocationsExpires: 0 } })
-    const store = new Store(storeSource(DEV_STORE))
-    await store.refresh()
-    const dice = await store.bundle(store.index!.apps.find((a) => a.name === 'Dice')!)
+    it('hands maki the store’s newest root and revocation list, then installs store apps as the store’s', async () => {
+      const t = await TcpTransport.open(fake.port)
+      const c = new MakiClient(t)
+      // the firmware's root, and no list yet
+      expect(await c.storeUpdate()).toEqual({
+        status: 'approved',
+        reason: '',
+        state: { root: 1, revocations: 0, revocationsExpires: 0 }
+      })
+      const store = new Store(storeSource(DEV_STORE))
+      await store.refresh()
+      const dice = await store.bundle(store.index!.apps.find((a) => a.name === 'Dice')!)
 
-    // stamped by root 2's catalogue key: maki, still on root 1, won't have it yet
-    const early = await c.appInstall(dice.bytes)
-    expect(early.approval).toBe('refused')
-    expect(early.reason).toMatch(/stamp doesn't check out/)
+      // stamped by root 2's catalogue key: maki, still on root 1, won't have it yet
+      const early = await c.appInstall(dice.bytes)
+      expect(early.approval).toBe('refused')
+      expect(early.reason).toMatch(/stamp doesn't check out/)
 
-    expect(await store.push(c)).toEqual({ locked: false, notes: ["maki took the store's root 2", "maki took the store's revocation list 1"] })
-    const state = (await c.storeUpdate()).state
-    expect(state).toEqual({ root: 2, revocations: 1, revocationsExpires: store.revocations!.expires })
-    // nothing new the next time
-    expect(await store.push(c)).toEqual({ locked: false, notes: [] })
-    // and nothing older, nor anything but the store's
-    const old = await c.storeUpdate(new Uint8Array(readFileSync(join(DEV_STORE, 'roots/1.bin'))))
-    expect(old.status).toBe('refused')
-    expect(old.reason).toMatch(/older than what maki has/)
-    const junk = await c.storeUpdate(new Uint8Array(100))
-    expect(junk.reason).toMatch(/not a store record/)
+      expect(await store.push(c)).toEqual({
+        locked: false,
+        notes: ["maki took the store's root 2", "maki took the store's revocation list 1"]
+      })
+      const state = (await c.storeUpdate()).state
+      expect(state).toEqual({
+        root: 2,
+        revocations: 1,
+        revocationsExpires: store.revocations!.expires
+      })
+      // nothing new the next time
+      expect(await store.push(c)).toEqual({ locked: false, notes: [] })
+      // and nothing older, nor anything but the store's
+      const old = await c.storeUpdate(new Uint8Array(readFileSync(join(DEV_STORE, 'roots/1.bin'))))
+      expect(old.status).toBe('refused')
+      expect(old.reason).toMatch(/older than what maki has/)
+      const junk = await c.storeUpdate(new Uint8Array(100))
+      expect(junk.reason).toMatch(/not a store record/)
 
-    expect(await c.appInstall(dice.bytes)).toEqual({ approval: 'approved', reason: '' })
-    // Tally, sideloaded: the store's list revokes it wherever it's from
-    const tally = await c.appInstall(new Uint8Array(readFileSync(join(APP_FIXTURES, 'tally.maki'))))
-    expect(tally.approval).toBe('refused')
-    expect(tally.reason).toMatch(/the maki store revoked it: A test entry/)
-    // a sideloaded app is still welcome
-    expect((await c.appInstall(new Uint8Array(readFileSync(join(APP_FIXTURES, 'hello.maki'))))).approval).toBe('approved')
+      expect(await c.appInstall(dice.bytes)).toEqual({ approval: 'approved', reason: '' })
+      // Tally, sideloaded: the store's list revokes it wherever it's from
+      const tally = await c.appInstall(
+        new Uint8Array(readFileSync(join(APP_FIXTURES, 'tally.maki')))
+      )
+      expect(tally.approval).toBe('refused')
+      expect(tally.reason).toMatch(/the maki store revoked it: A test entry/)
+      // a sideloaded app is still welcome
+      expect(
+        (await c.appInstall(new Uint8Array(readFileSync(join(APP_FIXTURES, 'hello.maki')))))
+          .approval
+      ).toBe('approved')
 
-    const { apps } = await c.appList()
-    expect(apps.map((a) => [a.name, a.fromStore])).toEqual([
-      ['Dice', true],
-      ['Hello', false]
-    ])
-    await t.close()
-  })
-})
+      const { apps } = await c.appList()
+      expect(apps.map((a) => [a.name, a.fromStore])).toEqual([
+        ['Dice', true],
+        ['Hello', false]
+      ])
+      await t.close()
+    })
+  }
+)

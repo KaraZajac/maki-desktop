@@ -9,7 +9,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import { Ethereum, memoryStore, ProviderError, type Rpc } from './ethereum'
 import { toHex } from './rlp'
-import { APP_FIXTURES, APP_FIXTURES_THERE, FAKE_BUILT, startFake, TcpTransport } from './test-support'
+import {
+  APP_FIXTURES,
+  APP_FIXTURES_THERE,
+  FAKE_BUILT,
+  startFake,
+  TcpTransport
+} from './test-support'
 import { EthereumApp } from './wallet-apps'
 
 const FIXTURES = resolve(__dirname, '../../../xous-core/libs/maki-eth/tests/fixtures')
@@ -36,196 +42,197 @@ const rejects = async (p: Promise<unknown>, code: number): Promise<void> => {
   await expect(p).rejects.toMatchObject({ code })
 }
 
-describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE || !existsSync(resolve(FIXTURES, 'abandon-tx-unsigned.bin')))(
-  'the Ethereum provider',
-  () => {
-    const fakes: ChildProcess[] = []
-    let maki: EthereumApp
-    let refusing: EthereumApp
-    beforeAll(async () => {
-      for (const args of [[], ['--deny']]) {
-        const fake = await startFake(['--app', join(APP_FIXTURES, 'ethereum.maki'), ...args])
-        fakes.push(fake.proc)
-        const client = new MakiClient(await TcpTransport.open(fake.port))
-        const app = new EthereumApp((id, message, timeoutMs) => client.appMessage(id, message, timeoutMs))
-        if (args.length) refusing = app
-        else maki = app
-      }
-    })
-    afterAll(() => fakes.forEach((p) => p.kill()))
-
-    it('shows a site nothing until the owner connects it on maki', async () => {
-      const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
-      expect(await eth.request('app.example.com', 'eth_accounts')).toEqual([])
-      expect(await eth.request('app.example.com', 'eth_chainId')).toBe('0x1')
-      expect(await eth.request('app.example.com', 'eth_requestAccounts')).toEqual([ADDRESS])
-      expect(await eth.request('app.example.com', 'eth_accounts')).toEqual([ADDRESS])
-      // another site is another question
-      expect(await eth.request('other.example.com', 'eth_accounts')).toEqual([])
-      await rejects(
-        eth.request('other.example.com', 'personal_sign', ['0x68656c6c6f', ADDRESS]),
-        4100
-      )
-    })
-
-    it('passes on a refusal, and asks nothing of an unlinked maki', async () => {
-      const eth = new Ethereum(() => refusing, network({}).rpc, memoryStore())
-      await rejects(eth.request('app.example.com', 'eth_requestAccounts'), 4001)
-      const unlinked = new Ethereum(() => null, network({}).rpc, memoryStore())
-      await rejects(unlinked.request('app.example.com', 'eth_requestAccounts'), 4900)
-    })
-
-    it('tells a site where to get the app when maki hasn’t it', async () => {
-      const fake = await startFake()
+describe.skipIf(
+  !FAKE_BUILT || !APP_FIXTURES_THERE || !existsSync(resolve(FIXTURES, 'abandon-tx-unsigned.bin'))
+)('the Ethereum provider', () => {
+  const fakes: ChildProcess[] = []
+  let maki: EthereumApp
+  let refusing: EthereumApp
+  beforeAll(async () => {
+    for (const args of [[], ['--deny']]) {
+      const fake = await startFake(['--app', join(APP_FIXTURES, 'ethereum.maki'), ...args])
       fakes.push(fake.proc)
       const client = new MakiClient(await TcpTransport.open(fake.port))
-      const app = new EthereumApp((id, message, timeoutMs) => client.appMessage(id, message, timeoutMs))
-      const eth = new Ethereum(() => app, network({}).rpc, memoryStore())
-      await expect(eth.request('app.example.com', 'eth_requestAccounts')).rejects.toMatchObject({
-        code: 4100,
-        message: expect.stringMatching(/Ethereum app isn’t installed: add it from the maki store/)
-      })
-    })
+      const app = new EthereumApp((id, message, timeoutMs) =>
+        client.appMessage(id, message, timeoutMs)
+      )
+      if (args.length) refusing = app
+      else maki = app
+    }
+  })
+  afterAll(() => fakes.forEach((p) => p.kill()))
 
-    it('signs messages as the firmware does', async () => {
-      const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
-      await eth.request('demo.maki', 'eth_requestAccounts')
-      const hex = toHex(new TextEncoder().encode('Sign in to demo.maki'))
-      expect(await eth.request('demo.maki', 'personal_sign', [hex, ADDRESS.toLowerCase()])).toBe(
-        toHex(fixture('abandon-message.sig'))
-      )
-      // plain text, as some sites send it
-      expect(
-        await eth.request('demo.maki', 'personal_sign', ['Sign in to demo.maki', ADDRESS])
-      ).toBe(toHex(fixture('abandon-message.sig')))
-      // not the connected account
-      await rejects(
-        eth.request('demo.maki', 'personal_sign', [
-          hex,
-          '0x0000000000000000000000000000000000000001'
-        ]),
-        4100
-      )
-    })
+  it('shows a site nothing until the owner connects it on maki', async () => {
+    const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
+    expect(await eth.request('app.example.com', 'eth_accounts')).toEqual([])
+    expect(await eth.request('app.example.com', 'eth_chainId')).toBe('0x1')
+    expect(await eth.request('app.example.com', 'eth_requestAccounts')).toEqual([ADDRESS])
+    expect(await eth.request('app.example.com', 'eth_accounts')).toEqual([ADDRESS])
+    // another site is another question
+    expect(await eth.request('other.example.com', 'eth_accounts')).toEqual([])
+    await rejects(
+      eth.request('other.example.com', 'personal_sign', ['0x68656c6c6f', ADDRESS]),
+      4100
+    )
+  })
 
-    it('signs typed data as the firmware does, for the network the site is on', async () => {
-      const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
-      const json = readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8')
-      // not connected yet
-      await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json]), 4100)
-      await eth.request('demo.maki', 'eth_requestAccounts')
-      const signature = toHex(fixture('abandon-typed.sig'))
-      expect(await eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json])).toBe(
-        signature
-      )
-      // the object itself, as some libraries pass it
-      expect(
-        await eth.request('demo.maki', 'eth_signTypedData_v4', [
-          ADDRESS.toLowerCase(),
-          JSON.parse(json)
-        ])
-      ).toBe(signature)
-      // for another network than the site's: refused before maki sees it
-      await eth.request('demo.maki', 'wallet_switchEthereumChain', [{ chainId: '0x2105' }])
-      await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json]), -32602)
-      // not the connected account; nothing to sign; the older versions
-      await rejects(
-        eth.request('demo.maki', 'eth_signTypedData_v4', [
-          '0x0000000000000000000000000000000000000001',
-          json
-        ]),
-        4100
-      )
-      await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS]), -32602)
-      await rejects(eth.request('demo.maki', 'eth_signTypedData_v3', [ADDRESS, json]), 4200)
-      await rejects(eth.request('demo.maki', 'eth_signTypedData', [[], ADDRESS]), 4200)
-    })
+  it('passes on a refusal, and asks nothing of an unlinked maki', async () => {
+    const eth = new Ethereum(() => refusing, network({}).rpc, memoryStore())
+    await rejects(eth.request('app.example.com', 'eth_requestAccounts'), 4001)
+    const unlinked = new Ethereum(() => null, network({}).rpc, memoryStore())
+    await rejects(unlinked.request('app.example.com', 'eth_requestAccounts'), 4900)
+  })
 
-    it('passes on maki’s reason for typed data it won’t sign', async () => {
-      const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
-      await eth.request('demo.maki', 'eth_requestAccounts')
-      const typed = JSON.parse(readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8'))
-      // a value its type doesn't declare would go unsigned, so maki won't show it
-      typed.message.extra = 'looks important'
-      await expect(
-        eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, typed])
-      ).rejects.toMatchObject({
-        code: -32603,
-        message: expect.stringMatching(/not declared/)
-      })
-      const state = { connected: { 'demo.maki': ADDRESS }, chains: {} }
-      const store = memoryStore()
-      await store.save(state)
-      const denied = new Ethereum(() => refusing, network({}).rpc, store)
-      await rejects(
-        denied.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, JSON.stringify(typed)]),
-        -32603
-      )
-      delete typed.message.extra
-      await rejects(denied.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, typed]), 4001)
+  it('tells a site where to get the app when maki hasn’t it', async () => {
+    const fake = await startFake()
+    fakes.push(fake.proc)
+    const client = new MakiClient(await TcpTransport.open(fake.port))
+    const app = new EthereumApp((id, message, timeoutMs) =>
+      client.appMessage(id, message, timeoutMs)
+    )
+    const eth = new Ethereum(() => app, network({}).rpc, memoryStore())
+    await expect(eth.request('app.example.com', 'eth_requestAccounts')).rejects.toMatchObject({
+      code: 4100,
+      message: expect.stringMatching(/Ethereum app isn’t installed: add it from the maki store/)
     })
+  })
 
-    it('builds, signs and broadcasts a transaction', async () => {
-      const net = network({ eth_getTransactionCount: '0x2a', eth_sendRawTransaction: '0xabc123' })
-      const eth = new Ethereum(() => maki, net.rpc, memoryStore())
-      await eth.request('demo.maki', 'eth_requestAccounts')
-      // the fixture's transaction, gas and fees given by the site
-      const hash = await eth.request('demo.maki', 'eth_sendTransaction', [
-        {
-          from: ADDRESS,
-          to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-          value: '0xb1a2bc2ec50000',
-          gas: '0xfde8',
-          maxFeePerGas: '0x6fc23ac00',
-          maxPriorityFeePerGas: '0x59682f00'
-        }
+  it('signs messages as the firmware does', async () => {
+    const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
+    await eth.request('demo.maki', 'eth_requestAccounts')
+    const hex = toHex(new TextEncoder().encode('Sign in to demo.maki'))
+    expect(await eth.request('demo.maki', 'personal_sign', [hex, ADDRESS.toLowerCase()])).toBe(
+      toHex(fixture('abandon-message.sig'))
+    )
+    // plain text, as some sites send it
+    expect(await eth.request('demo.maki', 'personal_sign', ['Sign in to demo.maki', ADDRESS])).toBe(
+      toHex(fixture('abandon-message.sig'))
+    )
+    // not the connected account
+    await rejects(
+      eth.request('demo.maki', 'personal_sign', [
+        hex,
+        '0x0000000000000000000000000000000000000001'
+      ]),
+      4100
+    )
+  })
+
+  it('signs typed data as the firmware does, for the network the site is on', async () => {
+    const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
+    const json = readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8')
+    // not connected yet
+    await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json]), 4100)
+    await eth.request('demo.maki', 'eth_requestAccounts')
+    const signature = toHex(fixture('abandon-typed.sig'))
+    expect(await eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json])).toBe(signature)
+    // the object itself, as some libraries pass it
+    expect(
+      await eth.request('demo.maki', 'eth_signTypedData_v4', [
+        ADDRESS.toLowerCase(),
+        JSON.parse(json)
       ])
-      expect(hash).toBe('0xabc123')
-      const broadcast = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')!
-      expect(broadcast[0]).toBe('https://ethereum-rpc.publicnode.com')
-      expect(broadcast[2]).toEqual([toHex(fixture('abandon-tx-signed.bin'))])
-      expect(net.sent.find(([, m]) => m === 'eth_getTransactionCount')![2]).toEqual([
-        ADDRESS,
-        'pending'
+    ).toBe(signature)
+    // for another network than the site's: refused before maki sees it
+    await eth.request('demo.maki', 'wallet_switchEthereumChain', [{ chainId: '0x2105' }])
+    await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, json]), -32602)
+    // not the connected account; nothing to sign; the older versions
+    await rejects(
+      eth.request('demo.maki', 'eth_signTypedData_v4', [
+        '0x0000000000000000000000000000000000000001',
+        json
+      ]),
+      4100
+    )
+    await rejects(eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS]), -32602)
+    await rejects(eth.request('demo.maki', 'eth_signTypedData_v3', [ADDRESS, json]), 4200)
+    await rejects(eth.request('demo.maki', 'eth_signTypedData', [[], ADDRESS]), 4200)
+  })
+
+  it('passes on maki’s reason for typed data it won’t sign', async () => {
+    const eth = new Ethereum(() => maki, network({}).rpc, memoryStore())
+    await eth.request('demo.maki', 'eth_requestAccounts')
+    const typed = JSON.parse(readFileSync(resolve(FIXTURES, 'abandon-typed.json'), 'utf8'))
+    // a value its type doesn't declare would go unsigned, so maki won't show it
+    typed.message.extra = 'looks important'
+    await expect(
+      eth.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, typed])
+    ).rejects.toMatchObject({
+      code: -32603,
+      message: expect.stringMatching(/not declared/)
+    })
+    const state = { connected: { 'demo.maki': ADDRESS }, chains: {} }
+    const store = memoryStore()
+    await store.save(state)
+    const denied = new Ethereum(() => refusing, network({}).rpc, store)
+    await rejects(
+      denied.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, JSON.stringify(typed)]),
+      -32603
+    )
+    delete typed.message.extra
+    await rejects(denied.request('demo.maki', 'eth_signTypedData_v4', [ADDRESS, typed]), 4001)
+  })
+
+  it('builds, signs and broadcasts a transaction', async () => {
+    const net = network({ eth_getTransactionCount: '0x2a', eth_sendRawTransaction: '0xabc123' })
+    const eth = new Ethereum(() => maki, net.rpc, memoryStore())
+    await eth.request('demo.maki', 'eth_requestAccounts')
+    // the fixture's transaction, gas and fees given by the site
+    const hash = await eth.request('demo.maki', 'eth_sendTransaction', [
+      {
+        from: ADDRESS,
+        to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+        value: '0xb1a2bc2ec50000',
+        gas: '0xfde8',
+        maxFeePerGas: '0x6fc23ac00',
+        maxPriorityFeePerGas: '0x59682f00'
+      }
+    ])
+    expect(hash).toBe('0xabc123')
+    const broadcast = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')!
+    expect(broadcast[0]).toBe('https://ethereum-rpc.publicnode.com')
+    expect(broadcast[2]).toEqual([toHex(fixture('abandon-tx-signed.bin'))])
+    expect(net.sent.find(([, m]) => m === 'eth_getTransactionCount')![2]).toEqual([
+      ADDRESS,
+      'pending'
+    ])
+  })
+
+  it('fills in gas and fees from the network', async () => {
+    const net = network({
+      eth_getTransactionCount: '0x0',
+      eth_estimateGas: '0x5208',
+      eth_getBlockByNumber: { baseFeePerGas: '0x3b9aca00' },
+      eth_maxPriorityFeePerGas: '0x3b9aca00',
+      eth_sendRawTransaction: '0xdef'
+    })
+    const eth = new Ethereum(() => maki, net.rpc, memoryStore())
+    await eth.request('demo.maki', 'eth_requestAccounts')
+    await eth.request('demo.maki', 'wallet_switchEthereumChain', [{ chainId: '0x2105' }])
+    expect(await eth.request('demo.maki', 'eth_chainId')).toBe('0x2105')
+    expect(
+      await eth.request('demo.maki', 'eth_sendTransaction', [
+        { from: ADDRESS, to: ADDRESS, value: '0x1' }
       ])
-    })
+    ).toBe('0xdef')
+    const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')!
+    expect(raw[0]).toBe('https://mainnet.base.org')
+    // type 2, on Base (8453 = 0x2105): 0x02, a list header (f8 and its length), then the chain
+    const signed = raw[2][0] as string
+    expect(signed.startsWith('0x02f8')).toBe(true)
+    expect(signed.slice(8, 14)).toBe('822105')
+  })
 
-    it('fills in gas and fees from the network', async () => {
-      const net = network({
-        eth_getTransactionCount: '0x0',
-        eth_estimateGas: '0x5208',
-        eth_getBlockByNumber: { baseFeePerGas: '0x3b9aca00' },
-        eth_maxPriorityFeePerGas: '0x3b9aca00',
-        eth_sendRawTransaction: '0xdef'
-      })
-      const eth = new Ethereum(() => maki, net.rpc, memoryStore())
-      await eth.request('demo.maki', 'eth_requestAccounts')
-      await eth.request('demo.maki', 'wallet_switchEthereumChain', [{ chainId: '0x2105' }])
-      expect(await eth.request('demo.maki', 'eth_chainId')).toBe('0x2105')
-      expect(
-        await eth.request('demo.maki', 'eth_sendTransaction', [
-          { from: ADDRESS, to: ADDRESS, value: '0x1' }
-        ])
-      ).toBe('0xdef')
-      const raw = net.sent.find(([, m]) => m === 'eth_sendRawTransaction')!
-      expect(raw[0]).toBe('https://mainnet.base.org')
-      // type 2, on Base (8453 = 0x2105): 0x02, a list header (f8 and its length), then the chain
-      const signed = raw[2][0] as string
-      expect(signed.startsWith('0x02f8')).toBe(true)
-      expect(signed.slice(8, 14)).toBe('822105')
-    })
-
-    it('reads through, and refuses what it can’t show', async () => {
-      const net = network({ eth_blockNumber: '0x10' })
-      const eth = new Ethereum(() => maki, net.rpc, memoryStore())
-      expect(await eth.request('app.example.com', 'eth_blockNumber')).toBe('0x10')
-      await rejects(eth.request('app.example.com', 'eth_sign', []), 4200)
-      await rejects(eth.request('app.example.com', 'eth_signTypedData_v3', []), 4200)
-      await rejects(
-        eth.request('app.example.com', 'wallet_switchEthereumChain', [{ chainId: '0x539' }]),
-        4902
-      )
-      await rejects(eth.request('app.example.com', 'admin_peers', []), 4200)
-    })
-  }
-)
+  it('reads through, and refuses what it can’t show', async () => {
+    const net = network({ eth_blockNumber: '0x10' })
+    const eth = new Ethereum(() => maki, net.rpc, memoryStore())
+    expect(await eth.request('app.example.com', 'eth_blockNumber')).toBe('0x10')
+    await rejects(eth.request('app.example.com', 'eth_sign', []), 4200)
+    await rejects(eth.request('app.example.com', 'eth_signTypedData_v3', []), 4200)
+    await rejects(
+      eth.request('app.example.com', 'wallet_switchEthereumChain', [{ chainId: '0x539' }]),
+      4902
+    )
+    await rejects(eth.request('app.example.com', 'admin_peers', []), 4200)
+  })
+})

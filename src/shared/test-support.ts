@@ -9,7 +9,8 @@ import { connect, type Socket } from 'node:net'
 import { resolve } from 'node:path'
 import type { Transport } from './client'
 
-export const FAKE = process.env.MAKI_FAKE ?? resolve(__dirname, '../../../xous-core/target/debug/examples/fake_maki')
+export const FAKE =
+  process.env.MAKI_FAKE ?? resolve(__dirname, '../../../xous-core/target/debug/examples/fake_maki')
 export const SECRET_B32 = 'JBSWY3DPEHPK3PXP' // "Hello!\xde\xad\xbe\xef", the usual RFC example
 
 export class TcpTransport implements Transport {
@@ -38,7 +39,9 @@ export class TcpTransport implements Transport {
 export const FAKE_NAME = 'uni'
 
 /** Start a fake maki on a free port; resolves to that port. */
-export async function startFake(args: string[] = []): Promise<{ port: number; proc: ChildProcess }> {
+export async function startFake(
+  args: string[] = []
+): Promise<{ port: number; proc: ChildProcess }> {
   const proc = spawn(FAKE, ['127.0.0.1:0', '--name', FAKE_NAME, ...args])
   const port = await new Promise<number>((ok, fail) => {
     proc.stdout!.on('data', (d: Buffer) => {

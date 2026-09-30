@@ -13,7 +13,11 @@ import { EXTENSION_REQUESTS } from '../shared/bridge-types'
 const MAX_FROM_BROWSER = 64 * 1024
 
 /** Browser → us: split stdin into messages. */
-export function readNativeMessages(input: Readable, onMessage: (json: string) => void, onEnd: () => void): void {
+export function readNativeMessages(
+  input: Readable,
+  onMessage: (json: string) => void,
+  onEnd: () => void
+): void {
   let buf = Buffer.alloc(0)
   input.on('data', (chunk: Buffer) => {
     buf = Buffer.concat([buf, chunk])
@@ -58,7 +62,13 @@ export interface HostOptions {
   retry?: { attempts: number; delayMs: number }
 }
 
-export async function runNativeHost({ socketPath, input, output, launchApp, retry = { attempts: 40, delayMs: 250 } }: HostOptions): Promise<void> {
+export async function runNativeHost({
+  socketPath,
+  input,
+  output,
+  launchApp,
+  retry = { attempts: 40, delayMs: 250 }
+}: HostOptions): Promise<void> {
   const failAll: string[] = [] // requests received before the app answered
   const pendingIds = new Set<number>()
   let socket: Socket | null = null
@@ -69,7 +79,14 @@ export async function runNativeHost({ socketPath, input, output, launchApp, retr
       const { id, type } = JSON.parse(json) as { id?: unknown; type?: unknown }
       // the extension's requests only: installing apps is for this computer's own tools
       if (!(EXTENSION_REQUESTS as readonly unknown[]).includes(type)) {
-        writeNativeMessage(output, JSON.stringify({ id: typeof id === 'number' ? id : -1, ok: false, error: 'not for the extension' }))
+        writeNativeMessage(
+          output,
+          JSON.stringify({
+            id: typeof id === 'number' ? id : -1,
+            ok: false,
+            error: 'not for the extension'
+          })
+        )
         return
       }
       if (typeof id === 'number') pendingIds.add(id)
@@ -91,7 +108,10 @@ export async function runNativeHost({ socketPath, input, output, launchApp, retr
     })
   } catch {
     for (const id of pendingIds) {
-      writeNativeMessage(output, JSON.stringify({ id, ok: false, error: 'maki desktop is not running' }))
+      writeNativeMessage(
+        output,
+        JSON.stringify({ id, ok: false, error: 'maki desktop is not running' })
+      )
     }
     return
   }

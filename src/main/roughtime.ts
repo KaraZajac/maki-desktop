@@ -8,7 +8,12 @@ const MAGIC = 'ROUGHTIM'
  * 1024-byte Roughtime request to the Roughtime port, so it can't be turned into a general UDP
  * sender.
  */
-export function relay(host: string, port: number, packet: Uint8Array, timeoutMs = 3000): Promise<Uint8Array> {
+export function relay(
+  host: string,
+  port: number,
+  packet: Uint8Array,
+  timeoutMs = 3000
+): Promise<Uint8Array> {
   if (
     packet.length !== 1024 ||
     new TextDecoder().decode(packet.subarray(0, 8)) !== MAGIC ||
