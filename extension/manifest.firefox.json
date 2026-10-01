@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "maki",
   "description": "Logins, codes, and Ethereum and Solana accounts from maki, approved on maki's own screen.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "permissions": [
     "nativeMessaging"
   ],

@@ -1,6 +1,6 @@
 {
   "name": "maki-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Desktop companion for maki: links it over USB, keeps its clock verified and its backups, and brings it apps from the maki store",
   "main": "./out/main/index.js",
   "author": ".leviathan.",
