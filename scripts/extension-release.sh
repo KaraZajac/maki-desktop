@@ -43,13 +43,15 @@ The extension is the browser's side of maki, a hardware security key with a scre
 desktop (a separate app, on this computer, over native messaging) for logins, codes and
 signatures, which maki gives only after its owner approves on its own screen.
 EOF
-(cd "$WORK" && mkdir maki-desktop && cp BUILD.md maki-desktop/ && zip -q "$OUT/maki-extension-$VERSION-source.zip" maki-desktop/BUILD.md)
+mkdir -p "$WORK/add/maki-desktop" && cp "$WORK/BUILD.md" "$WORK/add/maki-desktop/"
+(cd "$WORK/add" && zip -q "$OUT/maki-extension-$VERSION-source.zip" maki-desktop/BUILD.md)
 
 # built from the source archive, as the reviewers will
-(cd "$WORK" && unzip -q "$OUT/maki-extension-$VERSION-source.zip" &&
+mkdir "$WORK/rebuild"
+(cd "$WORK/rebuild" && unzip -q "$OUT/maki-extension-$VERSION-source.zip" &&
     cd maki-desktop && npm ci --ignore-scripts --silent >/dev/null 2>&1 &&
     MAKI_COMMIT=$COMMIT node extension/build.mjs >/dev/null)
-DIST=$WORK/maki-desktop/extension/dist
+DIST=$WORK/rebuild/maki-desktop/extension/dist
 
 # and from here, to check they're the same
 MAKI_COMMIT=$COMMIT node extension/build.mjs >/dev/null
