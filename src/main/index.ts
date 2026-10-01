@@ -897,20 +897,30 @@ function ipc(): void {
       const kept = JSON.parse(await readFile(storeFile(), 'utf8')) as {
         root?: unknown
         indexVersion?: unknown
+        revocationsVersion?: unknown
       }
       return {
         root: typeof kept.root === 'string' ? fromBase64(kept.root) : null,
-        indexVersion: Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
+        indexVersion: Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0,
+        revocationsVersion: Number.isSafeInteger(kept.revocationsVersion)
+          ? kept.revocationsVersion
+          : 0
       }
     } catch {
       return { root: null, indexVersion: 0 }
     }
   })
-  ipcMain.handle('store:save', async (_e, kept: { root: unknown; indexVersion: unknown }) => {
-    const root = kept.root instanceof Uint8Array ? toBase64(kept.root) : null
-    const indexVersion = Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
-    await writeAtomic(storeFile(), JSON.stringify({ root, indexVersion }))
-  })
+  ipcMain.handle(
+    'store:save',
+    async (_e, kept: { root: unknown; indexVersion: unknown; revocationsVersion?: unknown }) => {
+      const root = kept.root instanceof Uint8Array ? toBase64(kept.root) : null
+      const indexVersion = Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
+      const revocationsVersion = Number.isSafeInteger(kept.revocationsVersion)
+        ? kept.revocationsVersion
+        : 0
+      await writeAtomic(storeFile(), JSON.stringify({ root, indexVersion, revocationsVersion }))
+    }
+  )
   ipcMain.handle('app:version', () => app.getVersion())
   // the notices beside the packaged app (electron-builder.yml), or the ones the build wrote
   ipcMain.handle('app:notices', async () => {

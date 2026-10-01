@@ -151,6 +151,18 @@ describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
     expect(dice.stamp).not.toBeNull()
   })
 
+  it('turns away an older revocation list than it has seen, as the index', async () => {
+    // seen before: list 2, under the same root (root 2, the store's newest)
+    const keeper = memoryKeeper()
+    await new Store(source(), keeper, () => NOW).refresh()
+    const kept = await keeper.load()
+    expect(kept.revocationsVersion).toBe(1)
+    await keeper.save({ ...kept, revocationsVersion: 2 })
+    await expect(new Store(source(), keeper, () => NOW).refresh()).rejects.toThrow(
+      /revocation list is older than one seen before/
+    )
+  })
+
   it('remembers the newest root it took, even when the store stops showing it', async () => {
     const keeper = memoryKeeper()
     await new Store(source(), keeper, () => NOW).refresh()

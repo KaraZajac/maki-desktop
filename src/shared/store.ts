@@ -452,10 +452,14 @@ export interface StoreSource {
   get(path: string): Promise<Uint8Array | null>
 }
 
-/** What this side keeps between runs: the newest root it took, and the newest index's version. */
+/**
+ * What this side keeps between runs: the newest root it took, and the newest index's and
+ * revocation list's versions (none from before maki desktop kept it: 0).
+ */
 export interface StoreMemory {
   root: Uint8Array | null
   indexVersion: number
+  revocationsVersion?: number
 }
 
 export interface StoreKeeper {
@@ -541,8 +545,19 @@ export class Store {
       list = decodeRevocations(listFile)
       if (!(await revocationsSigned(list, root)))
         throw new StoreError("the store's revocation list isn't signed by the maki store")
+      // an older list than one seen before could hide a revocation from this side (maki keeps
+      // its own, and refuses an older one too); a new root's catalogue key starts again
+      if (!taken && list.version < (kept.revocationsVersion ?? 0)) {
+        throw new StoreError(
+          `the store's revocation list is older than one seen before (${list.version}, not ${kept.revocationsVersion}): try again later`
+        )
+      }
     }
-    await this.keeper.save({ root: taken ?? kept.root, indexVersion: index.version })
+    await this.keeper.save({
+      root: taken ?? kept.root,
+      indexVersion: index.version,
+      revocationsVersion: list?.version ?? (taken ? 0 : kept.revocationsVersion)
+    })
     this.root = root
     this.index = index
     this.revocations = list
