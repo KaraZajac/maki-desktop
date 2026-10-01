@@ -75,8 +75,15 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Tamper Log', 'wasm', 'Security'],
       ['Wi-Fi', 'wasm', 'Tools']
     ])
-    // an index from before releases were signed into it has none
-    expect(store.index!.releases).toEqual({ firmware: null, desktop: null })
+    // and maki's firmware and maki desktop, which the store signs into its index (from
+    // 2026-10-01; an index from before has neither)
+    const { firmware, desktop } = store.index!.releases
+    expect(firmware?.files.map((f) => f.name).sort()).toEqual([
+      'loader.uf2',
+      'swap.uf2',
+      'xous.uf2'
+    ])
+    expect(desktop?.files.some((f) => f.platform === 'linux-x86_64')).toBe(true)
     // what they may do, from their manifests, as the store's grid shows it
     const status = apps.find((a) => a.name === 'Status')!
     expect((await store.bundle(status)).manifest.permissions.map((p) => p.permission.name)).toEqual(
