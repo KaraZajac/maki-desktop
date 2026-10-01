@@ -434,15 +434,30 @@ function launcherScript({ exe, appPath }: Launch): string {
 
 /**
  * At start: the browsers' launcher, if it starts another file (an AppImage an update replaced,
- * or one since moved), is written again for this one. Only if maki desktop wrote it.
+ * or one since moved), is written again for this one, and a sandboxed browser's relay if an
+ * older maki desktop wrote it. Only what maki desktop wrote.
  */
-export async function refreshLauncher(launch: Launch): Promise<void> {
+export async function refreshLauncher(launch: Launch, given: Partial<Env> = {}): Promise<void> {
   const path = launcherPath()
   const text = await readFile(path, 'utf8').catch(() => null)
-  if (text === null || text === launcherScript(launch) || !text.includes('written by maki desktop'))
-    return
-  await writeFile(path, launcherScript(launch))
-  await chmod(path, 0o755)
+  if (
+    text !== null &&
+    text !== launcherScript(launch) &&
+    text.includes('written by maki desktop')
+  ) {
+    await writeFile(path, launcherScript(launch))
+    await chmod(path, 0o755)
+  }
+  // and each sandboxed browser's relay, from an older maki desktop
+  for (const b of await browsers(env(given).flatpak)) {
+    if (!b.sandbox) continue
+    const relay = relayPath(b.sandbox)
+    const was = await readFile(relay, 'utf8').catch(() => null)
+    if (was === null || was === relayScript(b.name) || !was.includes('Written by maki desktop'))
+      continue
+    await writeFile(relay, relayScript(b.name))
+    await chmod(relay, 0o755)
+  }
 }
 
 /**
@@ -458,7 +473,7 @@ export function relayScript(name: string): string {
 import json, os, socket, struct, sys, threading, time
 
 PATH = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid(), ${BROWSER_SOCKET.map((p) => JSON.stringify(p)).join(', ')})
-MAX = 64 * 1024  # nothing the extension sends is longer
+MAX = 1024 * 1024  # Chrome's limit for a host's messages; each request checks its own
 out, lock, pending, queued, app = sys.stdout.buffer, threading.Lock(), set(), [], [None]
 
 

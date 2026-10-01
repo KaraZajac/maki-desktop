@@ -109,7 +109,16 @@ export class MakiClient {
         reject: (e) => (clearTimeout(timer), reject(e))
       })
     })
-    await this.transport.send(encodeFrame(kind, id, body))
+    try {
+      await this.transport.send(encodeFrame(kind, id, body))
+    } catch (e) {
+      // nothing went out, so no reply comes: stop waiting for one, quietly (it would have been
+      // rejected later, with nobody listening)
+      this.waiting.get(id)?.reject(e as Error)
+      this.waiting.delete(id)
+      reply.catch(() => {})
+      throw e
+    }
     const packet = await reply
     if (packet.kind === Kind.ERROR) {
       const r = new Reader(packet.body)

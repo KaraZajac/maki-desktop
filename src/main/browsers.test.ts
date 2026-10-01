@@ -287,6 +287,16 @@ describe.skipIf(process.platform !== 'linux')('browser setup on Linux', () => {
       })
     })
 
+    it('has a relay from an older maki desktop brought up to date at start', async () => {
+      installFlatpak(fp, ZEN, { persistent: '.zen' })
+      await registerBrowser(`flatpak:${ZEN}`, launch, { asAdmin: admin(), flatpak: fp })
+      const now = readFileSync(relayPath(ZEN), 'utf8')
+      // an older one: it ended the session on a message over 64 KiB
+      writeFileSync(relayPath(ZEN), now.replace('MAX = 1024 * 1024', 'MAX = 64 * 1024'))
+      await refreshLauncher(launch, { flatpak: fp })
+      expect(readFileSync(relayPath(ZEN), 'utf8')).toBe(now)
+    })
+
     it('gets a relay in its own folder, its manifest where it looks inside, and one shared folder', async () => {
       installFlatpak(fp, ZEN, { persistent: '.zen' })
       const a = admin()

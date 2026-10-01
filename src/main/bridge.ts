@@ -108,7 +108,8 @@ export async function serveBridge(handler: Handler, path?: string): Promise<Serv
     }
     socket.on('data', (chunk: string) => {
       buffer += chunk
-      if (buffer.length > 64 * 1024) return socket.destroy() // nothing legitimate is this big
+      // nothing legitimate is this big: each request checks its own size below (bridge-types)
+      if (buffer.length > 1024 * 1024) return socket.destroy()
       let nl: number
       while ((nl = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, nl)

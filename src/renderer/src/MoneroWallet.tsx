@@ -6,7 +6,14 @@ import { MoneroNode } from '@shared/monero/node'
 import { decodeSigned, encodeRequest } from '@shared/monero/request'
 import { planPayment, type Plan } from '@shared/monero/send'
 import { newWallet, Wallet, type WalletState } from '@shared/monero/wallet'
-import { decodeAddress, formatXmr, type Network, parseXmr } from '@shared/monero/xmr'
+import {
+  decodeAddress,
+  encodeAddress,
+  formatXmr,
+  type Network,
+  parseXmr,
+  subaddressKeys
+} from '@shared/monero/xmr'
 import { money, worth } from '@shared/prices'
 import type { MoneroNetworkValue } from '@shared/wallet-apps'
 import { Grouped, said } from './BitcoinWallet'
@@ -399,13 +406,25 @@ function Receive({
   linked: boolean
 }): React.JSX.Element {
   const [shown, setShown] = useState<{ address: string; index: number } | null>(null)
+  // the next subaddress, worked out here from the keys this wallet watches with: shown while
+  // maki shows its own, for the owner to compare, and checked against the one maki sends back
+  const [comparing, setComparing] = useState<{ address: string; index: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const fresh = async (): Promise<void> => {
     setBusy(true)
     setProblem(null)
+    setShown(null)
     try {
       const index = wallet.state.receiveIndex + 1
+      const k = subaddressKeys(wallet.keys.view, wallet.keys.spend, 0, index)
+      const here = encodeAddress({
+        network: wallet.keys.network,
+        kind: 'subaddress',
+        spend: k.spend,
+        view: k.view
+      })
+      setComparing({ address: here, index })
       const r = await link.moneroAddress(wire, index)
       if (r.approval !== 'approved') {
         setProblem(
@@ -415,12 +434,17 @@ function Receive({
         )
         return
       }
+      if (r.address !== here) {
+        setProblem('maki has a different address for this account: don’t use this one.')
+        return
+      }
       wallet.state.receiveIndex = index
       await keep({ ...wallet.state })
-      setShown({ address: r.address, index })
+      setShown({ address: here, index })
     } catch (e) {
       setProblem((e as Error).message)
     } finally {
+      setComparing(null)
       setBusy(false)
     }
   }
@@ -441,6 +465,16 @@ function Receive({
           {busy ? 'Compare on maki…' : linked ? 'A fresh subaddress' : 'Plug maki in'}
         </Button>
       </div>
+      {comparing && (
+        <div className="mt-3">
+          <div className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1">
+            Subaddress {comparing.index}: is it the same on maki?
+          </div>
+          <code className="mt-1 block break-all font-mono text-xs">
+            <Grouped text={comparing.address} />
+          </code>
+        </div>
+      )}
       {shown && (
         <div className="mt-3">
           <div className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1">

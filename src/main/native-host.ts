@@ -10,7 +10,12 @@ import { EXTENSION_REQUESTS } from '../shared/bridge-types'
  * it isn't running. Nothing but framed messages may ever reach stdout.
  */
 
-const MAX_FROM_BROWSER = 64 * 1024
+/**
+ * The most a message from the browser may be: Chrome's own limit for a host's messages. Each
+ * request's own checks (bridge-types.ts: an Ethereum contract's deployment, up to 512 KiB) answer
+ * a big one with an error; past this, the session ends.
+ */
+const MAX_FROM_BROWSER = 1024 * 1024
 
 /** Browser → us: split stdin into messages. */
 export function readNativeMessages(

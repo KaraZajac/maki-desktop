@@ -195,7 +195,10 @@ export class Link {
       // after the clock: maki takes the catalogue key's records only with verified time
       void this.storeNow()
     }
-    if (this.backups) {
+    // the link may have ended while the clock was synced (or another taken its place): its
+    // timer would never be stopped, and the next link's would back up twice as often
+    if (this.backups && this.client === client) {
+      if (this.backups_) clearInterval(this.backups_)
       this.backups_ = setInterval(() => void this.backupNow({ quiet: true }), BACKUP_EVERY_MS)
       if (this.autoSync) void this.backupNow({ quiet: true })
     }

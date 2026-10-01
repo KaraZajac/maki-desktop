@@ -113,6 +113,40 @@ const launch = (): Launch => ({
   appPath: app.isPackaged ? null : app.getAppPath()
 })
 
+/**
+ * The most a Monero node's answer may be: monerod caps a batch of blocks at about 100 MB, and
+ * the wallet asks for pruned ones. Past it, a node that's hostile or broken is cut off, rather
+ * than read until maki desktop runs out of memory.
+ */
+const NODE_ANSWER_MAX = 128 * 1024 * 1024
+
+/** A response's body, read as it comes, up to `max` bytes. */
+async function readCapped(r: Response, max: number): Promise<Uint8Array> {
+  if (Number(r.headers.get('content-length') ?? 0) > max)
+    throw new Error('the node’s answer is too big')
+  if (!r.body) return new Uint8Array()
+  const parts: Uint8Array[] = []
+  let got = 0
+  const reader = r.body.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    got += value.length
+    if (got > max) {
+      await reader.cancel().catch(() => {})
+      throw new Error('the node’s answer is too big')
+    }
+    parts.push(value)
+  }
+  const all = new Uint8Array(got)
+  let at = 0
+  for (const p of parts) {
+    all.set(p, at)
+    at += p.length
+  }
+  return all
+}
+
 /** Browser requests waiting on the window, which owns the link. */
 const fromBrowser = new Map<
   number,
@@ -781,7 +815,7 @@ function ipc(): void {
       signal: AbortSignal.timeout(120_000)
     })
     if (!r.ok) throw new Error(`the node said ${r.status}`)
-    return new Uint8Array(await r.arrayBuffer())
+    return readCapped(r, NODE_ANSWER_MAX)
   })
   ipcMain.handle('xmr:open', async (_e, title: unknown) => {
     const r = await dialog.showOpenDialog(win!, {
