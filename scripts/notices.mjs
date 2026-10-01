@@ -199,7 +199,10 @@ export function render(title, intro, sections) {
   return lines.join('\n')
 }
 
+// MAKI_COMMIT names it where there's no Git: built from a source archive (the store reviewers'
+// build of the extension), the notices must still be the same as the release's
 const commit = () => {
+  if (process.env.MAKI_COMMIT) return process.env.MAKI_COMMIT
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()
   } catch {

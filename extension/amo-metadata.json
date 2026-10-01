@@ -1,0 +1,18 @@
+{
+  "categories": { "firefox": ["privacy-security"] },
+  "summary": {
+    "en-US": "Logins, codes, and Ethereum, Solana and Nostr accounts from maki, a security key with a screen: approved on maki itself."
+  },
+  "description": {
+    "en-US": "maki is open-source firmware that makes a USB device with a screen and buttons (the DEF CON 34 badge's) a security key and a wallet. This extension is its browser's side.\n\n- **Logins and codes:** focus a site's login or code field and maki shows the site; say yes on maki and the extension fills them in. Logins you type can be kept on maki.\n- **Passkeys first:** where maki holds a passkey for a site, it doesn't offer the password unless you ask for it.\n- **Wallets:** a site's Ethereum (EIP-1193, EIP-6963) and Solana (Wallet Standard) requests, and Nostr signing (NIP-07), go to maki's own apps, which show what's being signed on maki's screen.\n\nNothing is approved in the browser: every login, code and signature needs a press on maki, which shows the site asking. The extension talks only to maki desktop, the app that links maki to this computer, over native messaging. It sends no data to any server.\n\nNeeds maki desktop and a maki: https://maki.netslum.io"
+  },
+  "homepage": { "en-US": "https://maki.netslum.io" },
+  "support_url": { "en-US": "https://github.com/KaraZajac/maki-desktop/issues" },
+  "requires_payment": true,
+  "is_experimental": true,
+  "version": {
+    "license": "MIT",
+    "compatibility": ["firefox"],
+    "approval_notes": "The extension needs maki desktop (https://github.com/KaraZajac/maki-desktop, MIT), which it reaches over native messaging, and a maki device or the fake maki that stands in for one. To try it without hardware: build maki desktop, and the fake maki from https://github.com/KaraZajac/maki-firmware (cargo run -p maki-proto --features fake --example fake_maki), then 'Use fake maki' in maki desktop. maki desktop's Connections page connects the browser. The fake approves every request, as maki's owner would by pressing on maki.\n\nWhat goes to maki desktop: the hostname of the page asking (for a login, a code or a signature), a login the user chooses to keep, and the requests of the page's wallets (transactions and messages to sign). Logins and codes come back only after the user approves on maki. Nothing is sent anywhere else. BUILD.md in the source archive says how to build it."
+  }
+}

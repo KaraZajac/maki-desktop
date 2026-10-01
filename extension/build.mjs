@@ -23,7 +23,7 @@ for (const target of ['chrome', 'firefox']) {
   })
   cpSync(`extension/manifest.${target}.json`, `${out}/manifest.json`)
   cpSync('extension/popup.html', `${out}/popup.html`)
-  cpSync('resources/icon.png', `${out}/icon.png`)
+  cpSync('extension/icons', `${out}/icons`, { recursive: true })
   cpSync('LICENSE', `${out}/LICENSE`)
   // the packages esbuild put in the scripts: their notices go with them
   const packages = new Set()
