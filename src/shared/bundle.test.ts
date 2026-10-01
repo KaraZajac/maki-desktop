@@ -14,16 +14,16 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
     expect(b.manifest).toMatchObject({
       id: 'com.leviathan.maki.dice',
       name: 'Dice',
-      version: 1,
-      label: '1.0',
+      version: 2,
+      label: '2.0',
       kind: 'wasm',
-      api: 1,
+      api: 8,
       permissions: [],
       storageKib: 1,
       memoryKib: 64,
       backup: true
     })
-    expect(b.manifest.description).toMatch(/Rolls one to three dice/)
+    expect(b.manifest.description).toMatch(/Dice for tabletop games/)
     expect(b.codeBytes).toBeGreaterThan(1000)
     expect(b.developer).toHaveLength(32)
     // as `maki keygen` and maki itself show it

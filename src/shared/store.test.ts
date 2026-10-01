@@ -126,7 +126,11 @@ describe.skipIf(!DEV_STORE_THERE)('the development store', () => {
     expect(revoked(store.revocations, 'com.leviathan.maki.tally', 1, new Uint8Array(32))).toMatch(
       /revokes Tally/
     )
-    expect(revoked(store.revocations, 'com.leviathan.maki.tally', 2, new Uint8Array(32))).toBeNull()
+    // up to the SDK's Tally, version 2
+    expect(revoked(store.revocations, 'com.leviathan.maki.tally', 2, new Uint8Array(32))).toMatch(
+      /revokes Tally/
+    )
+    expect(revoked(store.revocations, 'com.leviathan.maki.tally', 3, new Uint8Array(32))).toBeNull()
     // it keeps root 2 and the index's version
     const kept = await keeper.load()
     expect(decodeRoot(kept.root!).root.version).toBe(2)
