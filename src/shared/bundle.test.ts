@@ -66,6 +66,13 @@ describe.skipIf(!APP_FIXTURES_THERE)('the SDK’s example bundles', () => {
       walletCoins(sol.wallet!.paths)
     ]).toEqual([6, 'ed25519', ["m/44'/501'"], ['Solana']])
     expect(btc.wallet!.curve).toBe('secp256k1')
+    // Child Seeds': BIP-85's, which aren't a coin (host API 9)
+    const seeds = readBundle(fixture('childseeds')).manifest
+    expect([
+      seeds.api,
+      seeds.wallet!.paths.map(formatPath),
+      walletCoins(seeds.wallet!.paths)
+    ]).toEqual([9, ["m/83696968'/39'/0'"], ['child seeds']])
     // an app without the permission has no paths
     expect(readBundle(fixture('dice')).manifest.wallet).toBeNull()
   })

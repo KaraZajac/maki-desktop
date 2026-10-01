@@ -248,6 +248,9 @@ export function formatPath(path: number[]): string {
   return ['m', ...path.map((c) => (c >= HARDENED ? `${c - HARDENED}'` : `${c}`))].join('/')
 }
 
+/** BIP-85's purpose, `83696968'`: keys that make entropy for other wallets (child seeds). */
+const BIP85 = 83696968 + HARDENED
+
 /**
  * The coins a wallet's paths reach (SLIP-44, from the coin type, never the app's say-so), each
  * once, as maki's install screen names them (maki_hd::coin in the firmware).
@@ -266,7 +269,8 @@ export function walletCoins(paths: number[][]): string[] {
   const out: string[] = []
   for (const p of paths) {
     const type = (p[1] ?? 0) % HARDENED
-    const name = names[type] ?? `coin type ${type}`
+    // BIP-85's purpose: phrases for other wallets (child seeds), not a coin
+    const name = p[0] === BIP85 ? 'child seeds' : (names[type] ?? `coin type ${type}`)
     if (!out.includes(name)) out.push(name)
   }
   return out

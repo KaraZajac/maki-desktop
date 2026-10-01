@@ -43,10 +43,12 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
     expect(store.problem).toBeNull()
     const apps = store.index!.apps
     expect(apps.map((a) => [a.name, a.kind, a.category])).toEqual([
+      ['2048', 'wasm', 'Games'],
       ['Age', 'wasm', 'Security'],
       ['Bitcoin', 'wasm', 'Finance'],
       ['Breakout', 'wasm', 'Games'],
       ['Chess Clock', 'wasm', 'Games'],
+      ['Child Seeds', 'wasm', 'Finance'],
       ['Contacts', 'wasm', 'Social'],
       ['Dice', 'wasm', 'Games'],
       ['Ethereum', 'wasm', 'Finance'],
@@ -55,9 +57,11 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Life', 'wasm', 'Games'],
       ['Magic 8-Ball', 'wasm', 'Games'],
       ['Marble', 'wasm', 'Games'],
+      ['Minesweeper', 'wasm', 'Games'],
       ['Minisign', 'wasm', 'Security'],
       ['Monero', 'wasm', 'Finance'],
       ['Morse', 'wasm', 'Tools'],
+      ['Name Tag', 'wasm', 'Social'],
       ['Nostr', 'wasm', 'Social'],
       ['Notes', 'wasm', 'Security'],
       ['OpenPGP', 'wasm', 'Security'],
