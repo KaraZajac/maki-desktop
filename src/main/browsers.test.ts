@@ -6,7 +6,8 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  writeFileSync
+  writeFileSync,
+  symlinkSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -65,6 +66,7 @@ function fakeFlatpak(): Flatpak & { ran: string[][] } {
     ran,
     installations: [join(root, 'system'), join(root, 'user')],
     instances: join(root, 'instances'),
+    proc: join(root, 'proc'),
     overrides,
     override: async (args) => {
       ran.push(args)
@@ -111,14 +113,29 @@ function installFlatpak(fp: Flatpak, app: string, { persistent = '', python = tr
   if (python) writeFileSync(join(bin, 'python3'), '')
 }
 
-/** A sandbox of the app, running with the permissions it started with. */
-function runFlatpak(fp: Flatpak, app: string, context: string): void {
+/**
+ * A sandbox of the app, running with the permissions it started with. With `programs`, it says
+ * which pid namespace it is, as bwrap does, and those run in it (in the fake /proc).
+ */
+function runFlatpak(fp: Flatpak, app: string, context: string, programs?: string[]): void {
   const dir = join(fp.instances, String(Math.floor(Math.random() * 1e9)))
   mkdirSync(dir, { recursive: true })
   writeFileSync(
     join(dir, 'info'),
     `[Application]\nname=${app}\n\n[Instance]\ninstance-id=1\n\n[Context]\n${context}\n`
   )
+  if (!programs) return
+  const ns = 4026530000 + Math.floor(Math.random() * 1e5)
+  writeFileSync(
+    join(dir, 'bwrapinfo.json'),
+    JSON.stringify({ 'child-pid': 1, 'pid-namespace': ns })
+  )
+  for (const exe of ['/usr/bin/bwrap', ...programs]) {
+    const pid = join(fp.proc, String(Math.floor(Math.random() * 1e7)))
+    mkdirSync(join(pid, 'ns'), { recursive: true })
+    symlinkSync(`pid:[${ns}]`, join(pid, 'ns', 'pid'))
+    symlinkSync(exe, join(pid, 'exe'))
+  }
 }
 
 const row = (s: BrowserStatus[], id: string): BrowserStatus | undefined =>
@@ -318,6 +335,31 @@ describe.skipIf(process.platform !== 'linux')('browser setup on Linux', () => {
       expect(row((await browserStatus({ flatpak: fp })).browsers, `flatpak:${ZEN}`)).toMatchObject({
         restart: false
       })
+    })
+
+    it('takes a sandbox only a helper outlived the browser in for no reason to restart', async () => {
+      installFlatpak(fp, ZEN, { persistent: '.zen' })
+      const { browsers } = await registerBrowser(`flatpak:${ZEN}`, launch, {
+        asAdmin: admin(),
+        flatpak: fp
+      })
+      expect(row(browsers, `flatpak:${ZEN}`)).toMatchObject({ registered: true, restart: false })
+      // an old Zen from before maki, gone but for the adb its about:debugging started
+      const adb = '/home/kara/.var/app/app.zen_browser.zen/cache/zen/profile/adb/adb'
+      runFlatpak(fp, ZEN, 'filesystems=xdg-download;\npersistent=.zen;', [adb])
+      // and the Zen in use, which has what it needs
+      runFlatpak(
+        fp,
+        ZEN,
+        'filesystems=xdg-download;xdg-run/maki:create;\npersistent=.zen;.mozilla;',
+        ['/app/zen/zen']
+      )
+      const status = async (): Promise<BrowserStatus | undefined> =>
+        row((await browserStatus({ flatpak: fp })).browsers, `flatpak:${ZEN}`)
+      expect(await status()).toMatchObject({ restart: false })
+      // the old one running Zen itself is another matter
+      runFlatpak(fp, ZEN, 'filesystems=xdg-download;\npersistent=.zen;', ['/app/zen/zen', adb])
+      expect(await status()).toMatchObject({ restart: true })
     })
 
     it('refuses a Flatpak whose runtime has no Python for the relay', async () => {

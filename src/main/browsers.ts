@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, readlink, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import type { BrowserFamily, BrowserStatus, BrowsersView } from '../shared/bridge-types'
@@ -94,6 +94,8 @@ export interface Flatpak {
   installations: string[]
   /** where the running sandboxes describe themselves: each one's permissions, as it started */
   instances: string
+  /** where the computer's processes are listed: /proc */
+  proc: string
   /** this user's overrides, a file per app */
   overrides: string
   /** `flatpak override --user ARGS…` */
@@ -108,6 +110,7 @@ export function flatpak(): Flatpak {
   return {
     installations: ['/var/lib/flatpak', join(dataHome(), 'flatpak')],
     instances: join(run, '.flatpak'),
+    proc: '/proc',
     overrides: join(dataHome(), 'flatpak', 'overrides'),
     override: (args) =>
       new Promise((resolve, reject) =>
@@ -616,12 +619,39 @@ function grants(k: Keyfile | null, persists: string[]): boolean {
   return shares(entries(k, 'filesystems')) && persists.every((p) => kept.has(p))
 }
 
+/**
+ * Whether the browser itself runs in a sandbox, not only something it left behind: Flatpak keeps
+ * a sandbox while any process in it lives, and a helper can outlive the browser (about:debugging
+ * starts adb, which stays). The browser is a program of the app's own, under /app.
+ */
+async function browserIn(fp: Flatpak, instance: string): Promise<boolean> {
+  let ns: string
+  try {
+    const info = JSON.parse(await readFile(join(fp.instances, instance, 'bwrapinfo.json'), 'utf8'))
+    if (typeof info['pid-namespace'] !== 'number') return true
+    ns = `pid:[${info['pid-namespace']}]`
+  } catch {
+    return true // nothing says what runs there: take it for the browser
+  }
+  for (const pid of await readdir(fp.proc).catch(() => [] as string[])) {
+    if (
+      !/^\d+$/.test(pid) ||
+      (await readlink(join(fp.proc, pid, 'ns', 'pid')).catch(() => '')) !== ns
+    )
+      continue
+    const exe = await readlink(join(fp.proc, pid, 'exe')).catch(() => '')
+    if (exe.startsWith('/app/')) return true
+  }
+  return false
+}
+
 /** A sandbox of this browser that started before it had what it needs: it takes it once restarted. */
 async function runningWithout(fp: Flatpak, b: Browser): Promise<boolean> {
   const persists = await persistsNeeded(fp, b)
   for (const n of await readdir(fp.instances).catch(() => [] as string[])) {
     const k = await readKeyfile(join(fp.instances, n, 'info'))
-    if (k?.get('Application')?.get('name') === b.sandbox && !grants(k, persists)) return true
+    if (k?.get('Application')?.get('name') !== b.sandbox || grants(k, persists)) continue
+    if (await browserIn(fp, n)) return true
   }
   return false
 }
