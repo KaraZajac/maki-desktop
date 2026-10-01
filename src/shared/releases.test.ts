@@ -89,6 +89,22 @@ describe('maki’s firmware build', () => {
     expect(firmwareState('preview-2026-10-01-3-g1f2e3d4c5', newest)).toBe('ahead')
     expect(firmwareState('v0.10.2-12-g1f2e3d4c5', newest)).toBe('unknown')
   })
+
+  it('places a second release the same day after the first', () => {
+    const second = parseReleases({
+      firmware: { ...firmware(), name: 'preview-2026-10-01.2', commit: 'c'.repeat(40) }
+    }).firmware!
+    expect(firmwareState('preview-2026-10-01-0-g86a1f5ba4', second)).toBe('update')
+    expect(firmwareState('preview-2026-09-29-46-g705127d6a', second)).toBe('update')
+    expect(firmwareState(`preview-2026-10-01.2-0-g${'c'.repeat(9)}`, second)).toBe('current')
+    expect(firmwareState('preview-2026-10-01.2-4-g1f2e3d4c5', second)).toBe('ahead')
+    // and the first comes before a third
+    const third = parseReleases({
+      firmware: { ...firmware(), name: 'preview-2026-10-01.3', commit: 'd'.repeat(40) }
+    }).firmware!
+    expect(firmwareState('preview-2026-10-01.2-0-g1f2e3d4c5', third)).toBe('update')
+    expect(buildLabel('preview-2026-10-01.2-0-g1f2e3d4c5')).toBe('preview 2026-10-01.2')
+  })
 })
 
 describe('maki desktop’s version', () => {

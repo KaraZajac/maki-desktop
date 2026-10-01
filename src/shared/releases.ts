@@ -114,9 +114,17 @@ export function parseBuild(version: string): Build | null {
   return m ? { tag: m[1], ahead: Number(m[2]), commit: m[3] } : null
 }
 
-/** A release's date, from a `preview-YYYY-MM-DD` tag. */
-function tagDate(tag: string): string | null {
-  return /(\d{4}-\d{2}-\d{2})$/.exec(tag)?.[1] ?? null
+/**
+ * Where a release falls, from its `preview-YYYY-MM-DD` tag: its date, then which of that day's
+ * releases it is (a second the same day is `preview-YYYY-MM-DD.2`).
+ */
+function tagOrder(tag: string): [string, number] | null {
+  const m = /(\d{4}-\d{2}-\d{2})(?:\.(\d+))?$/.exec(tag)
+  return m ? [m[1], m[2] ? Number(m[2]) : 1] : null
+}
+
+function before(a: [string, number], b: [string, number]): boolean {
+  return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
 }
 
 /**
@@ -147,10 +155,10 @@ export function firmwareState(version: string, newest: Release): FirmwareState {
   const b = parseBuild(version)
   if (!b) return 'update'
   if (newest.commit.startsWith(b.commit)) return 'current'
-  const mine = tagDate(b.tag)
-  const theirs = tagDate(newest.name) ?? newest.date
+  const mine = tagOrder(b.tag)
+  const theirs = tagOrder(newest.name) ?? [newest.date, 1]
   if (!mine) return 'unknown'
-  if (mine < theirs) return 'update'
+  if (before(mine, theirs)) return 'update'
   return 'ahead'
 }
 
