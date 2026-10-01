@@ -5,9 +5,10 @@ directories:
   buildResources: resources
   output: dist
 # Include lists per platform, as in switchboard: a top-level `files` list becomes a second,
-# exclusions-only matcher, which the packer reads as "everything" and ships the checkout.
+# exclusions-only matcher, which the packer reads as "everything" and ships the checkout. Not
+# out/extension: that's the extension's release (scripts/extension-release.sh), not the app's.
 mac:
-  files: [out/**/*, resources/**/*, package.json]
+  files: [out/**/*, '!out/extension/**', resources/**/*, package.json]
   extraResources:
     - from: LICENSE
       to: LICENSE
@@ -15,7 +16,7 @@ mac:
       to: THIRD-PARTY-NOTICES.md
   category: public.app-category.utilities
 linux:
-  files: [out/**/*, resources/**/*, package.json]
+  files: [out/**/*, '!out/extension/**', resources/**/*, package.json]
   # sudo's approval plugin, where root can read it to set it up (not inside the app's archive);
   # and the licenses, beside the app: maki desktop's, and the notices of what it carries
   extraResources:
@@ -29,7 +30,7 @@ linux:
   target: [AppImage]
   category: Utility
 win:
-  files: [out/**/*, resources/**/*, package.json]
+  files: [out/**/*, '!out/extension/**', resources/**/*, package.json]
   extraResources:
     - from: LICENSE
       to: LICENSE
