@@ -75,7 +75,14 @@ export class MakiClient {
   private waiting = new Map<number, { resolve: (p: Packet) => void; reject: (e: Error) => void }>()
   private nextId = 1
 
-  constructor(private transport: Transport) {
+  /**
+   * `slow`: how many times longer than a badge's to wait for each answer, for a maki that's
+   * slower (one in an emulator, which runs a tenth as fast when it's busy).
+   */
+  constructor(
+    private transport: Transport,
+    private slow = 1
+  ) {
     transport.onData((bytes) => {
       for (const item of this.deframer.push(bytes)) {
         if (item instanceof FrameError) continue // unattributable; its request will time out
@@ -99,6 +106,7 @@ export class MakiClient {
   ): Promise<Packet> {
     const id = this.nextId
     this.nextId = this.nextId === 0xffff ? 1 : this.nextId + 1
+    timeoutMs *= this.slow
     const reply = new Promise<Packet>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiting.delete(id)
