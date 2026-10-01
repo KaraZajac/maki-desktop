@@ -17,6 +17,7 @@ import { APP_ID, fromBase64 } from './bridge-types'
 import { MAX_BUNDLE, Permissions, readBundle, type Bundle, type Permission } from './bundle'
 import type { MakiClient, StoreUpdate } from './client'
 import { Reader, Truncated } from './protocol'
+import { parseReleases, type Releases } from './releases'
 
 export class StoreError extends Error {}
 
@@ -292,6 +293,8 @@ export interface Index {
   apps: StoreApp[]
   /** apps this app can't show: a permission it doesn't know, say */
   skipped: number
+  /** the newest firmware and maki desktop, signed with the rest, for updates */
+  releases: Releases
 }
 
 /** A path inside the store: no way out of it. */
@@ -431,7 +434,13 @@ export async function checkIndex(
     else skipped++
   }
   apps.sort((a, b) => a.name.localeCompare(b.name))
-  return { version: version as number, expires: expires as number, apps, skipped }
+  return {
+    version: version as number,
+    expires: expires as number,
+    apps,
+    skipped,
+    releases: parseReleases(json.releases)
+  }
 }
 
 // ------------------------------------------------------------------------------------------

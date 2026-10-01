@@ -198,6 +198,26 @@ export class MakiClient {
     return out
   }
 
+  /**
+   * Ask maki to restart into its boot stage's update mode, where new firmware goes on its USB
+   * drive, for `label` (the release, which maki shows its owner): 'approved' once they've said
+   * yes on maki, which then restarts.
+   */
+  async updateMode(label: string): Promise<ApprovalValue> {
+    const r = new Reader(
+      (
+        await this.request(
+          Kind.UPDATE_MODE,
+          new Writer().str8(label).finish(),
+          MakiClient.APPROVAL_TIMEOUT_MS
+        )
+      ).body
+    )
+    const approval = Approval[r.u8()] ?? 'unavailable'
+    r.end()
+    return approval
+  }
+
   /** Ask maki for the current code for `site`. */
   async getTotp(
     site: string

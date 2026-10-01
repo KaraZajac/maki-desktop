@@ -46,18 +46,24 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Age', 'wasm', 'Security'],
       ['Bitcoin', 'wasm', 'Finance'],
       ['Breakout', 'wasm', 'Games'],
+      ['Chess Clock', 'wasm', 'Games'],
       ['Contacts', 'wasm', 'Social'],
       ['Dice', 'wasm', 'Games'],
       ['Ethereum', 'wasm', 'Finance'],
+      ['Initiative', 'wasm', 'Games'],
+      ['Instruments', 'wasm', 'Tools'],
+      ['Life', 'wasm', 'Games'],
       ['Magic 8-Ball', 'wasm', 'Games'],
       ['Marble', 'wasm', 'Games'],
       ['Minisign', 'wasm', 'Security'],
       ['Monero', 'wasm', 'Finance'],
+      ['Morse', 'wasm', 'Tools'],
       ['Nostr', 'wasm', 'Social'],
       ['Notes', 'wasm', 'Security'],
       ['OpenPGP', 'wasm', 'Security'],
       ['Passphrase', 'wasm', 'Security'],
       ['Pomodoro', 'native', 'Productivity'],
+      ['Presenter', 'wasm', 'Productivity'],
       ['Scanner', 'wasm', 'Tools'],
       ['Sensors', 'wasm', 'Tools'],
       ['Snake', 'wasm', 'Games'],
@@ -66,8 +72,11 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Status', 'wasm', 'Productivity'],
       ['Sudo', 'wasm', 'Security'],
       ['Tally', 'wasm', 'Tools'],
+      ['Tamper Log', 'wasm', 'Security'],
       ['Wi-Fi', 'wasm', 'Tools']
     ])
+    // an index from before releases were signed into it has none
+    expect(store.index!.releases).toEqual({ firmware: null, desktop: null })
     // what they may do, from their manifests, as the store's grid shows it
     const status = apps.find((a) => a.name === 'Status')!
     expect((await store.bundle(status)).manifest.permissions.map((p) => p.permission.name)).toEqual(

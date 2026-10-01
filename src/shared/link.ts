@@ -302,6 +302,17 @@ export class Link {
     return r
   }
 
+  /** Ask maki to restart into update mode for new firmware (`label`); its owner decides on maki. */
+  async updateMode(label: string): Promise<ApprovalValue> {
+    const client = this.linkedClient()
+    this.note(`asked maki to restart for ${label}: approve on maki`)
+    const approval = await client.updateMode(label)
+    this.note(
+      approval === 'approved' ? 'maki is restarting into update mode' : `update mode: ${approval}`
+    )
+    return approval
+  }
+
   /** maki's room for apps, and what the ones installed take of it. */
   async appSpace(): Promise<{ status: ApprovalValue; space: AppSpace | null }> {
     return this.linkedClient().appSpace()

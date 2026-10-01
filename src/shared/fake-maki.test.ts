@@ -104,6 +104,13 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
     await t.close()
   })
 
+  it('restarts into update mode for new firmware once the owner says yes', async () => {
+    const [c, t] = await client()
+    expect(await c.updateMode('preview-2026-10-01')).toBe('approved')
+    await expect(c.updateMode('two\nlines')).rejects.toThrow('bad argument')
+    await t.close()
+  })
+
   it('gives no code on this computer’s word for the time', async () => {
     const [c, t] = await client()
     expect((await c.status()).timeState).toBe(TimeState.UNVERIFIED)

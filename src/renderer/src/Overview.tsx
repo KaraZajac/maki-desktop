@@ -4,6 +4,7 @@ import { TimeState } from '@shared/protocol'
 import type { Apps } from './apps-state'
 import { StorageChart } from './StorageChart'
 import { ago, Badge, Button, bytes, Dot, Glyph, Label, MakiMark, PageHeader, Toggle } from './ui'
+import { Updates } from './Updates'
 
 export type Page = 'overview' | 'apps' | 'wallets' | 'connections' | 'backups'
 
@@ -381,6 +382,8 @@ export function Overview({
           )}
         </Stat>
       </div>
+
+      <Updates link={link} appUpdates={updates} goApps={() => go('apps')} />
     </div>
   )
 }

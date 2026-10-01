@@ -14,6 +14,8 @@ export const Kind = {
   TIME_CHALLENGE: 0x03,
   TIME_PROOF: 0x04,
   TIME_UNVERIFIED: 0x05,
+  /** restart maki into its boot stage's update mode, once the owner says yes on maki */
+  UPDATE_MODE: 0x06,
   /** answered only after the owner approves on maki */
   GET_LOGIN: 0x10,
   GET_TOTP: 0x11,

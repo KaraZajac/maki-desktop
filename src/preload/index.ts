@@ -205,6 +205,46 @@ const api = {
     /** open the notices of the code of others it carries (THIRD-PARTY-NOTICES.md) */
     notices: (): Promise<void> => ipcRenderer.invoke('app:notices')
   },
+  updates: {
+    /** maki desktop's version, what it runs on, and what it can update by itself here */
+    info: (): Promise<{
+      version: string
+      platform: string
+      appImage: boolean
+      firmwareHere: boolean
+    }> => ipcRenderer.invoke('updates:info'),
+    /** a release's files, fetched and checked against the store's record: paths by name */
+    fetch: (
+      release: string,
+      files: import('../shared/releases').ReleaseFile[]
+    ): Promise<Record<string, string>> => ipcRenderer.invoke('updates:fetch', release, files),
+    /** put the firmware on maki once it's in update mode, and start it */
+    installFirmware: (paths: Record<string, string>): Promise<void> =>
+      ipcRenderer.invoke('updates:installFirmware', paths),
+    /** replace maki desktop with this file, then restart it */
+    replaceDesktop: (
+      file: import('../shared/releases').ReleaseFile,
+      newVersion: string
+    ): Promise<string> => ipcRenderer.invoke('updates:replaceDesktop', file, newVersion),
+    onProgress: (
+      listener: (p: { name: string; bytes: number; of: number }) => void
+    ): (() => void) => {
+      const handler = (_e: unknown, p: { name: string; bytes: number; of: number }): void =>
+        listener(p)
+      ipcRenderer.on('updates:progress', handler)
+      return () => ipcRenderer.removeListener('updates:progress', handler)
+    },
+    onFirmwareStep: (
+      listener: (s: { step: import('../shared/releases').FirmwareStep; detail?: string }) => void
+    ): (() => void) => {
+      const handler = (
+        _e: unknown,
+        s: { step: import('../shared/releases').FirmwareStep; detail?: string }
+      ): void => listener(s)
+      ipcRenderer.on('updates:firmwareStep', handler)
+      return () => ipcRenderer.removeListener('updates:firmwareStep', handler)
+    }
+  },
   settings: {
     startAtLogin: (): Promise<boolean> => ipcRenderer.invoke('settings:startAtLogin'),
     setStartAtLogin: (on: boolean): Promise<boolean> =>

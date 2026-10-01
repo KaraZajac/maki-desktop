@@ -51,6 +51,8 @@ import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
 import { agentSocketPath, serveAgent, SSH_APP } from './ssh-agent'
 import { onGithub, storeName, storeSource, storeToken, storeWhere } from './store-source'
+import { fetchRelease, installFirmware, replaceAppImage } from './updates'
+import { platformName, type ReleaseFile } from '../shared/releases'
 
 /**
  * maki's desktop app lives in the tray: the window can close, the link stays. The renderer owns
@@ -230,6 +232,44 @@ function ipc(): void {
       fromBrowser.delete(key)
     }
   )
+  // updates: the files of a release the store signed for, fetched and checked, into a folder of
+  // their own; maki's firmware put on its update drive; maki desktop's AppImage replaced
+  ipcMain.handle('updates:info', () => ({
+    version: app.getVersion(),
+    platform: platformName(process.platform, process.arch),
+    appImage: !!process.env['APPIMAGE'],
+    firmwareHere: process.platform === 'linux'
+  }))
+  ipcMain.handle('updates:fetch', (_e, release: string, files: ReleaseFile[]) => {
+    if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(release)) throw new Error('not a release name')
+    return fetchRelease(
+      files,
+      join(app.getPath('userData'), 'updates', release),
+      undefined,
+      (name, bytes, of) => win?.webContents.send('updates:progress', { name, bytes, of })
+    )
+  })
+  ipcMain.handle('updates:installFirmware', (_e, paths: Record<string, string>) =>
+    installFirmware(paths, (step, detail) =>
+      win?.webContents.send('updates:firmwareStep', { step, detail })
+    )
+  )
+  ipcMain.handle('updates:replaceDesktop', async (_e, file: ReleaseFile, newVersion: string) => {
+    const next = await replaceAppImage(
+      file,
+      { path: process.env['APPIMAGE'], version: app.getVersion(), newVersion },
+      undefined,
+      (bytes) =>
+        win?.webContents.send('updates:progress', { name: file.name, bytes, of: file.bytes })
+    )
+    // the new one, as this one was started; the answer gets back to the window first
+    setTimeout(() => {
+      app.relaunch({ execPath: next, args: process.argv.slice(1) })
+      quitting = true
+      app.exit(0)
+    }, 300)
+    return next
+  })
   ipcMain.handle('backups:save', (_e, data: Uint8Array) => saveBackup(data))
   ipcMain.handle('backups:latest', () => latestBackup())
   ipcMain.handle('backups:info', () => backupInfo())
