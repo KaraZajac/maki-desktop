@@ -64,6 +64,8 @@ export class Link {
   syncing = false
   autoSync = true
   log: string[] = []
+  /** How many times a badge's time to give maki for each answer (MakiClient's `slow`). */
+  slow = 1
   /**
    * How many lines have been noted, ever: what to watch for news (a backup, a site connected),
    * where the log's length stops changing once it's full.
@@ -163,7 +165,7 @@ export class Link {
       await transport.close()
       return false
     }
-    const client = new MakiClient(transport)
+    const client = new MakiClient(transport, this.slow)
     this.client = client
     let hello: Hello
     try {
