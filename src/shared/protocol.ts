@@ -67,7 +67,9 @@ export const Approval = [
   'locked',
   'not yours',
   'no phrase',
-  'refused'
+  'refused',
+  // a login for a site maki holds a passkey for: no password offered, nobody asked
+  'passkey'
 ] as const
 /** Pieces of a backup are at most this big. */
 export const BACKUP_PIECE = 4096

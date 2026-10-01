@@ -175,18 +175,19 @@ export class MakiClient {
   /** How long an install waits: maki gives the owner five minutes to go through an app. */
   static readonly INSTALL_TIMEOUT_MS = 330_000
 
-  /** Ask maki for the login saved for `site`; the owner approves on maki's screen. */
+  /**
+   * Ask maki for the login saved for `site`; the owner approves on maki's screen. A site maki
+   * holds a passkey for is answered 'passkey', unless `evenWithPasskey`. Only maki answers that,
+   * so the flag goes only to a maki that takes it.
+   */
   async getLogin(
-    site: string
+    site: string,
+    evenWithPasskey = false
   ): Promise<{ approval: ApprovalValue; username: string; password: string }> {
+    const body = new Writer().str8(site)
+    if (evenWithPasskey) body.u8(1)
     const r = new Reader(
-      (
-        await this.request(
-          Kind.GET_LOGIN,
-          new Writer().str8(site).finish(),
-          MakiClient.APPROVAL_TIMEOUT_MS
-        )
-      ).body
+      (await this.request(Kind.GET_LOGIN, body.finish(), MakiClient.APPROVAL_TIMEOUT_MS)).body
     )
     const out = {
       approval: Approval[r.u8()] ?? 'unavailable',

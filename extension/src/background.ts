@@ -62,7 +62,14 @@ function toDesktop(request: Record<string, unknown>): Promise<Reply> {
   })
 }
 
-type FromPage = { type?: unknown; username?: unknown; password?: unknown; method?: unknown; params?: unknown }
+type FromPage = {
+  type?: unknown
+  username?: unknown
+  password?: unknown
+  method?: unknown
+  params?: unknown
+  evenWithPasskey?: unknown
+}
 
 export function handle(msg: FromPage, senderUrl: string | undefined): Promise<Reply> {
   if (msg.type === 'status') return toDesktop({ type: 'status' })
@@ -79,6 +86,9 @@ export function handle(msg: FromPage, senderUrl: string | undefined): Promise<Re
   }
   const site = siteOf(senderUrl)
   if (!site) return Promise.resolve({ ok: false, error: 'maki only works on https pages' })
+  if (msg.type === 'getLogin' && msg.evenWithPasskey === true) {
+    return toDesktop({ type: 'getLogin', site, evenWithPasskey: true })
+  }
   if (msg.type !== 'saveLogin') return toDesktop({ type: msg.type, site })
   if (typeof msg.username !== 'string' || typeof msg.password !== 'string') {
     return Promise.resolve({ ok: false, error: 'unknown request' })

@@ -630,9 +630,17 @@ export class Link {
     if (!client || !this.state.linked) throw new Error('maki is not linked')
     switch (request.type) {
       case 'getLogin': {
-        this.note(`${request.site} asked for its login: approve on maki`)
-        const r = await client.getLogin(request.site)
-        this.note(`${request.site}: login ${r.approval}`)
+        this.note(
+          request.evenWithPasskey
+            ? `${request.site} asked for its password, though maki has a passkey for it: approve on maki`
+            : `${request.site} asked for its login: approve on maki`
+        )
+        const r = await client.getLogin(request.site, request.evenWithPasskey === true)
+        this.note(
+          r.approval === 'passkey'
+            ? `${request.site}: maki has a passkey for it, so its password wasn't offered`
+            : `${request.site}: login ${r.approval}`
+        )
         return { type: 'getLogin', ...r }
       }
       case 'getTotp': {

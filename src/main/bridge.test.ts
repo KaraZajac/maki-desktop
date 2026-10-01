@@ -286,6 +286,8 @@ describe.skipIf(!FAKE_BUILT)('browser to maki, through the host and the bridge',
       error: expect.stringContaining('bad argument')
     })
     expect(await b.reply(7)).toEqual({ id: 7, ok: false, error: 'malformed request' })
+    b.send({ id: 8, type: 'getLogin', site: 'github.com', evenWithPasskey: 'yes' })
+    expect(await b.reply(8)).toEqual({ id: 8, ok: false, error: 'malformed request' })
     b.input.end()
     await host
   })

@@ -73,10 +73,14 @@ const asked = new WeakSet<HTMLInputElement>()
 /** what maki filled, so submitting it doesn't offer it back */
 const filled = new WeakMap<HTMLInputElement, string>()
 
-async function offerLogin(login: { username: HTMLInputElement | null; password: HTMLInputElement }): Promise<void> {
+async function offerLogin(
+  login: { username: HTMLInputElement | null; password: HTMLInputElement },
+  evenWithPasskey = false
+): Promise<void> {
   busy = true
   try {
-    const r = await waitingOnMaki('Approve on maki to fill this login', ask({ type: 'getLogin' }))
+    const request = evenWithPasskey ? { type: 'getLogin', evenWithPasskey: true } : { type: 'getLogin' }
+    const r = await waitingOnMaki('Approve on maki to fill this login', ask(request))
     if (r.ok && r.approval === 'approved') {
       if (login.username && r.username) fill(login.username, r.username)
       fill(login.password, r.password ?? '')
@@ -84,8 +88,16 @@ async function offerLogin(login: { username: HTMLInputElement | null; password: 
       say('Filled by maki')
     } else if (r.ok && r.approval === 'no match') {
       hide()
+    } else if (r.ok && r.approval === 'passkey') {
+      // the site's own passkey sign-in is the way in; the password only if the owner wants it
+      say(
+        'maki has a passkey for this site: sign in with it',
+        { label: 'Use password', run: () => void offerLogin(login, true) },
+        10000
+      )
     } else {
-      say(trouble(r) ?? 'maki gave no login', { label: 'Ask again', run: () => void offerLogin(login) })
+      const again = () => void offerLogin(login, evenWithPasskey)
+      say(trouble(r) ?? 'maki gave no login', { label: 'Ask again', run: again })
     }
   } finally {
     busy = false

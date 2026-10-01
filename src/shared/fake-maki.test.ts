@@ -34,7 +34,12 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
   }
 
   beforeAll(async () => {
-    fake = await startFake(['--totp', `example.com=${SECRET_B32}`])
+    fake = await startFake([
+      '--totp',
+      `example.com=${SECRET_B32}`,
+      '--passkey',
+      'passkey.example.com'
+    ])
   })
   afterAll(() => fake?.proc.kill())
 
@@ -77,6 +82,25 @@ describe.skipIf(!FAKE_BUILT)('against the fake maki', () => {
     })
     expect((await c.getLogin('gist.github.com')).username).toBe('kara')
     expect((await c.getLogin('evilgithub.com')).approval).toBe('no match')
+    await t.close()
+  })
+
+  it('offers no password where it holds a passkey, unless asked for it anyway', async () => {
+    const [c, t] = await client()
+    expect(await c.saveLogin('passkey.example.com', 'kara', 'hunter2')).toBe('approved')
+    expect(await c.getLogin('passkey.example.com')).toEqual({
+      approval: 'passkey',
+      username: '',
+      password: ''
+    })
+    expect((await c.getLogin('www.passkey.example.com')).approval).toBe('passkey')
+    expect(await c.getLogin('passkey.example.com', true)).toEqual({
+      approval: 'approved',
+      username: 'kara',
+      password: 'hunter2'
+    })
+    // a site with no passkey is asked about as ever
+    expect((await c.getLogin('github.com')).approval).toBe('approved')
     await t.close()
   })
 
@@ -175,8 +199,8 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki
     expect(await c.appInstall(bundle('tally'))).toEqual({ approval: 'approved', reason: '' })
     const { apps } = await c.appList()
     expect(apps.map((a) => [a.id, a.name, a.version, a.label, a.fromStore, a.backup])).toEqual([
-      ['com.leviathan.maki.dice', 'Dice', 1, '1.0', false, true],
-      ['com.leviathan.maki.tally', 'Tally', 1, '1.0', false, true]
+      ['com.leviathan.maki.dice', 'Dice', 2, '2.0', false, true],
+      ['com.leviathan.maki.tally', 'Tally', 2, '2.0', false, true]
     ])
     expect(apps[0].developer).toHaveLength(32)
     expect(apps[0].icon).toHaveLength(128)
@@ -198,7 +222,7 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)('apps, against the fake maki
     // the same version again, and one changed after it was signed
     const again = await c.appInstall(bundle('dice'))
     expect(again.approval).toBe('refused')
-    expect(again.reason).toMatch(/version 1 is installed/)
+    expect(again.reason).toMatch(/version 2 is installed/)
     const tampered = bundle('hello')
     tampered[40] ^= 1
     const bad = await c.appInstall(tampered)

@@ -6,7 +6,8 @@
 
 export type BridgeRequest =
   | { id: number; type: 'status' }
-  | { id: number; type: 'getLogin'; site: string }
+  /** `evenWithPasskey`: the password, though maki holds a passkey for the site (it said 'passkey') */
+  | { id: number; type: 'getLogin'; site: string; evenWithPasskey?: boolean }
   | { id: number; type: 'getTotp'; site: string }
   | { id: number; type: 'saveLogin'; site: string; username: string; password: string }
   | { id: number; type: 'eth'; site: string; method: string; params: unknown[] }
@@ -93,10 +94,20 @@ export function parseRequest(value: unknown): BridgeRequest | null {
   switch (v.type) {
     case 'status':
       return { id, type: 'status' }
-    case 'getLogin':
+    case 'getLogin': {
+      const site = str('site', 253)
+      if (
+        site === null ||
+        (v.evenWithPasskey !== undefined && typeof v.evenWithPasskey !== 'boolean')
+      )
+        return null
+      return v.evenWithPasskey
+        ? { id, type: 'getLogin', site, evenWithPasskey: true }
+        : { id, type: 'getLogin', site }
+    }
     case 'getTotp': {
       const site = str('site', 253)
-      return site === null ? null : { id, type: v.type, site }
+      return site === null ? null : { id, type: 'getTotp', site }
     }
     case 'eth': {
       const site = str('site', 253)
