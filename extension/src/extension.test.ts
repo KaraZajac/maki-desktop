@@ -82,6 +82,9 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
     // browser would
     window.postMessage = ((data: unknown) =>
       setTimeout(() => window.dispatchEvent(new MessageEvent('message', { data, source: window as unknown as MessageEventSource })))) as typeof window.postMessage
+    // happy-dom lays nothing out: fields get the size and place they'd have on a page, or the
+    // content script takes them for ones nobody can see
+    HTMLElement.prototype.getBoundingClientRect = () => new DOMRect(10, 10, 200, 24)
     await import('./background')
     await import('./content')
   })
@@ -119,6 +122,26 @@ describe.skipIf(!FAKE_BUILT)('the maki extension, end to end', () => {
     $('#u').focus() // the username field asks too
     await vi.waitFor(() => expect($('#p').value).toBe('correct horse'))
     expect($('#u').value).toBe('kara@example.com')
+  })
+
+  it('only offers to fill a field the page focused by itself, and asks once that’s taken', async () => {
+    const activation = { isActive: false }
+    Object.defineProperty(navigator, 'userActivation', { value: activation, configurable: true })
+    try {
+      page('<form><input type="email" id="u2"><input type="password" id="p2"></form>')
+      const before = link.log.length
+      $('#p2').focus() // a script: no click, tap or key from the owner
+      await new Promise((ok) => setTimeout(ok, 300))
+      expect(link.log.length).toBe(before) // maki wasn't asked
+      expect($('#u2').value + $('#p2').value).toBe('')
+      // the owner clicks into it after all
+      $('#p2').blur()
+      activation.isActive = true
+      $('#p2').focus()
+      await vi.waitFor(() => expect($('#p2').value).toBe('correct horse'))
+    } finally {
+      delete (navigator as { userActivation?: unknown }).userActivation
+    }
   })
 
   it('fills a TOTP code, once approved on maki', async () => {

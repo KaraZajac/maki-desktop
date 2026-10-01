@@ -58,12 +58,19 @@ export function findLoginFields(root: ParentNode): LoginFields[] {
   return out
 }
 
-/** The login a submitted form carries, to offer to maki: a new password over the current one. */
+/**
+ * The login a submitted form carries, to offer to maki: a new password over the current one. A
+ * form that doesn't say which is new (no autocomplete="new-password") but has more than one: the
+ * one typed twice (the new one, and again to confirm it), or the last.
+ */
 export function loginToSave(form: HTMLFormElement): { username: string; password: HTMLInputElement } | null {
   const inputs = Array.from(form.querySelectorAll('input')).filter(isVisible)
   const passwords = inputs.filter((i) => i.type === 'password' && i.value)
   if (passwords.length === 0) return null
-  const password = passwords.find((p) => p.autocomplete === 'new-password') ?? passwords[0]
+  const twice = passwords.find((p, i) => passwords.some((q, j) => j !== i && q.value === p.value))
+  const password =
+    passwords.find((p) => p.autocomplete === 'new-password') ??
+    (passwords.length > 1 ? (twice ?? passwords[passwords.length - 1]) : passwords[0])
   const username = inputs.slice(0, inputs.indexOf(passwords[0])).reverse().find(usernameLike)
   return username?.value ? { username: username.value, password } : null
 }

@@ -121,14 +121,44 @@ async function offerCode(input: HTMLInputElement): Promise<void> {
   }
 }
 
+/**
+ * Whether the field is there to see where it is: big enough, in the window, and not made
+ * transparent. A page's script could otherwise put a login form nobody sees on it, focus it, and
+ * read what maki fills.
+ */
+function onScreen(el: HTMLElement): boolean {
+  const r = el.getBoundingClientRect()
+  if (r.width < 4 || r.height < 4) return false
+  if (r.bottom <= 0 || r.right <= 0 || r.top >= window.innerHeight || r.left >= window.innerWidth) return false
+  let opacity = 1
+  for (let n: Element | null = el; n; n = n.parentElement) opacity *= Number(getComputedStyle(n).opacity || 1)
+  return opacity >= 0.1
+}
+
+/** Whether the owner did something just now (a click, a tap, a key): a page focusing a field by itself isn't them. */
+function byOwner(): boolean {
+  const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation
+  return activation ? activation.isActive : true
+}
+
 function focused(el: EventTarget | null): void {
-  if (!(el instanceof HTMLInputElement) || busy || asked.has(el) || !isVisible(el)) return
+  if (!(el instanceof HTMLInputElement) || busy || asked.has(el) || !isVisible(el) || !onScreen(el)) return
   const login = findLoginFields(document).find((f) => f.password === el || f.username === el)
+  const code = !login && isOtpField(el)
+  if (!login && !code) return
+  // focused by the page itself (autofocus, a script): maki asks once the owner says so, here
+  if (!byOwner()) {
+    say(login ? 'maki can fill this login' : 'maki can fill this code', {
+      label: 'Fill from maki',
+      run: () => focused(el)
+    })
+    return
+  }
   if (login) {
     asked.add(login.password)
     if (login.username) asked.add(login.username)
     void offerLogin(login)
-  } else if (isOtpField(el)) {
+  } else {
     asked.add(el)
     void offerCode(el)
   }

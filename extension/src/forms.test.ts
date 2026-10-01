@@ -94,6 +94,18 @@ describe('offering a login to keep', () => {
     expect(loginToSave($<HTMLFormElement>('form'))).toEqual({ username: 'kara@example.com', password: $('#new') })
   })
 
+  it('takes the new password on a change form that doesn’t say which is new', () => {
+    // current, new, and the new one again: the one typed twice
+    document.body.innerHTML = `<form><input id="u" value="kara@example.com">
+      <input type="password" id="cur" value="old one"><input type="password" id="new" value="new one">
+      <input type="password" id="again" value="new one"></form>`
+    expect(loginToSave($<HTMLFormElement>('form'))).toEqual({ username: 'kara@example.com', password: $('#new') })
+    // current and new: the last
+    document.body.innerHTML = `<form><input id="u" value="kara@example.com">
+      <input type="password" id="cur" value="old one"><input type="password" id="new" value="new one"></form>`
+    expect(loginToSave($<HTMLFormElement>('form'))).toEqual({ username: 'kara@example.com', password: $('#new') })
+  })
+
   it('offers nothing without a username', () => {
     document.body.innerHTML = '<form><input type="password" value="pw"></form>'
     expect(loginToSave($<HTMLFormElement>('form'))).toBeNull()
