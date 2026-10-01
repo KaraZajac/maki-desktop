@@ -39,7 +39,7 @@ import {
 } from './browsers'
 import { sudoOff, sudoOn, sudoStatus } from './sudo'
 import { browserSocketPath, extensionOnly, forWindow, serveBridge, socketPath } from './bridge'
-import { getStartAtLogin, setStartAtLogin } from './login'
+import { getStartAtLogin, refreshStartAtLogin, setStartAtLogin } from './login'
 import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
 import { MINISIGN_COMMAND, runMinisign } from './minisign'
 import { runSshKeygen, SSH_KEYGEN_COMMAND, sshKeygenOnPath } from './ssh-keygen'
@@ -853,6 +853,9 @@ if (process.argv.includes('--age-plugin-maki')) {
     allowSerial()
     ipc()
     createWindow()
+    refreshStartAtLogin().catch((e) =>
+      console.error(`couldn't bring the login entry up to date: ${(e as Error).message}`)
+    )
     serveBridge(askWindow).catch((e) =>
       console.error(`browser bridge unavailable: ${(e as Error).message}`)
     )
