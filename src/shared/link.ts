@@ -64,6 +64,11 @@ export class Link {
   syncing = false
   autoSync = true
   log: string[] = []
+  /**
+   * How many lines have been noted, ever: what to watch for news (a backup, a site connected),
+   * where the log's length stops changing once it's full.
+   */
+  notes = 0
   /** Called after an app is installed from outside the window (`maki install`). */
   appsChanged: (() => void) | null = null
   /**
@@ -141,6 +146,7 @@ export class Link {
 
   note(line: string): void {
     this.log = [`${this.now().toLocaleTimeString()}  ${line}`, ...this.log].slice(0, 100)
+    this.notes++
     this.emit()
   }
 
@@ -356,8 +362,23 @@ export class Link {
     return this.appInstall(app.name, bundle.bytes)
   }
 
+  /**
+   * The install under way: maki takes one bundle's pieces at a time, in order, and two at once
+   * (Bitcoin added, then Ethereum, before the first was through) would cross and both fail.
+   */
+  private installing: Promise<unknown> = Promise.resolve()
+
   /** Install a .maki bundle, once the owner has gone through it on maki's screen. */
-  async appInstall(
+  appInstall(
+    name: string,
+    bundle: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string }> {
+    const turn = this.installing.then(() => this.installNow(name, bundle))
+    this.installing = turn.catch(() => {})
+    return turn
+  }
+
+  private async installNow(
     name: string,
     bundle: Uint8Array
   ): Promise<{ approval: ApprovalValue; reason: string }> {

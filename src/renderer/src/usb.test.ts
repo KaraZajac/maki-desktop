@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Link } from '@shared/link'
-import { watchUsb } from './usb'
+import { disconnect, watchUsb } from './usb'
 
 vi.mock('./transports', () => ({
   MAKI_USB: { usbVendorId: 0x1d50, usbProductId: 0x6198 },
@@ -53,7 +53,11 @@ function fakeLink(answersAfter: number): Link & { attempts: number; notes: strin
       return true
     },
     note: (line: string) => void link.notes.push(line),
-    subscribe: () => () => {}
+    subscribe: () => () => {},
+    drop: async () => {
+      link.state.linked = false
+      link.busy = false
+    }
   }
   return link as unknown as Link & { attempts: number; notes: string[] }
 }
@@ -100,6 +104,31 @@ describe('finding maki on USB', () => {
     serial.fire('connect', port)
     await vi.advanceTimersByTimeAsync(0)
     expect(link.attempts).toBe(21)
+    stop()
+  })
+
+  it('stays unlinked after Disconnect, until maki is plugged in again', async () => {
+    const serial = fakeSerial()
+    const link = fakeLink(0)
+    const stop = watchUsb(link)
+    const port = {}
+    serial.ports.push(port)
+    serial.fire('connect', port)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(link.state.linked).toBe(true)
+    disconnect(link)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(link.state.linked).toBe(false)
+    // the periodic look leaves it alone
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(link.attempts).toBe(1)
+    expect(link.state.linked).toBe(false)
+    // plugged in again
+    serial.fire('disconnect', port)
+    serial.fire('connect', port)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(link.attempts).toBe(2)
+    expect(link.state.linked).toBe(true)
     stop()
   })
 

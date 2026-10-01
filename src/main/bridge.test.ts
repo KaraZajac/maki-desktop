@@ -4,7 +4,7 @@
  */
 import type { ChildProcess } from 'node:child_process'
 import { execFile } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { connect, type Server } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -20,7 +20,7 @@ import {
   startFake,
   TcpTransport
 } from '../shared/test-support'
-import { forWindow, serveBridge } from './bridge'
+import { forWindow, privateDir, serveBridge, socketPath } from './bridge'
 import { readNativeMessages, runNativeHost, writeNativeMessage } from './native-host'
 
 /** A browser's end of native messaging: send framed JSON, collect framed replies by id. */
@@ -53,6 +53,54 @@ function browser(): {
       replies.has(id) ? Promise.resolve(replies.get(id)!) : new Promise((ok) => waiters.set(id, ok))
   }
 }
+
+describe.skipIf(process.platform === 'win32')('the sockets’ folder', () => {
+  it('is $XDG_RUNTIME_DIR, or one of this user’s own, never one someone else made first', () => {
+    const saved = { run: process.env.XDG_RUNTIME_DIR, tmp: process.env.TMPDIR }
+    const tmp = mkdtempSync(join(tmpdir(), 'maki-tmp-'))
+    try {
+      process.env.XDG_RUNTIME_DIR = '/run/user/1000'
+      expect(privateDir()).toBe('/run/user/1000')
+      delete process.env.XDG_RUNTIME_DIR
+      process.env.TMPDIR = tmp
+      const own = join(tmp, `maki-${userInfo().uid}`)
+      expect(privateDir()).toBe(own)
+      expect(statSync(own).mode & 0o777).toBe(0o700)
+      expect(socketPath()).toBe(join(own, `maki-${userInfo().uid}.sock`))
+      // one that others could reach (someone made it first, or opened it up): refused
+      chmodSync(own, 0o777)
+      expect(() => privateDir()).toThrow('isn’t this user’s own folder')
+      expect(() => socketPath()).toThrow()
+      rmSync(own, { recursive: true })
+      mkdirSync(own, { mode: 0o700 })
+      expect(privateDir()).toBe(own)
+    } finally {
+      if (saved.run === undefined) delete process.env.XDG_RUNTIME_DIR
+      else process.env.XDG_RUNTIME_DIR = saved.run
+      if (saved.tmp === undefined) delete process.env.TMPDIR
+      else process.env.TMPDIR = saved.tmp
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a socket it can’t put in place without stopping, and clears an empty folder there', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maki-sock-'))
+    try {
+      // a sandbox made a folder where the socket goes: taken away, and the socket made
+      const where = join(dir, 'browser.sock')
+      mkdirSync(where)
+      const server = await serveBridge(async () => ({ id: 0, type: 'ok' }) as never, where)
+      server.close()
+      // one with something in it stays, and serving says so rather than throwing
+      mkdirSync(join(dir, 'full.sock', 'inside'), { recursive: true })
+      await expect(
+        serveBridge(async () => ({ id: 0, type: 'ok' }) as never, join(dir, 'full.sock'))
+      ).rejects.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('native messaging framing', () => {
   it('round-trips messages split across chunks', async () => {

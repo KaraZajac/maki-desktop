@@ -143,6 +143,12 @@ export function wrap(
 
 export type AskApp = (data: Uint8Array) => Promise<{ status: string; answer: Uint8Array }>
 
+/**
+ * The longest an answer can take: maki gives its owner up to 300 s for a question, and the
+ * window as long again, less a little (main/index.ts).
+ */
+const ANSWER_MS = 340_000
+
 /** A message for an app on maki, through maki desktop's socket at `path`: the Age app, unless another's named. */
 export function askOver(path: string, app: string = AGE_APP): AskApp {
   return (data) =>
@@ -150,13 +156,26 @@ export function askOver(path: string, app: string = AGE_APP): AskApp {
       const s = connect(path)
       s.setEncoding('utf8')
       let got = ''
-      s.once('error', () =>
+      let answered = false
+      // maki desktop quit or crashed while maki asked: say so, rather than wait for ever
+      const late = setTimeout(() => {
+        s.destroy()
+        reject(new Error('maki desktop didn’t answer in time'))
+      }, ANSWER_MS)
+      s.once('error', () => {
+        clearTimeout(late)
         reject(new Error('maki desktop isn’t running: start it, with maki plugged in'))
-      )
+      })
+      s.once('close', () => {
+        clearTimeout(late)
+        if (!answered) reject(new Error('maki desktop went away before maki answered'))
+      })
       s.on('data', (chunk: string) => {
         got += chunk
         const nl = got.indexOf('\n')
         if (nl < 0) return
+        answered = true
+        clearTimeout(late)
         s.end()
         try {
           const r = JSON.parse(got.slice(0, nl)) as {

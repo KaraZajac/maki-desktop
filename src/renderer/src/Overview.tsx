@@ -5,6 +5,7 @@ import type { Apps } from './apps-state'
 import { StorageChart } from './StorageChart'
 import { ago, Badge, Button, bytes, Dot, Glyph, Label, MakiMark, PageHeader, Toggle } from './ui'
 import { Updates } from './Updates'
+import { disconnect } from './usb'
 
 export type Page = 'overview' | 'apps' | 'wallets' | 'connections' | 'backups'
 
@@ -274,7 +275,7 @@ export function Overview({
                   >
                     {link.syncing ? 'Syncing…' : 'Sync time now'}
                   </Button>
-                  <Button onClick={() => link.drop('disconnected')}>Disconnect</Button>
+                  <Button onClick={() => disconnect(link)}>Disconnect</Button>
                   <label className="ml-2 flex items-center gap-2.5 text-sm text-subtext0">
                     <Toggle
                       label="Sync when linked"

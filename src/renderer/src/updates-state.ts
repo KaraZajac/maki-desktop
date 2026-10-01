@@ -20,7 +20,8 @@ export type FirmwareStage =
   | { stage: 'booting' }
   | { stage: 'linking' }
   | { stage: 'done'; label: string }
-  | { stage: 'failed'; why: string }
+  /** `retry`: maki is in update mode with the files fetched, so putting them on can be tried again */
+  | { stage: 'failed'; why: string; retry?: boolean }
 
 /** How long maki has to link again after the new firmware starts: it boots in about 20 s. */
 const RELINK_MS = 180_000
@@ -47,13 +48,16 @@ class FirmwareUpdate {
 
   /** The whole update, from fetching the files to maki linking again with the new firmware. */
   async run(link: Link, release: Release): Promise<void> {
-    if (this.busy) return
+    if (this.busy || desktopUpdate.busy) return
     this.release = release
     try {
       const of = release.files.reduce((n, f) => n + f.bytes, 0)
       const got: Record<string, number> = {}
       this.set({ stage: 'fetching', done: 0, of })
+      // this release's files only: maki desktop's own download says how it goes on the same channel
+      const names = new Set(release.files.map((f) => f.name))
       const off = window.maki.updates.onProgress((p) => {
+        if (!names.has(p.name)) return
         got[p.name] = p.bytes
         this.set({ stage: 'fetching', done: Object.values(got).reduce((a, b) => a + b, 0), of })
       })
@@ -63,6 +67,8 @@ class FirmwareUpdate {
         off()
       }
       this.set({ stage: 'asking' })
+      // where maki is, so the files go to it once it restarts and not to another in update mode
+      await window.maki.updates.notePort().catch(() => false)
       let approval: string
       try {
         approval = await link.updateMode(release.name)
@@ -93,7 +99,7 @@ class FirmwareUpdate {
   /** On from maki being in update mode: put the files on it, start them, wait for the link. */
   async install(link: Link): Promise<void> {
     const release = this.release
-    if (!this.paths || !release) return
+    if (!this.paths || !release || this.busy || desktopUpdate.busy) return
     try {
       this.set({ stage: 'restarting' })
       const off = window.maki.updates.onFirmwareStep(({ step, detail }) => {
@@ -102,6 +108,9 @@ class FirmwareUpdate {
       })
       try {
         await window.maki.updates.installFirmware(this.paths)
+      } catch (e) {
+        // maki waits in update mode, where it can't link: putting the files on is all that's left
+        return this.set({ stage: 'failed', why: (e as Error).message, retry: true })
       } finally {
         off()
       }
@@ -139,7 +148,53 @@ export function useFirmwareUpdate(): FirmwareStage {
   return firmwareUpdate.now
 }
 
-/** maki desktop's own update: fetch the new AppImage, put it in place of this one, restart. */
-export async function updateDesktop(file: ReleaseFile, version: string): Promise<void> {
-  await window.maki.updates.replaceDesktop(file, version)
+/**
+ * maki desktop's own update: fetch the new AppImage, put it in place of this one, restart. Its
+ * state lives here, not in the page, so it carries on (and isn't offered twice) while another
+ * page is shown; and neither update starts while the other runs.
+ */
+class DesktopUpdate {
+  /** what it's doing, in words, while it does */
+  now: string | null = null
+  private listeners = new Set<() => void>()
+
+  subscribe(l: () => void): () => void {
+    this.listeners.add(l)
+    return () => this.listeners.delete(l)
+  }
+
+  private set(now: string | null): void {
+    this.now = now
+    for (const l of this.listeners) l()
+  }
+
+  get busy(): boolean {
+    return this.now !== null
+  }
+
+  async run(file: ReleaseFile, version: string): Promise<void> {
+    if (this.busy || firmwareUpdate.busy) return
+    this.set('Fetching the new maki desktop…')
+    const off = window.maki.updates.onProgress((p) => {
+      if (p.name === file.name && p.of)
+        this.set(`Fetching the new maki desktop… ${Math.floor((p.bytes * 100) / p.of)}%`)
+    })
+    try {
+      await window.maki.updates.replaceDesktop(file, version)
+      this.set('Restarting…')
+    } catch (e) {
+      this.set(null)
+      throw e
+    } finally {
+      off()
+    }
+  }
+}
+
+export const desktopUpdate = new DesktopUpdate()
+
+export function useDesktopUpdate(): string | null {
+  const [, tick] = useState(0)
+  useEffect(() => desktopUpdate.subscribe(() => tick((n) => n + 1)), [])
+  return desktopUpdate.now
 }

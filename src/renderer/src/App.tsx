@@ -8,6 +8,7 @@ import { useBunker } from './bunker-state'
 import { AppsPage } from './AppsPage'
 import { Backups } from './Backups'
 import { Connections } from './Connections'
+import { ErrorBoundary } from './ErrorBoundary'
 import { Overview, type Page } from './Overview'
 import { PAGES, Sidebar } from './Sidebar'
 import { DevTransport } from './transports'
@@ -89,7 +90,7 @@ export default function App(): React.JSX.Element {
   // the latest backup's age: refresh when the link has news (a backup is a line in its log)
   useEffect(() => {
     void window.maki.backups.info().then(setBackup)
-  }, [link.log.length])
+  }, [link.notes])
   const [, tick] = useState(0)
   const [storeName, setStoreName] = useState<string | null>(null)
   // on GitHub with no token: a store that can't be read may just be private
@@ -144,28 +145,37 @@ export default function App(): React.JSX.Element {
       <div className="glow flex min-w-0 flex-1 flex-col">
         <main className="flex-1 overflow-y-auto">
           <div key={page} className="mx-auto max-w-5xl px-10 pt-10 pb-12">
-            {page === 'overview' && (
-              <Overview
-                link={link}
-                apps={apps}
-                storeName={storeName}
-                backup={backup}
-                go={go}
-                connectFake={() => void connectFake()}
-                allow={() => void chooseUsb(link)}
-              />
-            )}
-            {page === 'apps' && (
-              <AppsPage link={link} apps={apps} storeName={storeName} storePrivate={storePrivate} />
-            )}
-            {page === 'wallets' && <Wallets link={link} apps={apps} />}
-            {page === 'connections' && (
-              <Connections link={link} apps={apps} go={go} bunker={bunker} />
-            )}
-            {page === 'backups' && <Backups link={link} backup={backup} />}
+            <ErrorBoundary name={PAGES.find((p) => p.id === page)?.title ?? page}>
+              {page === 'overview' && (
+                <Overview
+                  link={link}
+                  apps={apps}
+                  storeName={storeName}
+                  backup={backup}
+                  go={go}
+                  connectFake={() => void connectFake()}
+                  allow={() => void chooseUsb(link)}
+                />
+              )}
+              {page === 'apps' && (
+                <AppsPage
+                  link={link}
+                  apps={apps}
+                  storeName={storeName}
+                  storePrivate={storePrivate}
+                />
+              )}
+              {page === 'wallets' && <Wallets link={link} apps={apps} />}
+              {page === 'connections' && (
+                <Connections link={link} apps={apps} go={go} bunker={bunker} />
+              )}
+              {page === 'backups' && <Backups link={link} backup={backup} />}
+            </ErrorBoundary>
           </div>
         </main>
-        <Activity link={link} />
+        <ErrorBoundary name="Activity">
+          <Activity link={link} />
+        </ErrorBoundary>
       </div>
     </div>
   )

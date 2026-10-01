@@ -356,7 +356,9 @@ function Receive({
     setChecked(null)
     try {
       const r = await link.btcAddress(network, false, state.receive.index, kind)
-      setChecked({ address, approval: r.approval, same: r.address === address })
+      // only an address maki sent back can differ: a timeout, a locked maki or no Bitcoin app
+      // sends none, and says so on its own rather than as a different address
+      setChecked({ address, approval: r.approval, same: r.address === '' || r.address === address })
     } catch (e) {
       link.note(`couldn't check the address: ${(e as Error).message}`)
     } finally {

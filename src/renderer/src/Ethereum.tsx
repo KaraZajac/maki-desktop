@@ -22,7 +22,7 @@ export function Ethereum({ link, apps }: { link: Link; apps: Apps }): React.JSX.
   // a connection is a line in the log: look again when there's news
   useEffect(() => {
     void link.ethereum.sites().then(setSites)
-  }, [link, link.log.length])
+  }, [link, link.notes])
 
   const mine = sites?.find((s) => s.site === WALLET_SITE) ?? null
   const others = sites?.filter((s) => s.site !== WALLET_SITE) ?? []

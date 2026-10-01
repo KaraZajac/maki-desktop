@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, rmdirSync, unlinkSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
@@ -19,8 +19,35 @@ import {
 
 export function socketPath(): string {
   if (process.platform === 'win32') return `\\\\.\\pipe\\maki-${userInfo().username}`
-  const dir = process.env['XDG_RUNTIME_DIR'] ?? tmpdir()
-  return join(dir, `maki-${userInfo().uid}.sock`)
+  return join(privateDir(), `maki-${userInfo().uid}.sock`)
+}
+
+/**
+ * Where this user's sockets go: $XDG_RUNTIME_DIR, which is theirs alone; where there's none, a
+ * folder of their own in the temporary folder, made 0700. One someone else made there first, to
+ * take the sockets' place (and what's sent to them: saved passwords), is refused, by this app and
+ * by the commands that connect to it.
+ */
+export function privateDir(): string {
+  const run = process.env['XDG_RUNTIME_DIR']
+  if (run) return run
+  const dir = join(tmpdir(), `maki-${userInfo().uid}`)
+  try {
+    mkdirSync(dir, { mode: 0o700 })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+  }
+  const s = lstatSync(dir)
+  if (!s.isDirectory() || s.uid !== userInfo().uid || (s.mode & 0o077) !== 0)
+    throw new Error(`${dir} isn’t this user’s own folder: maki desktop won’t use it`)
+  return dir
+}
+
+/** A socket's path made free: what a crash left there, or a folder something made in its place. */
+export function clearSocketPath(path: string): void {
+  if (process.platform === 'win32' || !existsSync(path)) return
+  if (lstatSync(path).isDirectory()) rmdirSync(path)
+  else unlinkSync(path)
 }
 
 /**
@@ -65,13 +92,14 @@ export async function forWindow(request: BridgeRequest): Promise<BridgeRequest> 
 }
 
 /** One JSON object per line in both directions; requests may overlap. */
-export function serveBridge(handler: Handler, path = socketPath()): Promise<Server> {
+export async function serveBridge(handler: Handler, path?: string): Promise<Server> {
+  path ??= socketPath()
   if (process.platform !== 'win32' && path.endsWith(join(...BROWSER_SOCKET))) {
     // the folder a sandbox may have made already (xdg-run/maki:create), kept to this user
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     chmodSync(dirname(path), 0o700)
   }
-  if (process.platform !== 'win32' && existsSync(path)) unlinkSync(path) // stale, from a crash
+  clearSocketPath(path)
   const server = createServer((socket: Socket) => {
     socket.setEncoding('utf8')
     let buffer = ''

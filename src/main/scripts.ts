@@ -51,6 +51,26 @@ export async function scriptStatus(c: Command, launch: Launch): Promise<ScriptSt
   return { installed, path, onPath: folders.includes(dirname(path)) }
 }
 
+/**
+ * At start: each command maki desktop put here that starts another file (an AppImage an update
+ * replaced, or one since moved) is written again for this one, so git's signing, age and
+ * minisign go on working after an update. Someone's own script of the same name is left alone.
+ */
+export async function refreshScripts(commands: Command[], launch: Launch): Promise<void> {
+  for (const c of commands) {
+    const path = scriptPath(c.name)
+    const text = await readFile(path, 'utf8').catch(() => null)
+    if (
+      text === null ||
+      text === scriptText(c, launch) ||
+      !text.includes('written by maki desktop')
+    )
+      continue
+    await writeFile(path, scriptText(c, launch))
+    await chmod(path, 0o755)
+  }
+}
+
 export async function installScript(c: Command, launch: Launch): Promise<ScriptStatus> {
   const path = scriptPath(c.name)
   await mkdir(dirname(path), { recursive: true })

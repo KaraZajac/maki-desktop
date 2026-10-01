@@ -15,9 +15,27 @@ const SCAN_MS = 5_000
 const failures = new WeakMap<SerialPort, number>()
 /** Ports being tried, or waiting to be tried again: one attempt at a time, at its own pace. */
 const trying = new WeakSet<SerialPort>()
+/**
+ * The owner said Disconnect: maki stays unlinked, rather than linked again at the next scan, until
+ * it's plugged in again or chosen with Allow maki.
+ */
+let heldApart = false
+
+/** Disconnect maki, and keep it that way until it's plugged in again or chosen. */
+export function disconnect(link: Link): void {
+  heldApart = true
+  void link.drop('disconnected')
+}
 
 async function tryPort(link: Link, port: SerialPort): Promise<void> {
-  if (link.busy || !isMaki(port) || trying.has(port) || (failures.get(port) ?? 0) >= TRIES) return
+  if (
+    heldApart ||
+    link.busy ||
+    !isMaki(port) ||
+    trying.has(port) ||
+    (failures.get(port) ?? 0) >= TRIES
+  )
+    return
   trying.add(port)
   let linked = false
   try {
@@ -53,8 +71,9 @@ export function watchUsb(link: Link): () => void {
       for (const p of ports) await tryPort(link, p)
     })
   scan()
-  // plugged in (again): a fresh start for the port
+  // plugged in (again): a fresh start for the port, and the owner's Disconnect is over
   const onConnect = (e: Event): void => {
+    heldApart = false
     failures.delete(e.target as SerialPort)
     void tryPort(link, e.target as SerialPort)
   }
@@ -80,7 +99,9 @@ export function watchUsb(link: Link): () => void {
 export async function chooseUsb(link: Link): Promise<void> {
   try {
     const port = await navigator.serial.requestPort({ filters: [MAKI_USB] })
-    failures.delete(port) // picked by hand: tried afresh
+    // picked by hand: tried afresh, a Disconnect before it over
+    heldApart = false
+    failures.delete(port)
     await tryPort(link, port)
   } catch (e) {
     link.note(`no maki chosen: ${(e as Error).message}`)

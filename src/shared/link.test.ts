@@ -101,4 +101,31 @@ describe.skipIf(!FAKE_BUILT || !DEV_STORE_THERE)('the maki store, through the li
     const { apps } = await link.appList()
     expect(apps.map((a) => [a.name, a.fromStore])).toEqual([['Dice', true]])
   })
+
+  it('installs two apps asked for at once, one after the other', async () => {
+    // a fake maki of its own: one links one desktop at a time
+    const own = await startFake(['--clock-verified'])
+    const link = new Link(noRelay)
+    link.autoSync = false
+    link.store = new Store(storeSource(DEV_STORE))
+    await link.storeCheck()
+    expect(await link.attach(await Tcp.open(own.port), 'fake maki')).toBe(true)
+    await link.storeNow()
+    const index = link.store.index!
+    const two = await Promise.all(
+      ['Sensors', 'Signer'].map(async (n) => {
+        const app = index.apps.find((a) => a.name === n)!
+        return { name: n, bytes: (await link.store!.bundle(app)).bytes }
+      })
+    )
+    // both asked for before the first is through: their pieces mustn't cross
+    const results = await Promise.all(two.map((a) => link.appInstall(a.name, a.bytes)))
+    expect(results).toEqual([
+      { approval: 'approved', reason: '' },
+      { approval: 'approved', reason: '' }
+    ])
+    const { apps } = await link.appList()
+    expect(apps.map((a) => a.name).sort()).toEqual(expect.arrayContaining(['Sensors', 'Signer']))
+    own.proc.kill()
+  })
 })

@@ -7,6 +7,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -21,6 +22,7 @@ import {
   download,
   fetchRelease,
   installFirmware,
+  makiPort,
   replaceAppImage,
   updateConsole,
   updateDrive,
@@ -60,13 +62,19 @@ function usb(
   has: { tty?: string; disk?: string }
 ): void {
   const dev = join(env.sys, 'devices', 'pci0000:00', 'usb1', port)
+  rmSync(dev, { recursive: true, force: true })
   mkdirSync(dev, { recursive: true })
   writeFileSync(join(dev, 'idVendor'), '1d50\n')
   writeFileSync(join(dev, 'idProduct'), `${product}\n`)
+  // the bus's list of devices, by port
+  const bus = join(env.sys, 'bus', 'usb', 'devices')
+  mkdirSync(bus, { recursive: true })
+  if (!existsSync(join(bus, port))) symlinkSync(dev, join(bus, port))
   if (has.tty) {
     const t = join(dev, `${port}:1.2`, 'tty', has.tty)
     mkdirSync(t, { recursive: true })
     mkdirSync(join(env.sys, 'class', 'tty'), { recursive: true })
+    rmSync(join(env.sys, 'class', 'tty', has.tty), { force: true })
     symlinkSync(t, join(env.sys, 'class', 'tty', has.tty))
     writeFileSync(join(env.dev, has.tty), '')
   }
@@ -74,6 +82,7 @@ function usb(
     const d = join(dev, `${port}:1.0`, 'host5', 'target5:0:0', '5:0:0:0', 'block', has.disk)
     mkdirSync(d, { recursive: true })
     mkdirSync(join(env.sys, 'class', 'block'), { recursive: true })
+    rmSync(join(env.sys, 'class', 'block', has.disk), { force: true })
     symlinkSync(d, join(env.sys, 'class', 'block', has.disk))
     writeFileSync(join(env.dev, has.disk), '')
   }
@@ -120,7 +129,7 @@ describe('downloads', () => {
       'isn’t what the maki store signed for'
     )
     expect(existsSync(join(root, 'cache', 'bad.uf2'))).toBe(false)
-    expect(existsSync(join(root, 'cache', 'bad.uf2.part'))).toBe(false)
+    expect(readdirSync(join(root, 'cache')).filter((n) => n.endsWith('.part'))).toEqual([])
 
     const smaller = { ...good, bytes: 4 }
     await expect(download(smaller, join(root, 'cache', 'big.uf2'), env)).rejects.toThrow(
@@ -129,6 +138,29 @@ describe('downloads', () => {
     await expect(
       download({ ...good, url: 'https://example.com/gone' }, join(root, 'gone'), env)
     ).rejects.toThrow('404')
+  })
+
+  it('keeps two downloads of one file apart', async () => {
+    // the bytes come slowly, a piece at a time, so the two overlap
+    const data = new Uint8Array(256 * 1024).map((_, i) => (i * 7) & 0xff)
+    const f = fileOf('maki.AppImage', data)
+    const slow = (async () =>
+      new Response(
+        new ReadableStream({
+          async start(c) {
+            for (let at = 0; at < data.length; at += 16 * 1024) {
+              c.enqueue(data.slice(at, at + 16 * 1024))
+              await new Promise((ok) => setTimeout(ok, 2))
+            }
+            c.close()
+          }
+        }),
+        { status: 200 }
+      )) as unknown as typeof fetch
+    const dest = join(root, 'cache', 'maki.AppImage')
+    await Promise.all([download(f, dest, { fetch: slow }), download(f, dest, { fetch: slow })])
+    expect(sha(readFileSync(dest))).toBe(f.sha256)
+    expect(readdirSync(join(root, 'cache'))).toEqual(['maki.AppImage'])
   })
 
   it('fetches a release once, then finds it in the cache', async () => {
@@ -153,6 +185,7 @@ describe('maki’s update mode', () => {
     const env = fakeEnv()
     // maki itself, linked: its serial port is ttyACM0
     usb(env, '1-2', '6198', { tty: 'ttyACM0' })
+    expect(await makiPort(env)).toBe(join(env.sys, 'devices', 'pci0000:00', 'usb1', '1-2'))
     expect(await updateConsole(env)).toBeNull()
     expect(await updateDrive(env)).toBeNull()
     // someone else's stick, labelled BAOCHIP
@@ -167,18 +200,40 @@ describe('maki’s update mode', () => {
     expect(await updateConsole(env)).toBe(join(env.dev, 'ttyACM1'))
   })
 
+  it('takes the boot1 on maki’s port, and none when two could be maki', async () => {
+    const env = fakeEnv()
+    const port = (p: string): string => join(env.sys, 'devices', 'pci0000:00', 'usb1', p)
+    // another badge already in update mode, on 1-4
+    usb(env, '1-4', '6196', { tty: 'ttyACM0', disk: 'sdc' })
+    // maki, linked on 1-2 and about to restart: the other one isn't it
+    usb(env, '1-2', '6198', { tty: 'ttyACM1' })
+    symlinkSync('../../sdc', join(env.dev, 'disk', 'by-label', 'BAOCHIP'))
+    expect(await updateDrive(env, port('1-2'))).toBeNull()
+    expect(await updateConsole(env, port('1-2'))).toBeNull()
+    // maki shows up in update mode on its own port: that one, its console with it
+    usb(env, '1-2', '6196', { tty: 'ttyACM1', disk: 'sdb' })
+    rmSync(join(env.dev, 'disk', 'by-label', 'BAOCHIP'))
+    symlinkSync('../../sdb', join(env.dev, 'disk', 'by-label', 'BAOCHIP'))
+    expect(await updateDrive(env, port('1-2'))).toBe(join(env.dev, 'sdb'))
+    expect(await updateConsole(env, port('1-2'))).toBe(join(env.dev, 'ttyACM1'))
+    // with no port known, two boot1s are one too many
+    expect(await updateDrive(env)).toBeNull()
+    expect(await updateConsole(env)).toBeNull()
+  })
+
   it('puts the firmware on maki’s drive, mounted if it wasn’t, then boots it on the console', async () => {
     const env = fakeEnv()
     usb(env, '1-1', '6196', { tty: 'ttyACM0', disk: 'sdb' })
     symlinkSync('../../sdb', join(env.dev, 'disk', 'by-label', 'BAOCHIP'))
     const paths: Record<string, string> = {}
-    for (const n of ['loader.uf2', 'xous.uf2', 'swap.uf2']) {
+    const files = ['loader.uf2', 'xous.uf2', 'swap.uf2'].map((n) => {
       paths[n] = join(root, n)
       writeFileSync(paths[n], `${n} contents`)
-    }
+      return { path: paths[n], file: fileOf(n, new TextEncoder().encode(`${n} contents`)) }
+    })
     const steps: string[] = []
     await installFirmware(
-      paths,
+      files,
       (s: FirmwareStep, d?: string) => steps.push(d ? `${s} ${d}` : s),
       env
     )
@@ -209,9 +264,32 @@ describe('maki’s update mode', () => {
 
   it('says so when maki never shows up in update mode', async () => {
     const env = fakeEnv()
-    await expect(
-      installFirmware({ 'loader.uf2': 'x', 'xous.uf2': 'x', 'swap.uf2': 'x' }, () => {}, env, 1_000)
-    ).rejects.toThrow('didn’t show up in update mode')
+    const files = ['loader.uf2', 'xous.uf2', 'swap.uf2'].map((n) => {
+      writeFileSync(join(root, n), 'x')
+      return { path: join(root, n), file: fileOf(n, new TextEncoder().encode('x')) }
+    })
+    await expect(installFirmware(files, () => {}, env, 1_000)).rejects.toThrow(
+      'didn’t show up in update mode'
+    )
+  })
+
+  it('checks each file again before it goes on maki', async () => {
+    const env = fakeEnv()
+    usb(env, '1-1', '6196', { tty: 'ttyACM0', disk: 'sdb' })
+    symlinkSync('../../sdb', join(env.dev, 'disk', 'by-label', 'BAOCHIP'))
+    const files = ['loader.uf2', 'xous.uf2', 'swap.uf2'].map((n) => {
+      writeFileSync(join(root, n), `${n} contents`)
+      return { path: join(root, n), file: fileOf(n, new TextEncoder().encode(`${n} contents`)) }
+    })
+    // changed since it was fetched (or cut short)
+    writeFileSync(join(root, 'swap.uf2'), 'swap.uf2 cont')
+    const steps: string[] = []
+    await expect(installFirmware(files, (s) => steps.push(s), env)).rejects.toThrow(
+      'swap.uf2 isn’t what the maki store signed for'
+    )
+    // nothing went on maki
+    expect(steps).toEqual([])
+    expect(existsSync(env.mnt)).toBe(false)
   })
 })
 

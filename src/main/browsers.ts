@@ -126,6 +126,8 @@ export interface Env {
   asAdmin: AsAdmin
   registry: Registry
   flatpak: Flatpak
+  /** how this app is started: given, a browser counts as connected only if the launcher starts it */
+  launch?: Launch
 }
 
 const env = (given: Partial<Env>): Env => ({
@@ -431,6 +433,19 @@ function launcherScript({ exe, appPath }: Launch): string {
 }
 
 /**
+ * At start: the browsers' launcher, if it starts another file (an AppImage an update replaced,
+ * or one since moved), is written again for this one. Only if maki desktop wrote it.
+ */
+export async function refreshLauncher(launch: Launch): Promise<void> {
+  const path = launcherPath()
+  const text = await readFile(path, 'utf8').catch(() => null)
+  if (text === null || text === launcherScript(launch) || !text.includes('written by maki desktop'))
+    return
+  await writeFile(path, launcherScript(launch))
+  await chmod(path, 0o755)
+}
+
+/**
  * The relay a sandboxed browser starts: what native-host.ts does, but it can't start this app
  * from in there, so it tells the extension when the app isn't running. Browser side: stdio, each
  * message a 4-byte little-endian length then UTF-8 JSON; this app's side: a JSON object a line.
@@ -677,6 +692,11 @@ async function registered(b: Browser, e: Env): Promise<boolean> {
   // on Windows, the browser finds the manifest through its key: it must name ours
   if (b.regKey && (await e.registry.get(b.regKey)) !== hostFile(b.targets[0])) return false
   for (const t of b.targets) if (!(await ours(t, b))) return false
+  // the launcher must start this app: one naming an AppImage an update replaced starts nothing
+  if (!b.sandbox && e.launch) {
+    const text = await readFile(launcherPath(), 'utf8').catch(() => null)
+    if (text !== launcherScript(e.launch)) return false
+  }
   if (b.sandbox) {
     if (!(await exists(relayPath(b.sandbox)))) return false
     return grants(

@@ -1,6 +1,7 @@
 import { app, shell } from 'electron'
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { writeAtomic } from './atomic'
 
 /**
  * maki's backups on this computer: `latest.makibak`, and one a day (`maki-YYYY-MM-DD.makibak`)
@@ -17,9 +18,10 @@ export function backupDir(): string {
 export async function saveBackup(data: Uint8Array): Promise<void> {
   const dir = backupDir()
   await mkdir(dir, { recursive: true, mode: 0o700 })
-  await writeFile(join(dir, 'latest.makibak'), data, { mode: 0o600 })
+  // whole or not at all: a restore needs one that isn't cut short
+  await writeAtomic(join(dir, 'latest.makibak'), data)
   const day = new Date().toISOString().slice(0, 10)
-  await writeFile(join(dir, `maki-${day}.makibak`), data, { mode: 0o600 })
+  await writeAtomic(join(dir, `maki-${day}.makibak`), data)
   const daily = (await readdir(dir))
     .filter((f) => /^maki-\d{4}-\d{2}-\d{2}\.makibak$/.test(f))
     .sort()

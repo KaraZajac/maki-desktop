@@ -27,11 +27,13 @@ import { NETWORKS, type EthState } from '../shared/ethereum'
 import { SOL_NETWORKS, type SolState } from '../shared/solana'
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
+import { writeAtomic } from './atomic'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import {
   addCustomBrowser,
   browserStatus,
   pkexec,
+  refreshLauncher,
   registerBrowser,
   removeCustomBrowser,
   unregisterBrowser,
@@ -40,18 +42,18 @@ import {
 import { sudoOff, sudoOn, sudoStatus } from './sudo'
 import { browserSocketPath, extensionOnly, forWindow, serveBridge, socketPath } from './bridge'
 import { getStartAtLogin, refreshStartAtLogin, setStartAtLogin } from './login'
-import { agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
+import { AGE_PLUGIN, agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
 import { MINISIGN_COMMAND, runMinisign } from './minisign'
 import { runSshKeygen, SSH_KEYGEN_COMMAND, sshKeygenOnPath } from './ssh-keygen'
 import { GPG_COMMAND, gpgOnPath, runGpg } from './gpg'
 import { OPENPGP_APP } from '../shared/openpgp'
-import { installScript, scriptStatus } from './scripts'
+import { installScript, refreshScripts, scriptStatus } from './scripts'
 import { MINISIGN_APP, parsePublicKey } from '../shared/minisign'
 import { launchTrayApp, runNativeHost } from './native-host'
 import { relay } from './roughtime'
 import { agentSocketPath, serveAgent, SSH_APP } from './ssh-agent'
 import { onGithub, storeName, storeSource, storeToken, storeWhere } from './store-source'
-import { fetchRelease, installFirmware, replaceAppImage } from './updates'
+import { fetchRelease, installFirmware, makiPort, replaceAppImage } from './updates'
 import { platformName, type ReleaseFile } from '../shared/releases'
 
 /**
@@ -68,6 +70,16 @@ interface LinkReport {
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
+/**
+ * The update under way, one at a time: maki desktop's own replaces this app and restarts it,
+ * which mustn't happen while maki's firmware is being copied (maki would be left half-written,
+ * waiting in update mode), and two of its own would write one AppImage.
+ */
+let updating: 'firmware' | 'desktop' | null = null
+/** What the store signed for each file fetched, by where it is: checked again before it's used. */
+const fetched = new Map<string, ReleaseFile>()
+/** The port maki was plugged into when it was asked to restart for an update. */
+let updatePort: string | null = null
 let devSocket: Socket | null = null
 let link: LinkReport = { linked: false, via: null, timeState: null }
 
@@ -107,15 +119,51 @@ const fromBrowser = new Map<
   (r: { ok: true; result: BridgeResult } | { ok: false; error: string }) => void
 >()
 let nextBrowserRequest = 1
+/** Whether the window listens for requests: it says so once it does, and a reload undoes it. */
+let windowListens = false
+/** Requests that came before it did, each to go on once it does. */
+const whenListening: (() => void)[] = []
+/**
+ * The longest a request waits on the window: maki gives its owner up to 300 s for the longest
+ * question (a wallet's review, page by page), and a request that outlives that was lost.
+ */
+const WINDOW_ANSWER_MS = 330_000
 
 async function askWindow(request: BridgeRequest): Promise<BridgeResult> {
   if (!win) throw new Error('maki desktop is starting')
   request = await forWindow(request)
+  // the window starting (maki desktop was started for this request) or loading again
+  if (!windowListens) {
+    await new Promise<void>((go, fail) => {
+      const late = setTimeout(() => fail(new Error('maki desktop’s window didn’t start')), 30_000)
+      whenListening.push(() => (clearTimeout(late), go()))
+    })
+  }
   const key = nextBrowserRequest++
   return new Promise((resolve, reject) => {
-    fromBrowser.set(key, (r) => (r.ok ? resolve(r.result) : reject(new Error(r.error))))
+    const late = setTimeout(() => {
+      fromBrowser.delete(key)
+      reject(new Error('maki desktop didn’t answer in time'))
+    }, WINDOW_ANSWER_MS)
+    fromBrowser.set(key, (r) => {
+      clearTimeout(late)
+      if (r.ok) resolve(r.result)
+      else reject(new Error(r.error))
+    })
     win!.webContents.send('browser:request', key, request)
   })
+}
+
+/**
+ * The window was reloaded, or its renderer went: what it was asked is lost with it, so say so
+ * to whoever asked, and the tray stops saying maki is linked until the window links it again.
+ */
+function windowLost(why: string): void {
+  windowListens = false
+  for (const answer of fromBrowser.values()) answer({ ok: false, error: why })
+  fromBrowser.clear()
+  link = { linked: false, via: null, timeState: null }
+  void refreshTray()
 }
 
 function createWindow(): void {
@@ -146,6 +194,14 @@ function createWindow(): void {
       e.preventDefault()
       win?.hide()
     }
+  })
+  win.webContents.on('did-start-navigation', (d) => {
+    if (d.isMainFrame && !d.isSameDocument) windowLost('maki desktop’s window was reloaded')
+  })
+  win.webContents.on('render-process-gone', (_e, d) => {
+    windowLost('maki desktop’s window stopped')
+    // a crash: the window again, which links maki again
+    if (d.reason !== 'clean-exit') win?.reload()
   })
   win.on('closed', () => (win = null))
 }
@@ -192,7 +248,7 @@ async function refreshTray(): Promise<void> {
           void refreshTray()
         }
       },
-      { label: 'Quit maki', click: () => ((quitting = true), app.quit()) }
+      { label: 'Quit maki', click: () => app.quit() }
     ])
   )
 }
@@ -221,6 +277,11 @@ function ipc(): void {
     link = report
     void refreshTray()
   })
+  ipcMain.on('browser:ready', (e, listening: boolean) => {
+    if (e.sender !== win?.webContents) return
+    windowListens = listening
+    if (listening) for (const go of whenListening.splice(0)) go()
+  })
   ipcMain.on(
     'browser:response',
     (
@@ -240,31 +301,65 @@ function ipc(): void {
     appImage: !!process.env['APPIMAGE'],
     firmwareHere: process.platform === 'linux'
   }))
-  ipcMain.handle('updates:fetch', (_e, release: string, files: ReleaseFile[]) => {
+  ipcMain.handle('updates:fetch', async (_e, release: string, files: ReleaseFile[]) => {
     if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(release)) throw new Error('not a release name')
-    return fetchRelease(
+    const paths = await fetchRelease(
       files,
       join(app.getPath('userData'), 'updates', release),
       undefined,
       (name, bytes, of) => win?.webContents.send('updates:progress', { name, bytes, of })
     )
+    for (const f of files) fetched.set(paths[f.name], f)
+    return paths
   })
-  ipcMain.handle('updates:installFirmware', (_e, paths: Record<string, string>) =>
-    installFirmware(paths, (step, detail) =>
-      win?.webContents.send('updates:firmwareStep', { step, detail })
-    )
-  )
+  // just before maki is asked to restart for an update: where it's plugged in, so the files go
+  // to it and not to another badge in update mode
+  ipcMain.handle('updates:notePort', async () => {
+    updatePort = process.platform === 'linux' ? await makiPort() : null
+    return updatePort !== null
+  })
+  ipcMain.handle('updates:installFirmware', async (_e, paths: Record<string, string>) => {
+    if (updating) throw new Error('maki desktop is updating already: wait for it')
+    const files = Object.values(paths).map((path) => {
+      const file = fetched.get(path)
+      if (!file) throw new Error('fetch the release first')
+      return { path, file }
+    })
+    updating = 'firmware'
+    try {
+      await installFirmware(
+        files,
+        (step, detail) => win?.webContents.send('updates:firmwareStep', { step, detail }),
+        undefined,
+        undefined,
+        updatePort
+      )
+    } finally {
+      updating = null
+    }
+  })
   ipcMain.handle('updates:replaceDesktop', async (_e, file: ReleaseFile, newVersion: string) => {
-    const next = await replaceAppImage(
-      file,
-      { path: process.env['APPIMAGE'], version: app.getVersion(), newVersion },
-      undefined,
-      (bytes) =>
-        win?.webContents.send('updates:progress', { name: file.name, bytes, of: file.bytes })
-    )
-    // the new one, as this one was started; the answer gets back to the window first
+    if (updating === 'firmware')
+      throw new Error('maki’s firmware is being updated: once it’s done, update maki desktop')
+    if (updating) throw new Error('maki desktop is being updated already')
+    updating = 'desktop'
+    let next: string
+    try {
+      next = await replaceAppImage(
+        file,
+        { path: process.env['APPIMAGE'], version: app.getVersion(), newVersion },
+        undefined,
+        (bytes) =>
+          win?.webContents.send('updates:progress', { name: file.name, bytes, of: file.bytes })
+      )
+    } catch (e) {
+      updating = null
+      throw e
+    }
+    // the new one, as this one was started but with its window (it was asked for from there);
+    // the answer gets back to the window first
     setTimeout(() => {
-      app.relaunch({ execPath: next, args: process.argv.slice(1) })
+      app.relaunch({ execPath: next, args: process.argv.slice(1).filter((a) => a !== '--hidden') })
       quitting = true
       app.exit(0)
     }, 300)
@@ -274,7 +369,7 @@ function ipc(): void {
   ipcMain.handle('backups:latest', () => latestBackup())
   ipcMain.handle('backups:info', () => backupInfo())
   ipcMain.handle('backups:show', () => showBackups())
-  ipcMain.handle('browsers:status', () => browserStatus())
+  ipcMain.handle('browsers:status', () => browserStatus({ launch: launch() }))
   ipcMain.handle('browsers:register', (_e, id: string) => registerBrowser(id, launch()))
   ipcMain.handle('browsers:unregister', (_e, id: string) => unregisterBrowser(id))
   // a browser the list doesn't know: the folder it reads helpers from, chosen here
@@ -405,7 +500,7 @@ function ipc(): void {
   })
   ipcMain.handle('eth:save', async (_e, state: unknown) => {
     const s = ethState(state)
-    if (s) await writeFile(ethFile(), JSON.stringify(s))
+    if (s) await writeAtomic(ethFile(), JSON.stringify(s))
   })
   ipcMain.handle('eth:rpc', async (_e, url: string, method: string, params: unknown[]) => {
     // only the networks maki desktop knows: the renderer can't send this process anywhere else
@@ -463,7 +558,7 @@ function ipc(): void {
   })
   ipcMain.handle('sol:save', async (_e, state: unknown) => {
     const s = solState(state)
-    if (s) await writeFile(solFile(), JSON.stringify(s))
+    if (s) await writeAtomic(solFile(), JSON.stringify(s))
   })
   ipcMain.handle('sol:rpc', async (_e, url: string, method: string, params: unknown[]) => {
     // only the networks maki desktop knows; MAKI_SOL_RPC (tests) is a server to use instead
@@ -668,7 +763,7 @@ function ipc(): void {
     const text = JSON.stringify(state)
     if (typeof state !== 'object' || state === null || text.length > 64 * 1024 * 1024)
       throw new Error('not a Monero wallet state')
-    await writeFile(xmrFile(), text, { mode: 0o600 })
+    await writeAtomic(xmrFile(), text)
   })
   // a Monero node, as maki desktop's wallet asks it (the page can't reach one itself): POST to
   // one of its paths, the answer's bytes; http for your own node, https or http for others
@@ -727,7 +822,7 @@ function ipc(): void {
   ipcMain.handle('nostr:save', async (_e, kept: unknown) => {
     const text = JSON.stringify(kept)
     if (text.length > 256 * 1024) throw new Error('too much to keep')
-    await writeFile(nostrFile(), text, { mode: 0o600 })
+    await writeAtomic(nostrFile(), text)
   })
   const btcFile = (): string => join(app.getPath('userData'), 'bitcoin.json')
   ipcMain.handle('btc:load', async () => {
@@ -744,7 +839,7 @@ function ipc(): void {
     const list = Array.isArray(descriptors)
       ? descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300)
       : []
-    await writeFile(btcFile(), JSON.stringify({ descriptors: list.slice(0, 8) }))
+    await writeAtomic(btcFile(), JSON.stringify({ descriptors: list.slice(0, 8) }))
   })
 
   // the maki store: where it is, its files (only those), and what this side keeps of it between
@@ -780,7 +875,7 @@ function ipc(): void {
   ipcMain.handle('store:save', async (_e, kept: { root: unknown; indexVersion: unknown }) => {
     const root = kept.root instanceof Uint8Array ? toBase64(kept.root) : null
     const indexVersion = Number.isSafeInteger(kept.indexVersion) ? kept.indexVersion : 0
-    await writeFile(storeFile(), JSON.stringify({ root, indexVersion }))
+    await writeAtomic(storeFile(), JSON.stringify({ root, indexVersion }))
   })
   ipcMain.handle('app:version', () => app.getVersion())
   // the notices beside the packaged app (electron-builder.yml), or the ones the build wrote
@@ -896,6 +991,15 @@ if (process.argv.includes('--age-plugin-maki')) {
     refreshStartAtLogin().catch((e) =>
       console.error(`couldn't bring the login entry up to date: ${(e as Error).message}`)
     )
+    // an update replaces the AppImage: the browsers' launcher and maki's commands follow it
+    if (app.isPackaged) {
+      Promise.all([
+        refreshLauncher(launch()),
+        refreshScripts([GPG_COMMAND, SSH_KEYGEN_COMMAND, MINISIGN_COMMAND, AGE_PLUGIN], launch())
+      ]).catch((e) =>
+        console.error(`couldn't bring the launchers up to date: ${(e as Error).message}`)
+      )
+    }
     serveBridge(askWindow).catch((e) =>
       console.error(`browser bridge unavailable: ${(e as Error).message}`)
     )
@@ -919,7 +1023,32 @@ if (process.argv.includes('--age-plugin-maki')) {
     }
     app.on('activate', showWindow)
   })
-  app.on('before-quit', () => (quitting = true))
+  app.on('before-quit', (e) => {
+    // maki's firmware half copied would leave it waiting in update mode: ask first
+    if (updating === 'firmware') {
+      e.preventDefault()
+      showWindow()
+      void dialog
+        .showMessageBox(win!, {
+          type: 'warning',
+          message: 'maki’s firmware is being put on it',
+          detail:
+            'Quitting now leaves maki in update mode with part of its new firmware. Let the update finish first.',
+          buttons: ['Keep updating', 'Quit anyway'],
+          defaultId: 0,
+          cancelId: 0
+        })
+        .then(({ response }) => {
+          if (response === 1) {
+            updating = null
+            quitting = true
+            app.quit()
+          }
+        })
+      return
+    }
+    quitting = true
+  })
   // the tray keeps the app alive with no windows open
   app.on('window-all-closed', () => {})
 }

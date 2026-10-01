@@ -28,7 +28,12 @@ const api = {
       )
     }
     ipcRenderer.on('browser:request', listener)
-    return () => ipcRenderer.removeListener('browser:request', listener)
+    // requests wait in the main process until the window listens
+    ipcRenderer.send('browser:ready', true)
+    return () => {
+      ipcRenderer.removeListener('browser:request', listener)
+      ipcRenderer.send('browser:ready', false)
+    }
   },
   backups: {
     save: (data: Uint8Array): Promise<void> => ipcRenderer.invoke('backups:save', data),
@@ -218,6 +223,8 @@ const api = {
       release: string,
       files: import('../shared/releases').ReleaseFile[]
     ): Promise<Record<string, string>> => ipcRenderer.invoke('updates:fetch', release, files),
+    /** note where maki is plugged in, just before it's asked to restart for an update */
+    notePort: (): Promise<boolean> => ipcRenderer.invoke('updates:notePort'),
     /** put the firmware on maki once it's in update mode, and start it */
     installFirmware: (paths: Record<string, string>): Promise<void> =>
       ipcRenderer.invoke('updates:installFirmware', paths),

@@ -22,7 +22,7 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs'
-import type { Server } from 'node:net'
+import { createServer, type Server } from 'node:net'
 import { tmpdir, userInfo } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -37,6 +37,7 @@ import {
   TcpTransport
 } from '../shared/test-support'
 import {
+  askOver,
   identityOf,
   publicOfIdentity,
   recipientOf,
@@ -141,6 +142,20 @@ describe('age-plugin-maki', () => {
     // canonical, unpadded base64 only
     expect(unb64('AAA')).toEqual(new Uint8Array(2))
     for (const bad of ['AAA=', 'AAB', 'A', '!!!!']) expect(unb64(bad)).toBeNull()
+  })
+
+  it('gives up when maki desktop goes away before maki answers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'maki-ask-'))
+    const path = join(dir, 'gone.sock')
+    // takes the request, then quits without an answer
+    const server = createServer((c) => c.once('data', () => c.destroy()))
+    await new Promise<void>((ok) => server.listen(path, ok))
+    try {
+      await expect(askOver(path)(new Uint8Array([1]))).rejects.toThrow('went away')
+    } finally {
+      server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('names maki’s key in an identity, and its recipient is an ordinary one', () => {

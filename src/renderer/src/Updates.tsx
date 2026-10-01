@@ -3,8 +3,9 @@ import type { Link } from '@shared/link'
 import { buildLabel, firmwareState, newer, releaseLabel } from '@shared/releases'
 import { Badge, Button, Card, Glyph, Label } from './ui'
 import {
+  desktopUpdate,
   firmwareUpdate,
-  updateDesktop,
+  useDesktopUpdate,
   useFirmwareUpdate,
   type FirmwareStage
 } from './updates-state'
@@ -31,7 +32,7 @@ export function Updates({
     appImage: boolean
     firmwareHere: boolean
   } | null>(null)
-  const [desktopBusy, setDesktopBusy] = useState<string | null>(null)
+  const desktopBusy = useDesktopUpdate()
   useEffect(() => void window.maki.updates.info().then(setInfo), [])
 
   const fw = releases?.firmware ?? null
@@ -42,15 +43,14 @@ export function Updates({
 
   const updateSelf = async (): Promise<void> => {
     if (!desktop || !desktopFile) return
-    setDesktopBusy('Fetching the new maki desktop…')
     try {
-      await updateDesktop(desktopFile, desktop.name)
-      setDesktopBusy('Restarting…')
+      await desktopUpdate.run(desktopFile, desktop.name)
     } catch (e) {
-      setDesktopBusy(null)
       link.note(`maki desktop’s update: ${(e as Error).message}`)
     }
   }
+  // one update at a time: maki desktop restarting mid-copy would leave maki half-written
+  const firmwareBusy = firmwareUpdate.busy
 
   return (
     <Card className="space-y-4">
@@ -94,6 +94,7 @@ export function Updates({
           fw &&
           (fwState === 'update' || fwState === 'unknown') &&
           stage.stage === 'idle' &&
+          !desktopBusy &&
           info?.firmwareHere ? (
             <Button
               kind={fwState === 'update' ? 'primary' : 'quiet'}
@@ -138,7 +139,13 @@ export function Updates({
             desktopBusy ? (
               <span className="font-mono text-[0.72rem] text-overlay1">{desktopBusy}</span>
             ) : info?.appImage && desktopFile ? (
-              <Button kind="primary" glyph="download" onClick={() => void updateSelf()}>
+              <Button
+                kind="primary"
+                glyph="download"
+                disabled={firmwareBusy}
+                title={firmwareBusy ? 'Once maki’s firmware update is done' : undefined}
+                onClick={() => void updateSelf()}
+              >
                 Update and restart
               </Button>
             ) : (
@@ -242,6 +249,16 @@ function FirmwareProgress({
         return (
           <>
             <span className="text-red">{stage.why}</span>
+            {stage.retry && (
+              <Button
+                small
+                kind="primary"
+                className="ml-3"
+                onClick={() => void firmwareUpdate.install(link)}
+              >
+                Try again
+              </Button>
+            )}
             <Button small className="ml-3" onClick={() => firmwareUpdate.reset()}>
               Close
             </Button>

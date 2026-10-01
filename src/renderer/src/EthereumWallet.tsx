@@ -156,7 +156,8 @@ export function EthereumWallet({
           </div>
         </div>
       )}
-      {panel === 'send' && all && (
+      {/* a balance that can't be read now leaves nothing to send from: no panel, rather than a broken one */}
+      {panel === 'send' && all && some.length > 0 && (
         <Send
           link={link}
           account={address}
@@ -269,7 +270,10 @@ function Send({
   close: () => void
 }): React.JSX.Element {
   const [chain, setChain] = useState(String(holdings[0].network.chainId))
-  const on = holdings.find((n) => String(n.network.chainId) === chain) ?? holdings[0]
+  // the network chosen, if its balance could still be read the last time it was looked at: if
+  // not, nothing is sent until another is chosen, rather than quietly sending on another
+  const chosen = holdings.find((n) => String(n.network.chainId) === chain)
+  const on = chosen ?? holdings[0]
   const network = on.network
   const [asset, setAsset] = useState('coin')
   const held = on.holdings.filter((h) => h.amount > 0n)
@@ -287,7 +291,9 @@ function Send({
 
   // another network: its coin, to start with
   useEffect(() => setAsset('coin'), [chain])
-  useEffect(() => setAllOf(null), [chain, asset])
+  // the fees "all of it" left room for were for that network, asset and recipient: a contract
+  // wallet as the recipient takes more gas than an account, so it's estimated again
+  useEffect(() => setAllOf(null), [chain, asset, to])
 
   const amount = parseUnits(amountText, decimals)
   const typed = to.trim()
@@ -319,7 +325,8 @@ function Send({
       return `The account has ${units(holding.amount, decimals)} ${symbol}.`
     return null
   }, [name, looked, address, amountText, amount, holding, decimals, symbol])
-  const ready = !!holding && isAddress(address) && amount !== null && amount > 0n && check === null
+  const ready =
+    !!chosen && !!holding && isAddress(address) && amount !== null && amount > 0n && check === null
 
   const go = async (): Promise<void> => {
     setBusy(true)
@@ -473,7 +480,11 @@ function Send({
       </div>
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-surface0 pt-4">
         <p className="min-w-0 flex-1 text-sm">
-          {check ? (
+          {!chosen ? (
+            <span className="text-yellow">
+              That network’s balance couldn’t be read just now: choose one again.
+            </span>
+          ) : check ? (
             <span className="text-yellow">{check}</span>
           ) : ready ? (
             <span className="text-subtext1">

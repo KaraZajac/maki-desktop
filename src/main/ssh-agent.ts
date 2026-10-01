@@ -1,7 +1,8 @@
-import { chmodSync, existsSync, unlinkSync } from 'node:fs'
+import { chmodSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
-import { tmpdir, userInfo } from 'node:os'
+import { userInfo } from 'node:os'
 import { join } from 'node:path'
+import { clearSocketPath, privateDir } from './bridge'
 
 /**
  * maki desktop's SSH agent: ssh and git talk to it (through SSH_AUTH_SOCK), and it hands each
@@ -19,8 +20,7 @@ const FAILURE = new Uint8Array([0, 0, 0, 1, 5])
 
 export function agentSocketPath(): string {
   if (process.platform === 'win32') return `\\\\.\\pipe\\maki-ssh-agent-${userInfo().username}`
-  const dir = process.env['XDG_RUNTIME_DIR'] ?? tmpdir()
-  return join(dir, `maki-ssh-agent-${userInfo().uid}.sock`)
+  return join(privateDir(), `maki-ssh-agent-${userInfo().uid}.sock`)
 }
 
 /** Sends a message to maki's SSH app: the answer, or null for none. */
@@ -29,8 +29,9 @@ export type ToApp = (message: Uint8Array) => Promise<Uint8Array | null>
 let nextConnection = 1
 
 /** One request at a time on each connection, as ssh sends them. */
-export function serveAgent(toApp: ToApp, path = agentSocketPath()): Promise<Server> {
-  if (process.platform !== 'win32' && existsSync(path)) unlinkSync(path) // stale, from a crash
+export async function serveAgent(toApp: ToApp, path?: string): Promise<Server> {
+  path ??= agentSocketPath()
+  clearSocketPath(path)
   const server = createServer((socket: Socket) => {
     const conn = nextConnection++ >>> 0
     let buffer = new Uint8Array(0)

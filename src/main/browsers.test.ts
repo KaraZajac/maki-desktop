@@ -20,6 +20,7 @@ import {
   CHROME_EXTENSION_ID,
   FIREFOX_EXTENSION_ID,
   launcherPath,
+  refreshLauncher,
   registerBrowser,
   relayPath,
   removeCustomBrowser,
@@ -192,6 +193,27 @@ describe.skipIf(process.platform !== 'linux')('browser setup on Linux', () => {
     expect(script).toContain(
       `exec '/opt/it'\\''s maki/maki' --ozone-platform=headless --native-host "$@"`
     )
+  })
+
+  it('brings the launcher up to date after an update, and says so until then', async () => {
+    mkdirSync(join(home, '.config', 'chromium'), { recursive: true })
+    const old = { exe: '/home/k/maki-0.1.1.AppImage', appPath: null }
+    await registerBrowser('chromium', old, { asAdmin: admin(), flatpak: fp })
+    const now = { exe: '/home/k/maki-0.1.2.AppImage', appPath: null }
+    // the update replaced the AppImage the launcher starts: not connected, as it stands
+    const before = await browserStatus({ flatpak: fp, launch: now })
+    expect(row(before.browsers, 'chromium')?.registered).toBe(false)
+    await refreshLauncher(now)
+    expect(readFileSync(launcherPath(), 'utf8')).toContain(`exec '/home/k/maki-0.1.2.AppImage'`)
+    const after = await browserStatus({ flatpak: fp, launch: now })
+    expect(row(after.browsers, 'chromium')?.registered).toBe(true)
+  })
+
+  it('leaves a launcher it didn’t write alone', async () => {
+    mkdirSync(dirname(launcherPath()), { recursive: true })
+    writeFileSync(launcherPath(), '#!/bin/sh\nexec my-own-thing\n')
+    await refreshLauncher(launch)
+    expect(readFileSync(launcherPath(), 'utf8')).toBe('#!/bin/sh\nexec my-own-thing\n')
   })
 
   it('uses ~/.mozilla for a Firefox that already keeps its profiles there', async () => {
