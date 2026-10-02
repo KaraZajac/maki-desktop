@@ -98,10 +98,10 @@ const licenseFiles = (dir) =>
   existsSync(dir) ? readdirSync(dir).filter((f) => /^(LICEN[CS]E|COPYING|NOTICE)/i.test(f)).map((f) => join(dir, f)) : []
 
 /** Its notices: its own files for the licenses taken, its NOTICE; or the license, with its authors. */
-function notices({ license, authors, dir }) {
+function notices({ license, authors, dir, files }) {
   const byKind = new Map()
   const out = []
-  for (const f of licenseFiles(dir)) {
+  for (const f of files ?? licenseFiles(dir)) {
     const text = readFileSync(f, 'utf8').trim()
     if (/^NOTICE/i.test(f.split('/').pop())) out.push(['NOTICE', text])
     else if (!byKind.has(kindOf(text))) byKind.set(kindOf(text), text)
@@ -210,6 +210,30 @@ const commit = () => {
   }
 }
 
+/**
+ * Code of others that maki desktop's own source holds, not a package: TON's wallet contracts,
+ * compiled, which a TON wallet's first payment carries to the network (src/shared/coins/ton.ts),
+ * each with its repository's license beside it.
+ */
+const HELD = [
+  {
+    name: 'ton-blockchain/wallet-contract (v4R2, compiled)',
+    version: '68b56dc0',
+    license: 'MIT',
+    source: 'https://github.com/ton-blockchain/wallet-contract',
+    authors: 'TON Core',
+    files: [join(ROOT, 'src/shared/coins/LICENSE-ton-wallet-contract')]
+  },
+  {
+    name: 'ton-blockchain/wallet-contract-v5 (W5, compiled)',
+    version: 'ff2a9cdb',
+    license: 'MIT',
+    source: 'https://github.com/ton-blockchain/wallet-contract-v5',
+    authors: 'Tonkeeper',
+    files: [join(ROOT, 'src/shared/coins/LICENSE-ton-wallet-contract-v5')]
+  }
+]
+
 /** The app's notices. */
 export async function appNotices() {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
@@ -230,6 +254,7 @@ export async function appNotices() {
       'What follows is everything else in it, with its license and its authors’ notices. Where a package offers a choice of licenses, the notice is for the one taken here (MIT, where offered). None is under a copyleft license.',
     [
       ['npm packages in the app', npm],
+      ['Code of others in maki desktop’s own source', HELD],
       ['Rust crates in sudo’s plugin (maki_sudo.so)', rust]
     ]
   )
