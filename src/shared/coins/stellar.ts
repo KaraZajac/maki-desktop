@@ -169,21 +169,19 @@ export function transactionHash(p: StellarPayment, network: 0 | 1): Uint8Array {
   return sha256(Uint8Array.from([...id, 0, 0, 0, 2, ...transactionXdr(p)]))
 }
 
-/** Assets maki knows on the main network, by code and issuer (as maki's Stellar app knows them). */
-const KNOWN = [
-  {
-    code: 'USDC',
-    issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
-    symbol: 'USDC'
-  }
+/** Assets maki knows, by network, code and issuer (as maki's Stellar app knows them: Circle's). */
+const KNOWN: { network: 0 | 1; code: string; issuer: string }[] = [
+  { network: 0, code: 'USDC', issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' },
+  { network: 0, code: 'EURC', issuer: 'GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2' },
+  { network: 1, code: 'USDC', issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' },
+  { network: 1, code: 'EURC', issuer: 'GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO' }
 ]
 
 function tokenOf(network: 0 | 1, code: string, issuer: string): ChainToken {
-  const known =
-    network === 0 ? KNOWN.find((k) => k.code === code && k.issuer === issuer) : undefined
+  const known = KNOWN.find((k) => k.network === network && k.code === code && k.issuer === issuer)
   return {
     id: `${code}:${issuer}`,
-    symbol: known?.symbol ?? null,
+    symbol: known?.code ?? null,
     decimals: DECIMALS,
     label: `${code} by ${issuer.slice(0, 6)}…`
   }
@@ -236,7 +234,7 @@ export const STELLAR: AccountChain = {
   networks: ['Stellar', 'Testnet'],
   hint: 'G…',
   memo: { label: 'Memo', placeholder: 'if the recipient asked for one', numeric: false },
-  wallets: 'The account Lobstr, Freighter and Ledger make',
+  wallets: 'The account Freighter and Ledger make (SEP-5’s)',
   servers:
     'Balances and payments go through Horizon, the Stellar Development Foundation’s servers, which see the account’s address and this computer’s IP address. An account keeps a minimum balance the network sets (1 XLM, and half an XLM for each trust line), which can’t be sent.',
   explorerName: 'stellar.expert',
@@ -367,6 +365,9 @@ export const STELLAR: AccountChain = {
 
   async submit(fetch, account, payment, signature) {
     const p = payment.carry as StellarPayment
+    // maki's Stellar app answers the Ed25519 signature alone
+    if (signature.length !== 64)
+      throw new Error('maki’s Stellar app gave a signature maki desktop can’t read')
     const signed = base64.encode(envelope(p, signature))
     const r = await fetch(account.network, 'POST', `/transactions?tx=${encodeURIComponent(signed)}`)
     const body = JSON.parse(r.text) as {

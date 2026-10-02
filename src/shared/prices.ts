@@ -20,6 +20,7 @@ const IDS: Record<string, string> = {
   ETH: 'ethereum',
   POL: 'polygon-ecosystem-token',
   USDC: 'usd-coin',
+  EURC: 'euro-coin',
   USDT: 'tether',
   USDT0: 'usdt0',
   DAI: 'dai',

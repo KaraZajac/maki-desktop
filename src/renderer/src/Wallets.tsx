@@ -98,14 +98,14 @@ const WALLETS: WalletKind[] = [
     app: XRP.app,
     name: 'XRP',
     glyph: 'xrp',
-    line: 'XRP and its tokens, the account Ledger and Trust Wallet make.',
+    line: 'XRP, RLUSD and USDC, the account Xaman, Ledger and Trust Wallet make.',
     Card: (p) => <AccountCard {...p} chain={XRP} />
   },
   {
     app: STELLAR.app,
     name: 'Stellar',
     glyph: 'stellar',
-    line: 'XLM and its assets (USDC), the account Lobstr and Freighter make.',
+    line: 'XLM, USDC and EURC, the account Freighter and Ledger make.',
     Card: (p) => <AccountCard {...p} chain={STELLAR} />
   },
   {
