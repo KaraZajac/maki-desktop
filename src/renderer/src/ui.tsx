@@ -160,6 +160,84 @@ const glyphs: Record<string, ReactNode> = {
       <path d="M3.5 15.5H7.5V9l4.5 4.5L16.5 9v6.5h4" />
     </>
   ),
+  litecoin: (
+    <>
+      <path d="M10 4.5v14h7.5M6.5 13.5l7.5-3.5" />
+    </>
+  ),
+  dogecoin: (
+    <>
+      <path d="M8.5 5H12a7 7 0 0 1 0 14H8.5zM5.5 12H13" />
+    </>
+  ),
+  bitcoincash: (
+    <g transform="rotate(-18 12 12)">
+      <path d="M9 5.5v13M12 4v2M12 18v2M9 6.5h5a2.75 2.75 0 0 1 0 5.5H9h5.5a3 3 0 0 1 0 6H9" />
+    </g>
+  ),
+  kaspa: (
+    <>
+      <path d="M8 4.5v15M8.5 12 16 4.5M8.5 12l7.5 7.5" />
+    </>
+  ),
+  cosmos: (
+    <>
+      <ellipse cx="12" cy="12" rx="9.5" ry="3.5" transform="rotate(55 12 12)" />
+      <ellipse cx="12" cy="12" rx="9.5" ry="3.5" transform="rotate(-55 12 12)" />
+      <circle cx="12" cy="12" r="1.5" />
+    </>
+  ),
+  tron: (
+    <>
+      <path d="m3 4 18 4.5L11.5 21z" />
+      <path d="m3 4 11 7.5 7-3M14 11.5 11.5 21" />
+    </>
+  ),
+  stellar: (
+    <>
+      <path d="M17.6 7.2A6.5 6.5 0 0 0 5.6 13.4M6.4 16.8a6.5 6.5 0 0 0 12-6.2" />
+      <path d="m2.5 15.5 19-7.5M2.5 18.5l19-7.5" />
+    </>
+  ),
+  xrp: (
+    <>
+      <path d="M3.5 5c2.5 0 4.5 6 8.5 6s6-6 8.5-6M3.5 19c2.5 0 4.5-6 8.5-6s6 6 8.5 6" />
+    </>
+  ),
+  near: (
+    <>
+      <path d="M6.5 19V5l11 14V5" />
+    </>
+  ),
+  sui: (
+    <>
+      <path d="M12 3c3.5 4.5 6.5 7.5 6.5 11.5a6.5 6.5 0 0 1-13 0C5.5 10.5 8.5 7.5 12 3z" />
+      <path d="M8.5 15c1.2-1.4 2.3-1.4 3.5 0s2.3 1.4 3.5 0" />
+    </>
+  ),
+  aptos: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M4 9h6M14 9h6M3 13h18M5 17h14" />
+    </>
+  ),
+  cardano: (
+    <>
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="12" cy="6.5" r="1" />
+      <circle cx="12" cy="17.5" r="1" />
+      <circle cx="7.2" cy="9.2" r="1" />
+      <circle cx="16.8" cy="9.2" r="1" />
+      <circle cx="7.2" cy="14.8" r="1" />
+      <circle cx="16.8" cy="14.8" r="1" />
+      <circle cx="12" cy="2.5" r=".6" />
+      <circle cx="12" cy="21.5" r=".6" />
+      <circle cx="3.8" cy="7.2" r=".6" />
+      <circle cx="20.2" cy="7.2" r=".6" />
+      <circle cx="3.8" cy="16.8" r=".6" />
+      <circle cx="20.2" cy="16.8" r=".6" />
+    </>
+  ),
   key: (
     <>
       <circle cx="8" cy="15" r="4" />

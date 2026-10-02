@@ -11,6 +11,7 @@ export type Currency = (typeof CURRENCIES)[number]
 /** CoinGecko's names for the coins and the tokens maki knows, by symbol. */
 const IDS: Record<string, string> = {
   BTC: 'bitcoin',
+  LTC: 'litecoin',
   ETH: 'ethereum',
   POL: 'polygon-ecosystem-token',
   USDC: 'usd-coin',

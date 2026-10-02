@@ -24,11 +24,13 @@ import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue
 import {
   BitcoinApp,
   EthereumApp,
+  LITECOIN_APP,
   MoneroApp,
   SolanaApp,
   type MoneroNetworkValue,
   type MoneroOutput
 } from './wallet-apps'
+import type { BtcChain } from './btc-wallet'
 import type { MultisigWallet } from './multisig'
 import { memorySolStore, Solana, type SolRpc, type SolStore } from './solana'
 import { SolWallet } from './sol-wallet'
@@ -93,6 +95,7 @@ export class Link {
 
   /** maki's wallets: apps from the maki store, which maki keeps the keys for */
   readonly bitcoin: BitcoinApp
+  readonly litecoin: BitcoinApp
   readonly ethereumApp: EthereumApp
   readonly monero: MoneroApp
   /** the Ethereum account, for sites through the browser extension */
@@ -123,6 +126,7 @@ export class Link {
     const send = (app: string, message: Uint8Array, timeoutMs?: number) =>
       this.appMessage(app, message, timeoutMs)
     this.bitcoin = new BitcoinApp(send)
+    this.litecoin = new BitcoinApp(send, LITECOIN_APP, 'Litecoin')
     this.ethereumApp = new EthereumApp(send)
     this.monero = new MoneroApp(send)
     this.ethereum = new Ethereum(
@@ -421,24 +425,31 @@ export class Link {
     return r
   }
 
-  /** A Bitcoin account for wallet software, once the owner agrees on maki. */
+  /** maki's app for a coin of Bitcoin's kind: its Bitcoin app, or its Litecoin app. */
+  private btcApp(chain: BtcChain): BitcoinApp {
+    return chain === 'litecoin' ? this.litecoin : this.bitcoin
+  }
+
+  /** A Bitcoin (or Litecoin) account for wallet software, once the owner agrees on maki. */
   async btcAccount(
     network: NetworkValue,
-    account: BtcAccountValue = BtcAccount.SEGWIT
+    account: BtcAccountValue = BtcAccount.SEGWIT,
+    chain: BtcChain = 'bitcoin'
   ): Promise<{ zpub: string; descriptor: string } | null> {
     this.linkedClient()
-    this.note('sharing the Bitcoin account: approve on maki')
-    const r = await this.bitcoin.account(network, account)
+    const app = this.btcApp(chain)
+    this.note(`sharing the ${app.name} account: approve on maki`)
+    const r = await app.account(network, account)
     this.note(
       r.approval === 'approved'
-        ? 'Bitcoin account shared'
-        : `Bitcoin account: ${Link.walletSays(r.approval, 'Bitcoin')}`
+        ? `${app.name} account shared`
+        : `${app.name} account: ${Link.walletSays(r.approval, app.name)}`
     )
     return r.approval === 'approved' ? { zpub: r.zpub, descriptor: r.descriptor } : null
   }
 
   /** A wallet app's answer that isn't a yes, for the log. */
-  static walletSays(approval: ApprovalValue, wallet: 'Bitcoin' | 'Ethereum' | 'Monero'): string {
+  static walletSays(approval: ApprovalValue, wallet: string): string {
     switch (approval) {
       case 'no match':
         return `maki's ${wallet} app isn't installed: add it from the maki store, in Apps`
@@ -454,18 +465,20 @@ export class Link {
     network: NetworkValue,
     change: boolean,
     index: number,
-    account: BtcAccountValue = BtcAccount.SEGWIT
+    account: BtcAccountValue = BtcAccount.SEGWIT,
+    chain: BtcChain = 'bitcoin'
   ): Promise<{ approval: ApprovalValue; address: string }> {
     this.linkedClient()
-    const which = `${account === BtcAccount.TAPROOT ? 'taproot ' : ''}${change ? 'change' : 'receive'} address #${index}`
+    const app = this.btcApp(chain)
+    const which = `${chain === 'litecoin' ? 'Litecoin ' : ''}${account === BtcAccount.TAPROOT ? 'taproot ' : ''}${change ? 'change' : 'receive'} address #${index}`
     this.note(`${which} is on maki's screen: compare it`)
-    const r = await this.bitcoin.address(network, change, index, account)
+    const r = await app.address(network, change, index, account)
     this.note(
       r.approval === 'approved'
         ? `${which} matches maki's`
         : r.approval === 'denied'
           ? `${which} doesn't match maki's: don't use this computer's copy`
-          : `${which}: ${Link.walletSays(r.approval, 'Bitcoin')}`
+          : `${which}: ${Link.walletSays(r.approval, app.name)}`
     )
     return r
   }
@@ -602,11 +615,13 @@ export class Link {
   /** Have maki sign a PSBT, once the owner has gone through it on maki's screen. */
   async btcSign(
     network: NetworkValue,
-    psbt: Uint8Array
+    psbt: Uint8Array,
+    chain: BtcChain = 'bitcoin'
   ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
     this.linkedClient()
-    this.note('transaction sent: go through it on maki')
-    const r = await this.bitcoin.sign(network, psbt)
+    const app = this.btcApp(chain)
+    this.note(`${chain === 'litecoin' ? 'Litecoin ' : ''}transaction sent: go through it on maki`)
+    const r = await app.sign(network, psbt)
     this.note(
       r.approval === 'approved'
         ? 'transaction signed'
@@ -614,7 +629,7 @@ export class Link {
           ? `maki won't sign it: ${r.reason}`
           : r.approval === 'denied'
             ? 'transaction rejected on maki'
-            : `transaction: ${Link.walletSays(r.approval, 'Bitcoin')}`
+            : `transaction: ${Link.walletSays(r.approval, app.name)}`
     )
     return r
   }

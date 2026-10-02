@@ -3,8 +3,14 @@ import type { Link } from '@shared/link'
 import type { ApprovalValue, BtcAccountValue, NetworkValue } from '@shared/protocol'
 import {
   BtcWallet,
+  CHAIN,
+  COIN_WORD,
   EXPLORER,
+  EXPLORER_NAME,
+  isTest,
+  UNIT,
   type BtcAccountInfo,
+  type BtcChain,
   type BtcActivity,
   type BtcPlan,
   type BtcWalletState,
@@ -16,19 +22,32 @@ import { money, worth } from '@shared/prices'
 import { usePrices } from './prices-state'
 import { ago, Badge, Button, Field, Glyph, Segmented } from './ui'
 
-/** What each account last looked like, so coming back to the page shows it straight away. */
+/**
+ * What each account last looked like, so coming back to the page shows it straight away: by
+ * network and descriptor (a test network's descriptor is Bitcoin's and Litecoin's both).
+ */
 const kept = new Map<string, { state: BtcWalletState; at: number }>()
 /** Each account's wallet, which remembers what it's seen of each address between looks. */
 const wallets = new Map<string, BtcWallet>()
+const keyOf = (info: BtcAccountInfo): string => `${info.network} ${info.descriptor}`
 const walletFor = (info: BtcAccountInfo): BtcWallet => {
-  let w = wallets.get(info.descriptor)
-  if (!w) wallets.set(info.descriptor, (w = new BtcWallet(info, window.maki.bitcoin.esplora)))
+  let w = wallets.get(keyOf(info))
+  if (!w) wallets.set(keyOf(info), (w = new BtcWallet(info, window.maki.bitcoin.esplora)))
   return w
+}
+/** The symbol prices are kept under: the coin's, whichever network. */
+const PRICED: Record<BtcChain, string> = { bitcoin: 'BTC', litecoin: 'LTC' }
+/** What an address of each network starts with, as a hint where one goes. */
+const STARTS: Record<BtcAccountInfo['network'], string> = {
+  bitcoin: 'bc1…',
+  test: 'tb1…',
+  litecoin: 'ltc1…',
+  'litecoin-test': 'tltc1…'
 }
 /** Older than this, it's looked up again. */
 const STALE_MS = 60_000
 
-/** Satoshis as bitcoin, exactly. */
+/** Satoshis as bitcoin (litoshis as litecoin), exactly. */
 export const btcAmount = (sats: bigint): string => units(sats, 8)
 /** Satoshis, as people count them. */
 const satoshis = (sats: bigint): string => `${sats.toLocaleString()} sats`
@@ -76,8 +95,9 @@ const SPEEDS: [keyof FeeRates | 'custom', string, string][] = [
 type Stage = 'building' | 'maki' | 'broadcasting'
 
 /**
- * A Bitcoin account of maki's as a wallet: its balance, an address to receive at (checked on maki's
- * screen), sending (maki shows the payment, the change and the fee, and signs), and its activity.
+ * A Bitcoin (or Litecoin) account of maki's as a wallet: its balance, an address to receive at
+ * (checked on maki's screen), sending (maki shows the payment, the change and the fee, and signs),
+ * and its activity.
  */
 export function BitcoinWallet({
   link,
@@ -92,10 +112,12 @@ export function BitcoinWallet({
 }): React.JSX.Element {
   const wallet = useMemo(() => walletFor(info), [info])
   const explorer = EXPLORER[info.network]
-  const unit = info.network === 'bitcoin' ? 'BTC' : 'tBTC'
+  const site = EXPLORER_NAME[info.network]
+  const unit = UNIT[info.network]
+  const chain = CHAIN[info.network]
   const linked = link.state.linked
 
-  const [seen, setSeen] = useState(kept.get(info.descriptor) ?? null)
+  const [seen, setSeen] = useState(kept.get(keyOf(info)) ?? null)
   const [looking, setLooking] = useState(false)
   // addresses looked at so far, while looking
   const [looked, setLooked] = useState(0)
@@ -112,7 +134,7 @@ export function BitcoinWallet({
     try {
       const state = await wallet.scan(setLooked)
       const now = { state, at: Date.now() }
-      kept.set(info.descriptor, now)
+      kept.set(keyOf(info), now)
       setSeen(now)
     } catch (e) {
       setProblem(`Couldn’t look: ${(e as Error).message}.`)
@@ -128,9 +150,9 @@ export function BitcoinWallet({
   const balance = state ? state.confirmed + state.pending : null
   const shown = state ? (all ? state.activity : state.activity.slice(0, 6)) : []
   const { currency, prices } = usePrices()
-  const test = info.network !== 'bitcoin'
+  const test = isTest(info.network)
   const inMoney = (sats: bigint): string | null => {
-    const v = currency && worth(prices, 'BTC', sats, 8, test)
+    const v = currency && worth(prices, PRICED[chain], sats, 8, test)
     return v !== null && v !== undefined && currency ? money(v, currency) : null
   }
 
@@ -216,7 +238,9 @@ export function BitcoinWallet({
           state={state}
           network={network}
           kind={kind}
+          chain={chain}
           explorer={explorer}
+          site={site}
           linked={linked}
         />
       )}
@@ -226,8 +250,11 @@ export function BitcoinWallet({
           wallet={wallet}
           state={state}
           network={network}
+          chain={chain}
           unit={unit}
+          hint={STARTS[info.network]}
           explorer={explorer}
+          site={site}
           linked={linked}
           sent={() => {
             // the network has it a moment later
@@ -254,7 +281,7 @@ export function BitcoinWallet({
         </div>
         {state && state.activity.length === 0 && (
           <p className="mt-3 rounded-lg border border-dashed border-surface1 px-4 py-5 text-center text-sm text-overlay1">
-            Nothing yet. Receive some bitcoin and it shows here.
+            Nothing yet. Receive some {COIN_WORD[chain]} and it shows here.
           </p>
         )}
         <ul className="mt-2 divide-y divide-surface0/70">
@@ -298,8 +325,8 @@ export function BitcoinWallet({
                   </div>
                   <button
                     className="rounded-md p-1.5 text-overlay1 transition-colors hover:bg-surface0 hover:text-fg"
-                    title="See it on mempool.space"
-                    aria-label="See it on mempool.space"
+                    title={`See it on ${site}`}
+                    aria-label={`See it on ${site}`}
                     onClick={() => void window.maki.openExternal(`${explorer}/tx/${a.txid}`)}
                   >
                     <Glyph name="external" className="h-3.5 w-3.5" />
@@ -311,6 +338,7 @@ export function BitcoinWallet({
                     wallet={wallet}
                     activity={a}
                     network={network}
+                    chain={chain}
                     linked={linked}
                     done={() => {
                       setBumping(null)
@@ -332,14 +360,18 @@ function Receive({
   state,
   network,
   kind,
+  chain,
   explorer,
+  site,
   linked
 }: {
   link: Link
   state: BtcWalletState
   network: NetworkValue
   kind: BtcAccountValue
+  chain: BtcChain
   explorer: string
+  site: string
   linked: boolean
 }): React.JSX.Element {
   const address = state.receive.address
@@ -355,8 +387,8 @@ function Receive({
     setChecking(true)
     setChecked(null)
     try {
-      const r = await link.btcAddress(network, false, state.receive.index, kind)
-      // only an address maki sent back can differ: a timeout, a locked maki or no Bitcoin app
+      const r = await link.btcAddress(network, false, state.receive.index, kind, chain)
+      // only an address maki sent back can differ: a timeout, a locked maki or no wallet app
       // sends none, and says so on its own rather than as a different address
       setChecked({ address, approval: r.approval, same: r.address === '' || r.address === address })
     } catch (e) {
@@ -369,7 +401,7 @@ function Receive({
 
   return (
     <div className="rise mt-5 flex flex-wrap gap-6 rounded-xl border border-surface0 bg-crust/40 p-5">
-      <Qr text={`bitcoin:${address}`} />
+      <Qr text={`${COIN_WORD[chain]}:${address}`} />
       <div className="min-w-0 flex-1">
         <div className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1">
           Your address · #{state.receive.index}
@@ -403,7 +435,7 @@ function Receive({
             glyph="external"
             onClick={() => void window.maki.openExternal(`${explorer}/address/${address}`)}
           >
-            mempool.space
+            {site}
           </Button>
         </div>
         {verdict && (
@@ -440,8 +472,11 @@ function Send({
   wallet,
   state,
   network,
+  chain,
   unit,
+  hint,
   explorer,
+  site,
   linked,
   sent,
   close
@@ -450,15 +485,19 @@ function Send({
   wallet: BtcWallet
   state: BtcWalletState
   network: NetworkValue
+  chain: BtcChain
   unit: string
+  /** what an address starts with */
+  hint: string
   explorer: string
+  site: string
   linked: boolean
   sent: () => void
   close: () => void
 }): React.JSX.Element {
   const { currency, prices } = usePrices()
   const inMoney = (sats: bigint): string | null => {
-    const v = currency && worth(prices, 'BTC', sats, 8, unit !== 'BTC')
+    const v = currency && worth(prices, PRICED[chain], sats, 8, unit.startsWith('t'))
     return v !== null && v !== undefined && currency ? money(v, currency) : null
   }
   const [to, setTo] = useState('')
@@ -508,7 +547,7 @@ function Send({
       setStage('building')
       const { psbt, sent: amountSent, fee } = await wallet.send(state, address, amount!, rate)
       setStage('maki')
-      const r = await link.btcSign(network, psbt)
+      const r = await link.btcSign(network, psbt, chain)
       if (!r.signed) {
         setProblem(said(r.approval, r.reason))
         return
@@ -545,7 +584,7 @@ function Send({
             glyph="external"
             onClick={() => void window.maki.openExternal(`${explorer}/tx/${done.txid}`)}
           >
-            Follow it on mempool.space
+            Follow it on {site}
           </Button>
           <Button small onClick={close}>
             Done
@@ -563,7 +602,7 @@ function Send({
       <div className="grid gap-4 md:grid-cols-[1fr_16rem]">
         <Field
           label="To"
-          placeholder={unit === 'BTC' ? 'bc1…' : 'tb1…'}
+          placeholder={hint}
           value={to}
           disabled={busy}
           onChange={(e) => setTo(e.target.value)}
@@ -705,6 +744,7 @@ function SpeedUp({
   wallet,
   activity,
   network,
+  chain,
   linked,
   done
 }: {
@@ -712,6 +752,7 @@ function SpeedUp({
   wallet: BtcWallet
   activity: BtcActivity
   network: NetworkValue
+  chain: BtcChain
   linked: boolean
   done: () => void
 }): React.JSX.Element {
@@ -735,7 +776,7 @@ function SpeedUp({
     setProblem(null)
     try {
       const { psbt, fee, was } = await wallet.bump(activity.txid, Number(rate))
-      const r = await link.btcSign(network, psbt)
+      const r = await link.btcSign(network, psbt, chain)
       if (!r.signed) {
         setProblem(said(r.approval, r.reason))
         return

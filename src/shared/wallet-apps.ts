@@ -1,7 +1,7 @@
 /**
  * maki's wallets, which are apps from the maki store (the firmware's ARCHITECTURE.md, "Wallets are
- * apps"): Bitcoin, Ethereum, Monero and Solana, the SDK's examples `bitcoin`, `ethereum`, `monero` and
- * `solana`. maki
+ * apps"): Bitcoin, Litecoin, Ethereum, Monero and Solana, the SDK's examples `bitcoin`, `litecoin`,
+ * `ethereum`, `monero` and `solana`. maki
  * keeps the keys and lets each app sign only for its own accounts; the app reads what it's asked to
  * sign, shows it on maki's screen and signs once the owner says yes. Their messages are in each
  * app's source; the calls here are the ones MakiClient made when the wallets were maki's own, with
@@ -23,6 +23,8 @@ import type { MultisigWallet } from './multisig'
 import { base58 } from '@scure/base'
 
 export const BITCOIN_APP = 'com.leviathan.maki.bitcoin'
+/** Litecoin's app speaks the Bitcoin app's messages (it's Bitcoin's wallet code on Litecoin's networks). */
+export const LITECOIN_APP = 'com.leviathan.maki.litecoin'
 export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
 export const MONERO_APP = 'com.leviathan.maki.monero'
 export const SOLANA_APP = 'com.leviathan.maki.solana'
@@ -178,8 +180,9 @@ const SIGNED = 0x47
 
 /** maki's Bitcoin app: native SegWit (BIP84) and taproot (BIP86) accounts. */
 export class BitcoinApp extends WalletApp {
-  constructor(send: AppMessage) {
-    super(send, BITCOIN_APP, 'Bitcoin')
+  /** maki's Bitcoin app; or its Litecoin app, which takes the same messages but multisig's. */
+  constructor(send: AppMessage, id = BITCOIN_APP, name = 'Bitcoin') {
+    super(send, id, name)
   }
 
   /** The account's key (zpub; an xpub for taproot) and output descriptor, once the owner agrees on maki. */

@@ -83,16 +83,24 @@ const api = {
   },
   copy: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:write', text),
   bitcoin: {
-    /** Esplora (mempool.space): a path under the network's API; with a body, a broadcast */
-    esplora: async (network: 'bitcoin' | 'test', path: string, body?: string): Promise<string> => {
+    /** Esplora (mempool.space, litecoinspace.org): a path under the network's API; with a body, a broadcast */
+    esplora: async (
+      network: import('../shared/btc-wallet').BtcNetwork,
+      path: string,
+      body?: string
+    ): Promise<string> => {
       const r = (await ipcRenderer.invoke('btc:esplora', network, path, body)) as
         { text: string } | { error: string }
       if ('error' in r) throw new Error(r.error)
       return r.text
     },
-    /** the accounts' descriptors maki shared, kept */
-    load: (): Promise<string[]> => ipcRenderer.invoke('btc:load'),
-    save: (descriptors: string[]): Promise<void> => ipcRenderer.invoke('btc:save', descriptors),
+    /** the accounts' descriptors maki shared, kept: Bitcoin's, or Litecoin's */
+    load: (chain: import('../shared/btc-wallet').BtcChain = 'bitcoin'): Promise<string[]> =>
+      ipcRenderer.invoke('btc:load', chain),
+    save: (
+      descriptors: string[],
+      chain: import('../shared/btc-wallet').BtcChain = 'bitcoin'
+    ): Promise<void> => ipcRenderer.invoke('btc:save', descriptors, chain),
     /** an open dialog for a multisig wallet's file (a descriptor, or Coldcard's multisig file); its text, or null */
     openWallet: (): Promise<{ path: string; text: string } | null> =>
       ipcRenderer.invoke('btc:openWallet'),

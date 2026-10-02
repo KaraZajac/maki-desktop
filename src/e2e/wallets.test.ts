@@ -20,7 +20,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { BtcWallet, parseDescriptor } from '../shared/btc-wallet'
+import { BtcWallet, LITECOIN, parseDescriptor } from '../shared/btc-wallet'
 import { MakiClient } from '../shared/client'
 import { transferData } from '../shared/eth-wallet'
 import { BtcAccount, Network } from '../shared/protocol'
@@ -49,6 +49,8 @@ const ACCOUNT = '0x9858EfFD232B4033E47d90003D41EC34EcaEda94'
 const PAYEE_ETH = MAKI_ETH
 /** BIP173's own example address: somewhere to send that isn't the account's. */
 const PAYEE_BTC = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'
+/** A seed of sevens' key on Litecoin: somewhere to send that isn't the account's. */
+const PAYEE_LTC = 'ltc1q50rtrmj2f8vl9tem8qpfw36ylw5jg9j2p9wx9y'
 
 describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
   let fake: { port: number; proc: ChildProcess }
@@ -212,6 +214,64 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, end to end', () => {
 const PRIMARY =
   '49vDbkSo7eve3J41sBdjvjaBUyz8qHohsQcGtRf63qEUTMBvmA45fpp5pSacMdSg7A3b71RejLzB8EkGbfjp5PELVF2N4Zn'
 
+describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, Litecoin', () => {
+  let fake: { port: number; proc: ChildProcess }
+  let home = ''
+
+  beforeAll(async () => {
+    build()
+    fake = await startFake(['--app', join(APP_FIXTURES, 'litecoin.maki'), '--clock-verified'])
+    home = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
+  }, 180_000)
+  afterAll(() => {
+    fake?.proc.kill()
+    if (home) rmSync(home, { recursive: true, force: true })
+  })
+
+  it('adds the Litecoin account, shows its coin, and sends from it: maki signs, the chain gets it', async () => {
+    // the account's first receiving address (BIP84's on Litecoin) holds 50,000 litoshis
+    const chain = pretendChain('ltc1qjmxnz78nmc8nq77wuxh25n2es7rzm5c2rkk4wh', 50_000, LITECOIN)
+    const esplora = await serveEsplora(chain.esplora)
+    let said = ''
+    try {
+      said = await driveApp(
+        home,
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--until', 'Your litecoin, here'],
+          ...['--click', 'Add from maki', '--until', '0.0005'],
+          ...['--click', 'Send', '--fill', `ltc1…=${PAYEE_LTC}`, '--fill', '0.00=0.0002'],
+          ...['--until', 'back to you', '--click', 'Review on maki', '--until', 'Sent 0.0002 LTC']
+        ],
+        { MAKI_ESPLORA: esplora.url }
+      )
+    } finally {
+      esplora.close()
+    }
+    expect(said).toMatch(/Sent 0\.0002 LTC/)
+
+    // what reached the chain: the coin, spent to the payee, the rest to the account's change
+    expect(chain.broadcast).toHaveLength(1)
+    const tx = btc.Transaction.fromRaw(hex.decode(chain.broadcast[0]))
+    expect(hex.encode(tx.getInput(0).txid!)).toBe(chain.txid)
+    expect(btc.Address(LITECOIN).encode(btc.OutScript.decode(tx.getOutput(0).script!))).toBe(
+      PAYEE_LTC
+    )
+    expect(tx.getOutput(0).amount).toBe(20_000n)
+    expect(btc.Address(LITECOIN).encode(btc.OutScript.decode(tx.getOutput(1).script!))).toBe(
+      'ltc1qyeljcy9v88jg8sqvnqh0m5q390xruc5r98q9yy'
+    )
+    // signed by the account's key for that coin
+    const [sig, pub] = tx.getInput(0).finalScriptWitness!
+    const code = btc.OutScript.encode({ type: 'pkh', hash: hash160(pub) })
+    const digest = tx.preimageWitnessV0(0, code, btc.SigHash.ALL, 50_000n)
+    expect(secp256k1.verify(sig.slice(0, -1), digest, pub, { prehash: false, format: 'der' })).toBe(
+      true
+    )
+    expect(btc.p2wpkh(pub, LITECOIN).address).toBe('ltc1qjmxnz78nmc8nq77wuxh25n2es7rzm5c2rkk4wh')
+  }, 180_000)
+})
+
 describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, Monero', () => {
   let fake: { port: number; proc: ChildProcess }
   let home = ''
@@ -271,8 +331,9 @@ describe.skipIf(!E2E || !FAKE_BUILT || !MAKI_STORE_THERE)(
           home,
           fake.port,
           [
-            ...['--click', 'Wallets', '--until', 'Bitcoin app isn’t installed'],
-            ...['--click', 'Add Bitcoin', '--gone', 'Bitcoin app isn’t installed'],
+            // a maki with no wallet apps: each is one to add, under More wallets
+            ...['--click', 'Wallets', '--until', 'Add Bitcoin'],
+            ...['--click', 'Add Bitcoin', '--until', 'Add from maki'],
             ...['--click', 'Add from maki', '--until', '0.0005']
           ],
           { MAKI_STORE, MAKI_ESPLORA: esplora.url }

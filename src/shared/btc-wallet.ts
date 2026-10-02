@@ -1,21 +1,25 @@
 /**
- * maki's Bitcoin accounts as a wallet in maki desktop: their balance and activity, a fresh address
- * to receive at, and sending, which maki shows and signs.
+ * maki's Bitcoin and Litecoin accounts as a wallet in maki desktop: their balance and activity, a
+ * fresh address to receive at, and sending, which maki shows and signs.
  *
  * maki desktop has only what maki shares for wallet software, the account's descriptor (its
  * master key's fingerprint, its path and its xpub): enough to work out every address, never to
- * spend. The chain comes from Esplora (mempool.space's API), which sees the account's addresses
- * and this computer's IP address. A send is a PSBT made the way maki reads them (the whole
- * previous transaction of each native SegWit coin, each key's derivation, and change marked as
- * change), and maki goes through every output and the fee with its owner before it signs.
+ * spend. The chain comes from Esplora (mempool.space's API, and litecoinspace.org's, the same for
+ * Litecoin), which sees the account's addresses and this computer's IP address. A send is a PSBT
+ * made the way maki reads them (the whole previous transaction of each native SegWit coin, each
+ * key's derivation, and change marked as change), and maki goes through every output and the fee
+ * with its owner before it signs. Litecoin's transactions, signatures and PSBTs are Bitcoin's: only
+ * its addresses, its coin type and its servers differ.
  */
 import { sha256 } from '@noble/hashes/sha2.js'
 import { HDKey } from '@scure/bip32'
 import { createBase58check, hex } from '@scure/base'
 import * as btc from '@scure/btc-signer'
 
-export type BtcNetwork = 'bitcoin' | 'test'
+export type BtcNetwork = 'bitcoin' | 'test' | 'litecoin' | 'litecoin-test'
 export type BtcKind = 'segwit' | 'taproot'
+/** Which coin: maki's Bitcoin app's, or its Litecoin app's. */
+export type BtcChain = 'bitcoin' | 'litecoin'
 
 /** An account, as its descriptor says. */
 export interface BtcAccountInfo {
@@ -43,14 +47,70 @@ export const DUST = 546n
  */
 export const REPLACEABLE = 0xfffffffd
 
-const VERSIONS = {
-  bitcoin: { private: 0x0488ade4, public: 0x0488b21e },
-  test: { private: 0x04358394, public: 0x043587cf }
+const MAIN_VERSIONS = { private: 0x0488ade4, public: 0x0488b21e }
+const TEST_VERSIONS = { private: 0x04358394, public: 0x043587cf }
+/** Litecoin's wallets (Litecoin Core, Electrum-LTC) take Bitcoin's version bytes. */
+const VERSIONS: Record<BtcNetwork, typeof MAIN_VERSIONS> = {
+  bitcoin: MAIN_VERSIONS,
+  test: TEST_VERSIONS,
+  litecoin: MAIN_VERSIONS,
+  'litecoin-test': TEST_VERSIONS
 }
-const NETWORKS = { bitcoin: btc.NETWORK, test: btc.TEST_NETWORK }
+/** Litecoin's addresses, as Litecoin Core's chainparams have them: `ltc1…`, `L…`, `M…`. */
+export const LITECOIN = { bech32: 'ltc', pubKeyHash: 0x30, scriptHash: 0x32, wif: 0xb0 }
+export const LITECOIN_TEST = { bech32: 'tltc', pubKeyHash: 0x6f, scriptHash: 0x3a, wif: 0xef }
+const NETWORKS: Record<BtcNetwork, typeof btc.NETWORK> = {
+  bitcoin: btc.NETWORK,
+  test: btc.TEST_NETWORK,
+  litecoin: LITECOIN,
+  'litecoin-test': LITECOIN_TEST
+}
+/**
+ * The P2SH addresses Litecoin takes beside its own: Bitcoin's version bytes (`3…`, `2…`), which
+ * its wallets used before `M…` and still pay to.
+ */
+const OLD_P2SH: Partial<Record<BtcNetwork, typeof btc.NETWORK>> = {
+  litecoin: { ...LITECOIN, scriptHash: 0x05 },
+  'litecoin-test': { ...LITECOIN_TEST, scriptHash: 0xc4 }
+}
 
 /** Where to look a transaction or an address up on the web. */
-export const EXPLORER = { bitcoin: 'https://mempool.space', test: 'https://mempool.space/testnet4' }
+export const EXPLORER: Record<BtcNetwork, string> = {
+  bitcoin: 'https://mempool.space',
+  test: 'https://mempool.space/testnet4',
+  litecoin: 'https://litecoinspace.org',
+  'litecoin-test': 'https://litecoinspace.org/testnet'
+}
+/** The explorer's name, as a button says it. */
+export const EXPLORER_NAME: Record<BtcNetwork, string> = {
+  bitcoin: 'mempool.space',
+  test: 'mempool.space',
+  litecoin: 'litecoinspace.org',
+  'litecoin-test': 'litecoinspace.org'
+}
+/** The unit amounts are in: test coins marked as such. */
+export const UNIT: Record<BtcNetwork, string> = {
+  bitcoin: 'BTC',
+  test: 'tBTC',
+  litecoin: 'LTC',
+  'litecoin-test': 'tLTC'
+}
+/** Which coin a network is, and whether it's a test network, whose coins are worth nothing. */
+export const CHAIN: Record<BtcNetwork, BtcChain> = {
+  bitcoin: 'bitcoin',
+  test: 'bitcoin',
+  litecoin: 'litecoin',
+  'litecoin-test': 'litecoin'
+}
+export const isTest = (network: BtcNetwork): boolean =>
+  network === 'test' || network === 'litecoin-test'
+/** A chain's networks: its own, then its test network's. */
+export const NETWORKS_OF: Record<BtcChain, [BtcNetwork, BtcNetwork]> = {
+  bitcoin: ['bitcoin', 'test'],
+  litecoin: ['litecoin', 'litecoin-test']
+}
+/** The coin as a sentence says it, and in a payment request's URI (BIP21, and Litecoin's like it). */
+export const COIN_WORD: Record<BtcChain, string> = { bitcoin: 'bitcoin', litecoin: 'litecoin' }
 
 /**
  * The account's key as wallet software takes it on its own: a zpub (vpub on the test network) for
@@ -61,16 +121,19 @@ export function walletKey(info: BtcAccountInfo): string {
   const key = b58.decode(info.xpub)
   const version =
     info.kind === 'segwit'
-      ? info.network === 'bitcoin'
-        ? 0x04b24746
-        : 0x045f1cf6
+      ? isTest(info.network)
+        ? 0x045f1cf6
+        : 0x04b24746
       : VERSIONS[info.network].public
   new DataView(key.buffer, key.byteOffset).setUint32(0, version)
   return b58.encode(key)
 }
 
-/** The account a descriptor of maki's describes; throws if it isn't one. */
-export function parseDescriptor(descriptor: string): BtcAccountInfo {
+/**
+ * The account a descriptor of maki's describes, on `chain` (a test network's coin type, 1, is
+ * every chain's, so the descriptor alone can't say); throws if it isn't one.
+ */
+export function parseDescriptor(descriptor: string, chain: BtcChain = 'bitcoin'): BtcAccountInfo {
   const m =
     /^(wpkh|tr)\(\[([0-9a-f]{8})\/(\d+)h\/(\d+)h\/(\d+)h\]([1-9A-HJ-NP-Za-km-z]+)\/<0;1>\/\*\)(#[0-9a-z]{8})?$/.exec(
       descriptor.trim()
@@ -80,10 +143,13 @@ export function parseDescriptor(descriptor: string): BtcAccountInfo {
   const kind: BtcKind = fn === 'wpkh' ? 'segwit' : 'taproot'
   if ((kind === 'segwit' && purpose !== '84') || (kind === 'taproot' && purpose !== '86'))
     throw new Error('not a descriptor of maki’s')
-  if (coin !== '0' && coin !== '1') throw new Error('not a Bitcoin descriptor')
+  const [main, test] = NETWORKS_OF[chain]
+  const own = chain === 'bitcoin' ? '0' : '2'
+  if (coin !== own && coin !== '1')
+    throw new Error(`not a ${chain === 'bitcoin' ? 'Bitcoin' : 'Litecoin'} descriptor`)
   return {
     kind,
-    network: coin === '0' ? 'bitcoin' : 'test',
+    network: coin === own ? main : test,
     fingerprint: parseInt(fp, 16),
     path: [purpose, coin, account].map((n) => Number(n) + HARDENED),
     xpub,
@@ -367,19 +433,27 @@ export class BtcWallet {
     }
   }
 
-  /** mempool.space's fee rates, sat/vB. */
+  /** mempool.space's fee rates (litecoinspace.org's for Litecoin), sat/vB. */
   async feeRates(): Promise<FeeRates> {
     return JSON.parse(await this.get('/v1/fees/recommended')) as FeeRates
   }
 
+  /** The output script `address` pays, on this network; null if it isn't one it takes. */
+  script(address: string): Uint8Array | null {
+    for (const network of [this.keys.network, OLD_P2SH[this.keys.info.network]]) {
+      if (!network) continue
+      try {
+        return btc.OutScript.encode(btc.Address(network).decode(address))
+      } catch {
+        // not this form: the next, if there is one
+      }
+    }
+    return null
+  }
+
   /** Whether `address` is one this network takes. */
   valid(address: string): boolean {
-    try {
-      btc.Address(this.keys.network).decode(address)
-      return true
-    } catch {
-      return false
-    }
+    return this.script(address) !== null
   }
 
   /**
@@ -388,12 +462,13 @@ export class BtcWallet {
    * what goes where. Change too small to be worth an output goes to the fee. Throws if it can't.
    */
   plan(state: BtcWalletState, address: string, amount: bigint | 'all', feeRate: number): BtcPlan {
-    if (!this.valid(address))
-      throw new Error(
-        `that isn’t a ${this.keys.info.network === 'bitcoin' ? 'Bitcoin' : 'test network'} address`
-      )
+    const to = this.script(address)
+    if (!to) {
+      const network = this.keys.info.network
+      const coin = CHAIN[network] === 'bitcoin' ? 'Bitcoin' : 'Litecoin'
+      throw new Error(`that isn’t a ${isTest(network) ? `${coin} test network` : coin} address`)
+    }
     if (!(feeRate > 0)) throw new Error('the fee rate must be more than nothing')
-    const to = btc.OutScript.encode(btc.Address(this.keys.network).decode(address))
     const kind = this.keys.info.kind
     const size = (inputs: number, change: boolean): number =>
       OVERHEAD_VB +
@@ -535,13 +610,13 @@ export class BtcWallet {
     if (!tx)
       throw new Error('only a payment of this account’s still waiting for a block can be sped up')
     if (!(feeRate > 0)) throw new Error('the fee rate must be more than nothing')
-    const network = btc.Address(this.keys.network)
     const outputs = tx.vout.map((o) => {
-      if (!o.scriptpubkey_address) throw new Error('it has an output maki desktop can’t read')
+      const script = o.scriptpubkey_address && this.script(o.scriptpubkey_address)
+      if (!script) throw new Error('it has an output maki desktop can’t read')
       return {
-        script: btc.OutScript.encode(network.decode(o.scriptpubkey_address)),
+        script,
         value: BigInt(o.value),
-        ours: this.ours.get(o.scriptpubkey_address)
+        ours: this.ours.get(o.scriptpubkey_address!)
       }
     })
     // the change: the last output to one of the account's change addresses

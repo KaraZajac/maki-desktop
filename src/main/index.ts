@@ -25,6 +25,7 @@ import {
 } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { SOL_NETWORKS, type SolState } from '../shared/solana'
+import { CHAIN as BTC_CHAIN, EXPLORER_NAME, type BtcNetwork } from '../shared/btc-wallet'
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { writeAtomic } from './atomic'
@@ -629,49 +630,58 @@ function ipc(): void {
     }
     return { error: { code: -32603, message: `the network is unreachable: ${unreachable}` } }
   })
-  // Bitcoin: mempool.space's Esplora API, for the wallet (only these paths, and a broadcast), and
-  // the accounts' descriptors maki shared, kept so the balance shows without asking maki again
-  const ESPLORA = {
+  // Bitcoin and Litecoin: mempool.space's Esplora API and litecoinspace.org's (mempool's, run for
+  // Litecoin), for the wallets (only these paths, and a broadcast), and the accounts' descriptors
+  // maki shared, kept so the balance shows without asking maki again
+  const ESPLORA: Record<BtcNetwork, string> = {
     bitcoin: 'https://mempool.space/api',
-    test: 'https://mempool.space/testnet4/api'
+    test: 'https://mempool.space/testnet4/api',
+    litecoin: 'https://litecoinspace.org/api',
+    'litecoin-test': 'https://litecoinspace.org/testnet/api'
   }
   const ESPLORA_PATH =
     /^\/(address\/[a-zA-Z0-9]{14,90}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
   // a wallet's first look can be a hundred requests, and mempool.space turns away bursts (and
-  // then stops answering for a while): two a second, and a long wait when it asks for one.
-  // MAKI_ESPLORA (tests, your own server) is an Esplora API to use instead, for both networks.
+  // then stops answering for a while): two a second to each server, and a long wait when it asks
+  // for one. MAKI_ESPLORA (tests, your own server) is an Esplora API to use instead, for every
+  // network.
   const ownEsplora = process.env['MAKI_ESPLORA']
-  const esplora = polite(
-    (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
-    ownEsplora ? { atOnce: 4 } : { atOnce: 2, perSecond: 2, wait: 5000 }
-  )
+  const politeEsplora = (): ReturnType<typeof polite> =>
+    polite(
+      (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
+      ownEsplora ? { atOnce: 4 } : { atOnce: 2, perSecond: 2, wait: 5000 }
+    )
+  const esploras = { bitcoin: politeEsplora(), litecoin: politeEsplora() }
   ipcMain.handle('btc:esplora', async (_e, network: unknown, path: unknown, body?: unknown) => {
     try {
-      if (network !== 'bitcoin' && network !== 'test') throw new Error('which network?')
+      if (typeof network !== 'string' || !Object.hasOwn(ESPLORA, network))
+        throw new Error('which network?')
+      const net = network as BtcNetwork
+      const host = ownEsplora ? 'the Esplora server' : EXPLORER_NAME[net]
       const post = path === '/tx' && typeof body === 'string' && /^[0-9a-f]{20,800000}$/.test(body)
       if (!post && (typeof path !== 'string' || !ESPLORA_PATH.test(path)))
         throw new Error('not something the wallet asks')
       let res: Response
       try {
-        res = await esplora(`${ownEsplora ?? ESPLORA[network]}${path}`, {
+        res = await esploras[BTC_CHAIN[net]](`${ownEsplora ?? ESPLORA[net]}${path}`, {
           method: post ? 'POST' : 'GET',
           body: post ? (body as string) : undefined,
           headers: post ? { 'content-type': 'text/plain' } : undefined
         })
       } catch {
-        throw new Error('mempool.space can’t be reached')
+        throw new Error(`${host} can’t be reached`)
       }
       const text = await res.text()
       if (res.status === 429)
         throw new Error(
-          'mempool.space has had too many requests from this computer: try again in a minute'
+          `${host} has had too many requests from this computer: try again in a minute`
         )
       // Esplora says what's wrong in a line of text (a broadcast it turns down, say); anything else, just the status
       if (!res.ok)
         throw new Error(
           /^[^<]{1,300}$/.test(text.trim())
-            ? `mempool.space: ${text.trim()}`
-            : `mempool.space answered ${res.status}`
+            ? `${host}: ${text.trim()}`
+            : `${host} answered ${res.status}`
         )
       return { text }
     } catch (e) {
@@ -858,10 +868,12 @@ function ipc(): void {
     if (text.length > 256 * 1024) throw new Error('too much to keep')
     await writeAtomic(nostrFile(), text)
   })
-  const btcFile = (): string => join(app.getPath('userData'), 'bitcoin.json')
-  ipcMain.handle('btc:load', async () => {
+  // each chain's in a file of its own: a test network's descriptor (coin type 1) is every chain's
+  const btcFile = (chain: unknown): string =>
+    join(app.getPath('userData'), chain === 'litecoin' ? 'litecoin.json' : 'bitcoin.json')
+  ipcMain.handle('btc:load', async (_e, chain: unknown) => {
     try {
-      const kept = JSON.parse(await readFile(btcFile(), 'utf8')) as { descriptors?: unknown }
+      const kept = JSON.parse(await readFile(btcFile(chain), 'utf8')) as { descriptors?: unknown }
       return Array.isArray(kept.descriptors)
         ? kept.descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300)
         : []
@@ -869,11 +881,11 @@ function ipc(): void {
       return []
     }
   })
-  ipcMain.handle('btc:save', async (_e, descriptors: unknown) => {
+  ipcMain.handle('btc:save', async (_e, descriptors: unknown, chain: unknown) => {
     const list = Array.isArray(descriptors)
       ? descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300)
       : []
-    await writeAtomic(btcFile(), JSON.stringify({ descriptors: list.slice(0, 8) }))
+    await writeAtomic(btcFile(chain), JSON.stringify({ descriptors: list.slice(0, 8) }))
   })
 
   // the maki store: where it is, its files (only those), and what this side keeps of it between
