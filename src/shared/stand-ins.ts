@@ -328,7 +328,7 @@ export function ethStandIn(): { rpc: Rpc; sent: [string, string, unknown[]][] } 
 }
 
 /** A server on a free local port, answering with `answer`; its address, and a way to stop it. */
-async function serve(
+export async function serve(
   answer: (method: string, path: string, body: string) => Promise<[number, string]>
 ): Promise<{ url: string; close: () => void }> {
   const server = createServer((req, res) => {
