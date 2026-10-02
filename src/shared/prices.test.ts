@@ -18,7 +18,10 @@ describe('prices', () => {
       'celo',
       'cosmos',
       'dai',
+      'dash',
+      'digibyte',
       'dogecoin',
+      'dogs-2',
       'dydx-chain',
       'ethereum',
       'euro-coin',
@@ -32,6 +35,7 @@ describe('prices', () => {
       'monero',
       'near',
       'neutron-3',
+      'notcoin',
       'okb',
       'osmosis',
       'paypal-usd',
@@ -42,15 +46,17 @@ describe('prices', () => {
       'stellar',
       'sui',
       'tether',
+      'the-open-network',
       'tron',
       'usd-coin',
       'usdt0',
       'weth',
       'wrapped-bitcoin',
-      'xdai'
+      'xdai',
+      'zcash'
     ])
     expect(pricesUrl('eur')).toBe(
-      'https://api.coingecko.com/api/v3/simple/price?ids=akash-network,aptos,avalanche-2,axelar,babylon,binancecoin,bitcoin,bitcoin-cash,bridged-usdc-gnosis,cardano,celestia,celo,cosmos,dai,dogecoin,dydx-chain,ethereum,euro-coin,global-dollar,hyperliquid,juno-network,kaspa,litecoin,mantle,monad,monero,near,neutron-3,okb,osmosis,paypal-usd,plasma,polygon-ecosystem-token,ripple,solana,stellar,sui,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin,xdai&vs_currencies=eur'
+      'https://api.coingecko.com/api/v3/simple/price?ids=akash-network,aptos,avalanche-2,axelar,babylon,binancecoin,bitcoin,bitcoin-cash,bridged-usdc-gnosis,cardano,celestia,celo,cosmos,dai,dash,digibyte,dogecoin,dogs-2,dydx-chain,ethereum,euro-coin,global-dollar,hyperliquid,juno-network,kaspa,litecoin,mantle,monad,monero,near,neutron-3,notcoin,okb,osmosis,paypal-usd,plasma,polygon-ecosystem-token,ripple,solana,stellar,sui,tether,the-open-network,tron,usd-coin,usdt0,weth,wrapped-bitcoin,xdai,zcash&vs_currencies=eur'
     )
   })
 

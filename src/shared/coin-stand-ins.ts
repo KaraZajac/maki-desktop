@@ -1,7 +1,7 @@
 /**
  * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon,
  * Tron's TronGrid, api.kaspa.org, Aptos Labs' API, NEAR's RPC (with NearBlocks), Koios, a Cosmos
- * chain's REST API and Sui's GraphQL API, each answering what maki desktop's wallet asks of it, for the test phrase's
+ * chain's REST API, Sui's GraphQL API, toncenter and zecblock, each answering what maki desktop's wallet asks of it, for the test phrase's
  * account holding some of the coin and of a token. What each is sent is read back here byte by byte,
  * apart from maki desktop's own encoding, and taken only if its signature checks out over the hash
  * the network has signed, by the account's own key, as the network would check it; each keeps what
@@ -14,7 +14,7 @@ import { hmac } from '@noble/hashes/hmac.js'
 import { ripemd160 } from '@noble/hashes/legacy.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
 import { keccak_256, sha3_256 } from '@noble/hashes/sha3.js'
-import { base58, base64, bech32, hex } from '@scure/base'
+import { base58, base64, bech32, createBase58check, hex } from '@scure/base'
 import { HDKey } from '@scure/bip32'
 import { addressAt, addressOfScript, transactionId } from './coins/kaspa'
 import { accountAddress, PASSPHRASE } from './coins/stellar'
@@ -1846,4 +1846,924 @@ export function suiStandIn({ withCoins = true } = {}): { answer: Answer; sent: S
     return error('a query the stand-in doesn’t answer')
   }
   return { answer, sent }
+}
+
+// ---- TON ----
+
+/** The test phrase's TON key (Ledger's TON app's account 0, m/44'/607'/0'/0'/0'/0'). */
+const TON_SECRET = slip10(TEST_SEED, [44, 607, 0, 0, 0, 0])
+export const TON_KEY = ed25519.getPublicKey(TON_SECRET)
+/** Its v4R2 and W5 wallets (@ton/ton's addresses for that key), and someone to pay. */
+export const TON_V4 = 'UQAhEnZmOZ4XCJ1BKsvvt4D1DobiFgIf8nbZdTiT0l-8mOpj'
+export const TON_W5 = 'UQCr0pJvwmgWeI7Wu0TaRn77bD0m7JkkbnGRCxRUxhbyvbdS'
+export const TON_THEM = 'UQDvr_S6wiD4iy6Y6x2c_8yjv-O2bs4xp9bFiQ0w39evpYZV'
+/** USDT's master, and the v4R2 wallet's USDT jetton wallet (as the master works it out, and says). */
+export const TON_USDT = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'
+const TON_V4_USDT = '0:4a1f8eaf0c5c1937b0e1658f897973234bc325be60875a7efa10d3a98358cc4a'
+/** The wallets' code, by its cell's hash, and their wallet IDs on TON. */
+const TON_CODE = {
+  v4R2: 'feb5ff6820e2ff0d9483e7e0d62c817d846789fb4ae580c878866d959dabd5c0',
+  v5R1: '20834b7b72b112147e1b2fb457b84e74d1a30f04f737d4f62a668e9552d2b72f'
+}
+const TON_WALLET_ID = { v4R2: 698983191, v5R1: 0x7fffff11 }
+
+/** A payment the TON stand-in took: each message the wallet sent, read back. */
+export interface TonSent {
+  wallet: 'v4R2' | 'v5R1'
+  seqno: number
+  /** whether the message set the wallet up (its first state with it) */
+  init: boolean
+  messages: {
+    mode: number
+    to: string
+    bounce: boolean
+    value: bigint
+    comment?: string
+    jetton?: { amount: bigint; to: string; response: string; forwardTon: bigint; comment?: string }
+  }[]
+}
+
+/** A cell as a BOC holds it, read here on its own: its bits as text, its references. */
+interface TonCell {
+  bits: string
+  refs: TonCell[]
+  exotic: boolean
+}
+
+/** A BOC's root (TON's `serialized_boc`, as @ton/core writes it), read bit by bit. */
+function tonBoc(b: Uint8Array): TonCell {
+  const word = (at: number, n: number): number =>
+    b.slice(at, at + n).reduce((v, x) => v * 256 + x, 0)
+  if (hex.encode(b.slice(0, 4)) !== 'b5ee9c72') throw new Error('not a bag of cells')
+  const size = b[4] & 7
+  const off = b[5]
+  const count = word(6, size)
+  let at = 6 + 3 * size + off + size + (b[4] & 0x80 ? count * off : 0)
+  const raw: { bits: string; refs: number[]; exotic: boolean }[] = []
+  for (let i = 0; i < count; i++) {
+    const [d1, d2] = [b[at], b[at + 1]]
+    const len = Math.ceil(d2 / 2)
+    let bits = [...b.slice(at + 2, at + 2 + len)]
+      .map((x) => x.toString(2).padStart(8, '0'))
+      .join('')
+    if (d2 & 1) bits = bits.slice(0, bits.lastIndexOf('1'))
+    at += 2 + len
+    const refs = Array.from({ length: d1 & 7 }, (_, k) => word(at + k * size, size))
+    at += (d1 & 7) * size
+    raw.push({ bits, refs, exotic: !!(d1 & 8) })
+  }
+  const cells: TonCell[] = []
+  for (let i = count - 1; i >= 0; i--)
+    cells[i] = { bits: raw[i].bits, refs: raw[i].refs.map((r) => cells[r]), exotic: raw[i].exotic }
+  return cells[0]
+}
+
+/** A cell's depth and hash (level 0): SHA-256 of its descriptors, bits, references' depths and hashes. */
+function tonHash(c: TonCell): { hash: Uint8Array; depth: number } {
+  const kids = c.refs.map(tonHash)
+  const n = c.bits.length
+  const padded = n % 8 ? c.bits + '1' + '0'.repeat(7 - (n % 8)) : c.bits
+  const bytes = (padded.match(/.{8}/g) ?? []).map((x) => parseInt(x, 2))
+  const repr = [c.refs.length + (c.exotic ? 8 : 0), Math.ceil(n / 8) + Math.floor(n / 8), ...bytes]
+  for (const k of kids) repr.push(k.depth >> 8, k.depth & 0xff)
+  for (const k of kids) repr.push(...k.hash)
+  return {
+    hash: sha256(Uint8Array.from(repr)),
+    depth: kids.length ? Math.max(...kids.map((k) => k.depth)) + 1 : 0
+  }
+}
+
+/** Reading a cell from its start: bits, numbers, addresses, references. */
+class TonReader {
+  private at = 0
+  private ref = 0
+  constructor(private c: TonCell) {}
+  bits(n: number): string {
+    if (this.at + n > this.c.bits.length) throw new Error('a cell ends too soon')
+    this.at += n
+    return this.c.bits.slice(this.at - n, this.at)
+  }
+  uint(n: number): bigint {
+    return n ? BigInt('0b' + this.bits(n)) : 0n
+  }
+  coins(): bigint {
+    return this.uint(Number(this.uint(4)) * 8)
+  }
+  /** a standard address as raw text, or '' for none */
+  address(): string {
+    const tag = this.bits(2)
+    if (tag === '00') return ''
+    if (tag !== '10' || this.bits(1) !== '0') throw new Error('an address not as wallets write one')
+    const wc = Number(this.uint(8))
+    return `${wc > 127 ? wc - 256 : wc}:${this.uint(256).toString(16).padStart(64, '0')}`
+  }
+  next(): TonCell {
+    if (this.ref >= this.c.refs.length) throw new Error('a reference that isn’t there')
+    return this.c.refs[this.ref++]
+  }
+  /** what's left of the cell, as a cell */
+  rest(): TonCell {
+    return { bits: this.c.bits.slice(this.at), refs: this.c.refs.slice(this.ref), exotic: false }
+  }
+  done(): boolean {
+    return this.at === this.c.bits.length && this.ref === this.c.refs.length
+  }
+}
+
+/** Text as TON writes it: bytes in a cell, the rest in its one reference. */
+function tonText(c: TonCell): string {
+  let bits = ''
+  for (let x: TonCell | undefined = c; x; x = x.refs[0]) bits += x.bits
+  return new TextDecoder().decode(
+    Uint8Array.from((bits.match(/.{8}/g) ?? []).map((x) => parseInt(x, 2)))
+  )
+}
+
+/** A raw address as user-friendly text (TEP-2's tag, CRC16, base64url), as the stand-in names wallets. */
+function tonFriendly(raw: string, bounceable: boolean): string {
+  const [wc, h] = raw.split(':')
+  const b = Uint8Array.from([bounceable ? 0x11 : 0x51, Number(wc) & 0xff, ...hex.decode(h), 0, 0])
+  let crc = 0
+  for (const x of b.subarray(0, 34)) {
+    crc ^= x << 8
+    for (let k = 0; k < 8; k++)
+      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff
+  }
+  b[34] = crc >> 8
+  b[35] = crc & 0xff
+  return base64.encode(b).replace(/\+/g, '-').replace(/\//g, '_')
+}
+const tonRaw = (friendly: string): string => {
+  const b = base64.decode(friendly.replace(/-/g, '+').replace(/_/g, '/'))
+  return `${b[1] === 255 ? -1 : b[1]}:${hex.encode(b.slice(2, 34))}`
+}
+
+/**
+ * toncenter's v3 API, answering maki desktop's wallet: the test phrase's v4R2 wallet holds 25 TON
+ * and 40 USDT (in its own USDT jetton wallet), at seqno 7; its W5 wallet holds 3 TON and isn't set
+ * up yet. Beside the USDT a jetton wallet that names USDT's master but isn't the account's, and a
+ * jetton maki doesn't know. A message is taken only if it's to one of these wallets, at its seqno,
+ * good for now, with its own wallet ID, and its body's signature is the account's key's over the
+ * request's hash (v4R2's before the request, W5's after it); a wallet not yet set up must come with
+ * its first state: its code (by hash) and its data, the account's key in it, making its address.
+ * Each message the request sends is read back; refused ones are answered as toncenter answers them,
+ * a 500 and why.
+ */
+export function tonStandIn(): { answer: Answer; sent: TonSent[] } {
+  const sent: TonSent[] = []
+  const wallets = new Map<
+    string,
+    { wallet: 'v4R2' | 'v5R1'; balance: bigint; seqno: number; active: boolean; usdt: bigint }
+  >([
+    [
+      tonRaw(TON_V4),
+      { wallet: 'v4R2', balance: 25_000_000_000n, seqno: 7, active: true, usdt: 40_000_000n }
+    ],
+    [tonRaw(TON_W5), { wallet: 'v5R1', balance: 3_000_000_000n, seqno: 0, active: false, usdt: 0n }]
+  ])
+  const FEES = { in_fwd_fee: 300_000, storage_fee: 1, gas_fee: 1_900_000, fwd_fee: 266_669 }
+  const FEE = 2_466_670n
+  const taken = new Map<string, string>()
+  const json = (status: number, body: unknown): [number, string] => [
+    status,
+    JSON.stringify(body, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
+  ]
+  const refused = (why: string): [number, string] =>
+    json(500, {
+      error: `LITE_SERVER_UNKNOWN: cannot apply external message to current state : External message was not accepted: ${why}`
+    })
+  const up = (raw: string): string => raw.toUpperCase().replace(/^-1:/, '-1:')
+  const query = (path: string): URLSearchParams => new URLSearchParams(path.split('?')[1] ?? '')
+
+  /** A request in a body (v4R2's or W5's), read and checked; what it sends, or why not. */
+  const request = (
+    w: { wallet: 'v4R2' | 'v5R1'; seqno: number },
+    body: TonCell,
+    checkSignature: boolean
+  ): TonSent['messages'] | string => {
+    const n = body.bits.length
+    const [sig, signing]: [string, TonCell] =
+      w.wallet === 'v4R2'
+        ? [body.bits.slice(0, 512), { bits: body.bits.slice(512), refs: body.refs, exotic: false }]
+        : [
+            body.bits.slice(n - 512),
+            { bits: body.bits.slice(0, n - 512), refs: body.refs, exotic: false }
+          ]
+    const signature = Uint8Array.from((sig.match(/.{8}/g) ?? []).map((x) => parseInt(x, 2)))
+    if (checkSignature && !ed25519.verify(signature, tonHash(signing).hash, TON_KEY))
+      return 'exitcode=35: a signature that doesn’t check out'
+    const r = new TonReader(signing)
+    if (w.wallet === 'v5R1' && r.uint(32) !== 0x7369676en) return 'exitcode=9: not a signed request'
+    if (Number(r.uint(32)) !== TON_WALLET_ID[w.wallet]) return 'exitcode=34: another wallet ID'
+    const until = Number(r.uint(32))
+    if (until < Date.now() / 1000) return 'exitcode=36: no longer good'
+    if (Number(r.uint(32)) !== w.seqno) return 'exitcode=33: not its seqno'
+    const out: { mode: number; message: TonCell }[] = []
+    if (w.wallet === 'v4R2') {
+      if (r.uint(8) !== 0n) return 'exitcode=39: an op it doesn’t send with'
+      while (!r.done()) out.push({ mode: Number(r.uint(8)), message: r.next() })
+    } else {
+      if (r.bits(1) === '1') {
+        for (let node = r.next(); node.bits.length;) {
+          const a = new TonReader(node)
+          const prev = a.next()
+          if (a.uint(32) !== 0x0ec3c86dn) return 'exitcode=40: an action it doesn’t take'
+          out.unshift({ mode: Number(a.uint(8)), message: a.next() })
+          node = prev
+        }
+      }
+      if (r.bits(1) !== '0' || !r.done()) return 'exitcode=41: more than messages'
+    }
+    const messages: TonSent['messages'] = []
+    for (const { mode, message } of out) {
+      const m = new TonReader(message)
+      // int_msg_info$0, IHR disabled, bounce, not bounced
+      const head = m.bits(4)
+      if (head[0] !== '0' || head[1] !== '1' || head[3] !== '0')
+        return 'a message not as wallets write one'
+      const bounce = head[2] === '1'
+      if (m.address() !== '') return 'a message naming its sender'
+      const to = m.address()
+      const value = m.coins()
+      if (m.bits(1) !== '0' || m.coins() !== 0n || m.coins() !== 0n || m.uint(64) || m.uint(32))
+        return 'a message not as wallets write one'
+      if (m.bits(1) !== '0') return 'a message setting up a contract'
+      const payload = m.bits(1) === '1' ? m.next() : m.rest()
+      const sentOne: TonSent['messages'][number] = { mode, to, bounce, value }
+      if (payload.bits.length) {
+        const p = new TonReader(payload)
+        const op = p.uint(32)
+        if (op === 0n) sentOne.comment = tonText(p.rest())
+        else if (op === 0x0f8a7ea5n) {
+          p.uint(64)
+          const amount = p.coins()
+          const jto = p.address()
+          const response = p.address()
+          if (p.bits(1) !== '0') return 'a custom payload'
+          const forwardTon = p.coins()
+          const forward = p.bits(1) === '1' ? p.next() : p.rest()
+          const f = new TonReader(forward)
+          sentOne.jetton = {
+            amount,
+            to: jto,
+            response,
+            forwardTon,
+            ...(forward.bits.length && f.uint(32) === 0n ? { comment: tonText(f.rest()) } : {})
+          }
+        } else return 'a body the stand-in doesn’t read'
+      }
+      messages.push(sentOne)
+    }
+    return messages
+  }
+
+  const answer: Answer = async (method, path, body) => {
+    const q = query(path)
+    if (method === 'GET' && path.startsWith('/walletInformation?')) {
+      const w = wallets.get(tonRaw(q.get('address') ?? ''))
+      if (!w || !w.active)
+        return json(200, {
+          balance: String(w?.balance ?? 0n),
+          last_transaction_lt: '0',
+          last_transaction_hash: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+          status: 'uninit'
+        })
+      return json(200, {
+        balance: String(w.balance),
+        wallet_type: w.wallet === 'v4R2' ? 'wallet v4 r2' : 'wallet v5 r1',
+        seqno: w.seqno,
+        wallet_id: TON_WALLET_ID[w.wallet],
+        last_transaction_lt: '107358062000018',
+        last_transaction_hash: 'L85ELOFNopuAWWF5y1DpEnp940l9EPorJYCq0TX/vnM=',
+        status: 'active'
+      })
+    }
+    if (method === 'GET' && path.startsWith('/jetton/wallets?')) {
+      const owner = tonRaw(q.get('owner_address') ?? '')
+      const w = wallets.get(owner)
+      if (!w || w.wallet !== 'v4R2') return json(200, { jetton_wallets: [], address_book: {} })
+      const row = (address: string, balance: bigint, jetton: string): object => ({
+        address: up(address),
+        balance: String(balance),
+        owner: up(owner),
+        jetton: up(jetton),
+        last_transaction_lt: '66078356000018',
+        code_hash: 'vrBoPr64kn/p/I7AoYvH3ReJlomCWhIeq0bFo6hg0M4=',
+        data_hash: '9ZbZdW/A+WUo8ymE1fe/RElg4nwZd+TsIZOHUB4Dp6U='
+      })
+      return json(200, {
+        jetton_wallets: [
+          row(TON_V4_USDT, w.usdt, tonRaw(TON_USDT)),
+          // a jetton wallet that names USDT's master, and isn't the account's: someone else's code
+          row(`0:${'66'.repeat(32)}`, 1_000_000_000n, tonRaw(TON_USDT)),
+          row(`0:${'77'.repeat(32)}`, 5n, `0:${'88'.repeat(32)}`)
+        ]
+      })
+    }
+    if (method === 'GET' && path.startsWith('/actions?')) {
+      const account = tonRaw(q.get('account') ?? '')
+      const w = wallets.get(account)
+      const actions =
+        w?.wallet === 'v4R2'
+          ? [
+              {
+                trace_id: base64.encode(new Uint8Array(32).fill(0x31)),
+                trace_end_utime: 1_790_000_000,
+                success: true,
+                type: 'jetton_transfer',
+                details: {
+                  asset: up(tonRaw(TON_USDT)),
+                  sender: up(tonRaw(TON_THEM)),
+                  receiver: up(account),
+                  sender_jetton_wallet: `0:${'99'.repeat(32)}`,
+                  receiver_jetton_wallet: up(TON_V4_USDT),
+                  amount: '40000000',
+                  comment: null
+                }
+              },
+              {
+                // another jetton's transfer, naming USDT: its jetton wallet isn't the account's
+                trace_id: base64.encode(new Uint8Array(32).fill(0x32)),
+                trace_end_utime: 1_789_999_000,
+                success: true,
+                type: 'jetton_transfer',
+                details: {
+                  asset: up(tonRaw(TON_USDT)),
+                  sender: up(tonRaw(TON_THEM)),
+                  receiver: up(account),
+                  sender_jetton_wallet: `0:${'99'.repeat(32)}`,
+                  receiver_jetton_wallet: `0:${'66'.repeat(32)}`,
+                  amount: '1000000000'
+                }
+              },
+              {
+                trace_id: base64.encode(new Uint8Array(32).fill(0x33)),
+                trace_end_utime: 1_789_990_000,
+                success: true,
+                type: 'ton_transfer',
+                details: {
+                  source: up(tonRaw(TON_THEM)),
+                  destination: up(account),
+                  value: '25000000000',
+                  comment: 'welcome',
+                  encrypted: false
+                }
+              }
+            ]
+          : []
+      return json(200, {
+        actions,
+        address_book: {
+          [up(tonRaw(TON_THEM))]: { user_friendly: TON_THEM, interfaces: ['wallet_v4r2'] }
+        }
+      })
+    }
+    if (method === 'POST' && path === '/estimateFee') {
+      const r = JSON.parse(body) as {
+        address: string
+        body: string
+        init_code?: string
+        ignore_chksig: boolean
+      }
+      const w = wallets.get(tonRaw(r.address))
+      if (!w || !r.ignore_chksig) return json(400, { error: 'not a wallet here' })
+      if (!w.active && !r.init_code)
+        return json(200, { source_fees: { ...FEES, gas_fee: 0 }, destination_fees: [] })
+      const said = request(w, tonBoc(base64.decode(r.body)), false)
+      return json(200, {
+        source_fees: typeof said === 'string' ? { ...FEES, gas_fee: 0 } : FEES,
+        destination_fees: []
+      })
+    }
+    if (method === 'POST' && path === '/message') {
+      const ext = tonBoc(base64.decode((JSON.parse(body) as { boc: string }).boc))
+      const m = new TonReader(ext)
+      if (m.bits(2) !== '10' || m.address() !== '') return refused('not an external message')
+      const to = m.address()
+      const w = wallets.get(to)
+      if (!w) return refused('Failed to unpack account state')
+      if (m.coins() !== 0n) return refused('an import fee')
+      // its first state, in a reference or in this cell: no split depth, not tick-tock, its code and
+      // data, no libraries
+      let init: TonCell | null = null
+      if (m.bits(1) === '1') {
+        const s = m.bits(1) === '1' ? new TonReader(m.next()) : m
+        if (s.bits(4) !== '0011') return refused('a first state not a wallet’s')
+        const [code, data] = [s.next(), s.next()]
+        if (s.bits(1) !== '0') return refused('a first state with libraries')
+        init = { bits: '00110', refs: [code, data], exotic: false }
+      }
+      const bodyCell = m.bits(1) === '1' ? m.next() : m.rest()
+      if (!w.active) {
+        if (!init) return refused('Failed to unpack account state')
+        const [code, data] = init.refs
+        if (hex.encode(tonHash(code).hash) !== TON_CODE[w.wallet])
+          return refused('not the wallet’s code')
+        const d = new TonReader(data)
+        if (w.wallet === 'v5R1' && d.bits(1) !== '1') return refused('signatures off')
+        if (d.uint(32) !== 0n || Number(d.uint(32)) !== TON_WALLET_ID[w.wallet])
+          return refused('another wallet’s data')
+        if (d.uint(256).toString(16).padStart(64, '0') !== hex.encode(TON_KEY))
+          return refused('another key')
+        if (hex.encode(tonHash(init).hash) !== to.split(':')[1])
+          return refused('a first state for another address')
+      } else if (init) return refused('a first state for a wallet set up already')
+      const said = request(w, bodyCell, true)
+      if (typeof said === 'string') return refused(said)
+      // what it costs: what it sends, and the fee
+      const spent = said.reduce((n, s) => n + s.value, 0n) + FEE
+      if (spent > w.balance) return refused('exitcode=37: not enough TON')
+      for (const s of said) {
+        if (s.jetton && s.to === TON_V4_USDT) {
+          if (s.jetton.amount > w.usdt) return refused('more USDT than the jetton wallet holds')
+          w.usdt -= s.jetton.amount
+        }
+      }
+      sent.push({ wallet: w.wallet, seqno: w.seqno, init: init !== null, messages: said })
+      w.balance -= spent
+      w.seqno++
+      w.active = true
+      // its hash, and its normalized hash (TEP-467: from no one, no fee, no first state, the body referred to)
+      const dest = to.split(':')
+      const norm: TonCell = {
+        bits: `1000100${(Number(dest[0]) & 0xff).toString(2).padStart(8, '0')}${BigInt(
+          '0x' + dest[1]
+        )
+          .toString(2)
+          .padStart(256, '0')}000001`,
+        refs: [bodyCell],
+        exotic: false
+      }
+      const normHash = tonHash(norm).hash
+      taken.set(hex.encode(normHash), to)
+      return json(200, {
+        message_hash: base64.encode(tonHash(ext).hash),
+        message_hash_norm: base64.encode(normHash)
+      })
+    }
+    if (method === 'GET' && path.startsWith('/transactionsByMessage?')) {
+      const to = taken.get(q.get('msg_hash') ?? '')
+      if (!to) return json(200, { transactions: [], address_book: {} })
+      return json(200, {
+        transactions: [
+          {
+            account: up(to),
+            hash: base64.encode(sha256(hex.decode(q.get('msg_hash')!))),
+            description: {
+              aborted: false,
+              compute_ph: { success: true, exit_code: 0 },
+              action: { success: true, no_funds: false, skipped_actions: 0 }
+            }
+          }
+        ]
+      })
+    }
+    return json(404, { error: 'not something the stand-in answers' })
+  }
+  return { answer, sent }
+}
+
+// ---- Zcash ----
+
+/** The test phrase's transparent Zcash account (m/44'/133'/0', Ledger's, Zashi's, zcashd's). */
+const ZEC_ACCOUNT = HDKey.fromMasterSeed(TEST_SEED).derive("m/44'/133'/0'")
+/** A key of the account's: its private key, to sign with in tests. */
+export const zecKey = (chain: 0 | 1, index: number): HDKey =>
+  ZEC_ACCOUNT.deriveChild(chain).deriveChild(index)
+const zecAddress = (key: Uint8Array): string =>
+  createBase58check(sha256).encode(Uint8Array.of(0x1c, 0xb8, ...ripemd160(sha256(key))))
+/** Its first receiving address, which holds a coin; its first change address, which holds one too. */
+export const ZEC_ME = zecAddress(zecKey(0, 0).publicKey!)
+export const ZEC_CHANGE = zecAddress(zecKey(1, 0).publicKey!)
+/** Where change goes next: its second change address. */
+export const ZEC_NEXT_CHANGE = zecAddress(zecKey(1, 1).publicKey!)
+/** Someone to pay: maki-zec's fixtures' payee; and ZIP-320's first vector, as a TEX address and as the t-address of the same key's hash. */
+export const ZEC_THEM = 't1YoaBBFNJaW1aDHQa84ie4EGpF1QBtq331'
+export const ZEC_THEM_TEX = 'tex10wur2u9clts5dcpu2vc6qg93uzyj7cca2xm732'
+export const ZEC_THEM_TEX_T = 't1V9mnyk5Z5cTNMCkLbaDwSskgJZucTLdgW'
+
+/** A payment the zecblock stand-in took. */
+export interface ZecSent {
+  txid: string
+  inputs: { txid: string; vout: number }[]
+  outputs: { address: string | null; value: bigint }[]
+  fee: bigint
+}
+
+/** A transparent version 5 transaction, read here on its own (ZIP-225). */
+function zecRead(raw: Uint8Array) {
+  let at = 0
+  const take = (n: number): Uint8Array => {
+    if (at + n > raw.length) throw new Error('a transaction cut short')
+    at += n
+    return raw.subarray(at - n, at)
+  }
+  const le = (n: number): number => take(n).reduceRight((v, x) => v * 256 + x, 0)
+  const compact = (): number => {
+    const b = le(1)
+    return b < 0xfd ? b : le(b === 0xfd ? 2 : 4)
+  }
+  const [version, group, branch, lockTime, expiry] = [le(4), le(4), le(4), le(4), le(4)]
+  const inputs = Array.from({ length: compact() }, () => ({
+    prevout: take(36).slice(),
+    script: take(compact()).slice(),
+    sequence: le(4)
+  }))
+  const outputs = Array.from({ length: compact() }, () => ({
+    value: BigInt(le(4)) + (BigInt(le(4)) << 32n),
+    script: take(compact()).slice()
+  }))
+  const shielded = [compact(), compact(), compact()]
+  if (at !== raw.length || shielded.some((n) => n !== 0))
+    throw new Error('not a transparent transaction')
+  return { version, group, branch, lockTime, expiry, inputs, outputs }
+}
+
+/**
+ * ZIP-244's signature digest for input `n` of a transparent version 5 transaction (SIGHASH_ALL),
+ * from its parts and what each input spends: written here on its own, from the ZIP.
+ */
+export function zecSighash(
+  tx: {
+    version: number
+    group: number
+    branch: number
+    lockTime: number
+    expiry: number
+    inputs: { prevout: Uint8Array; sequence: number }[]
+    outputs: { value: bigint; script: Uint8Array }[]
+  },
+  spent: { value: bigint; script: Uint8Array }[],
+  n: number
+): Uint8Array {
+  const b2 = (name: string | Uint8Array, data: number[]): number[] => [
+    ...blake2b(Uint8Array.from(data), {
+      dkLen: 32,
+      personalization: typeof name === 'string' ? new TextEncoder().encode(name) : name
+    })
+  ]
+  const le = (v: number | bigint, bytes: number): number[] =>
+    Array.from({ length: bytes }, (_, i) => Number((BigInt(v) >> BigInt(8 * i)) & 0xffn))
+  const field = (s: Uint8Array): number[] => [s.length, ...s]
+  const header = b2('ZTxIdHeadersHash', [
+    ...le(tx.version, 4),
+    ...le(tx.group, 4),
+    ...le(tx.branch, 4),
+    ...le(tx.lockTime, 4),
+    ...le(tx.expiry, 4)
+  ])
+  const transparent = b2('ZTxIdTranspaHash', [
+    1,
+    ...b2(
+      'ZTxIdPrevoutHash',
+      tx.inputs.flatMap((i) => [...i.prevout])
+    ),
+    ...b2(
+      'ZTxTrAmountsHash',
+      spent.flatMap((s) => le(s.value, 8))
+    ),
+    ...b2(
+      'ZTxTrScriptsHash',
+      spent.flatMap((s) => field(s.script))
+    ),
+    ...b2(
+      'ZTxIdSequencHash',
+      tx.inputs.flatMap((i) => le(i.sequence, 4))
+    ),
+    ...b2(
+      'ZTxIdOutputsHash',
+      tx.outputs.flatMap((o) => [...le(o.value, 8), ...field(o.script)])
+    ),
+    ...b2('Zcash___TxInHash', [
+      ...tx.inputs[n].prevout,
+      ...le(spent[n].value, 8),
+      ...field(spent[n].script),
+      ...le(tx.inputs[n].sequence, 4)
+    ])
+  ])
+  const personal = Uint8Array.of(...new TextEncoder().encode('ZcashTxHash_'), ...le(tx.branch, 4))
+  return Uint8Array.from(
+    b2(personal, [
+      ...header,
+      ...transparent,
+      ...b2('ZTxIdSaplingHash', []),
+      ...b2('ZTxIdOrchardHash', [])
+    ])
+  )
+}
+
+/**
+ * zecblock, answering maki desktop's wallet: the test phrase's first receiving address holds a coin
+ * of 1.5 ZEC, its first change address one of 0.25, each in a block; NU6.3 is in force (or, with
+ * `nextBranch`, the next block follows another upgrade). A payment is taken only if it's a version 5
+ * transaction at the branch in force, every coin it spends one the stand-in has and hasn't seen
+ * spent, each input's script the signature by the coin's own key over ZIP-244's digest (worked out
+ * here, from what the stand-in knows each coin holds) and that key, and it pays ZIP-317's fee at
+ * least; it waits in the mempool then, as zecblock shows one (its coins not yet spent, the
+ * transaction not yet listed), until `mine()` puts it in a block.
+ */
+export function zecblockStandIn({ nextBranch = '37a5165b' } = {}): {
+  answer: Answer
+  sent: ZecSent[]
+  mine: () => void
+} {
+  const sent: ZecSent[] = []
+  let tip = 3_503_950
+  const script = (address: string): Uint8Array =>
+    Uint8Array.of(
+      0x76,
+      0xa9,
+      0x14,
+      ...createBase58check(sha256).decode(address).slice(2),
+      0x88,
+      0xac
+    )
+  const addressOf = (s: Uint8Array): string | null =>
+    s.length === 25 &&
+    s[0] === 0x76 &&
+    s[1] === 0xa9 &&
+    s[2] === 0x14 &&
+    s[23] === 0x88 &&
+    s[24] === 0xac
+      ? createBase58check(sha256).encode(Uint8Array.of(0x1c, 0xb8, ...s.subarray(3, 23)))
+      : null
+  /** each transaction: where it's mined (null: waiting), when, what it spends and pays */
+  const txs = new Map<
+    string,
+    {
+      height: number | null
+      time: number
+      inputs: { txid: string; vout: number }[]
+      outputs: { address: string | null; value: bigint; script: Uint8Array }[]
+    }
+  >()
+  const fund = (
+    txid: string,
+    vout: number,
+    address: string,
+    value: bigint,
+    height: number
+  ): void => {
+    const outputs = Array.from({ length: vout + 1 }, (_, i) =>
+      i === vout
+        ? { address, value, script: script(address) }
+        : { address: ZEC_THEM, value: 1_000n, script: script(ZEC_THEM) }
+    )
+    txs.set(txid, { height, time: 1_789_000_000 + (height - 3_500_000) * 75, inputs: [], outputs })
+  }
+  fund('a1'.repeat(32), 0, ZEC_ME, 150_000_000n, 3_503_900)
+  fund('b2'.repeat(32), 1, ZEC_CHANGE, 25_000_000n, 3_503_910)
+  const mined = (): [string, typeof txs extends Map<string, infer V> ? V : never][] =>
+    [...txs.entries()].filter(([, t]) => t.height !== null)
+  /** whether a block has a transaction spending the output */
+  const spentInBlock = (txid: string, vout: number): boolean =>
+    mined().some(([, t]) => t.inputs.some((i) => i.txid === txid && i.vout === vout))
+  const output = (txid: string, vout: number) => txs.get(txid)?.outputs[vout]
+  const ok = (data: unknown): [number, string] => [
+    200,
+    JSON.stringify({ data, meta: { network: 'mainnet', indexedHeight: tip } }, (_k, v) =>
+      typeof v === 'bigint' ? v.toString() : v
+    )
+  ]
+  const problem = (status: number, detail: string): [number, string] => [
+    status,
+    JSON.stringify({
+      type: 'https://docs.cipherscan.app/errors/validation-error',
+      title: 'Error',
+      status,
+      detail
+    })
+  ]
+
+  const answer: Answer = async (method, path, body) => {
+    if (method === 'GET' && path === '/v1/network/blockchain-info')
+      return ok({
+        chain: 'main',
+        blocks: tip,
+        upgrades: {
+          '5437f330': { name: 'NU6.2', activationheight: 3364600, status: 'active' },
+          '37a5165b': { name: 'NU6.3', activationheight: 3428143, status: 'active' },
+          '77190ad9': {
+            name: 'NU7',
+            activationheight: nextBranch === '77190ad9' ? tip : 3_900_000,
+            status: nextBranch === '77190ad9' ? 'active' : 'pending'
+          }
+        },
+        consensus: { chaintip: '37a5165b', nextblock: nextBranch }
+      })
+    let m = /^\/v1\/addresses\/(t[1-9A-HJ-NP-Za-km-z]{34})\?page=1&limit=100$/.exec(path)
+    if (method === 'GET' && m) {
+      const address = m[1]
+      const touching = mined()
+        .filter(
+          ([, t]) =>
+            t.outputs.some((o) => o.address === address) ||
+            t.inputs.some((i) => output(i.txid, i.vout)?.address === address)
+        )
+        .sort(([, a], [, b]) => b.height! - a.height!)
+      if (touching.length === 0)
+        return ok({
+          address,
+          type: 'transparent',
+          balance: '0',
+          totalReceived: '0',
+          totalSent: '0',
+          txCount: 0,
+          transactions: [],
+          pagination: {
+            page: 1,
+            limit: 100,
+            total: 0,
+            totalPages: 0,
+            hasNext: false,
+            hasPrev: false
+          },
+          note: 'This address has no transaction history yet.'
+        })
+      let balance = 0n
+      for (const [id, t] of touching)
+        t.outputs.forEach((o, vout) => {
+          if (o.address === address && !spentInBlock(id, vout)) balance += o.value
+        })
+      return ok({
+        address,
+        balance: balance.toString(),
+        balanceZat: balance.toString(),
+        txCount: touching.length,
+        transactions: touching.map(([txid, t]) => {
+          const inputValue = t.inputs.reduce(
+            (n, i) =>
+              n +
+              (output(i.txid, i.vout)?.address === address ? output(i.txid, i.vout)!.value : 0n),
+            0n
+          )
+          const outputValue = t.outputs.reduce(
+            (n, o) => n + (o.address === address ? o.value : 0n),
+            0n
+          )
+          return {
+            txid,
+            blockHeight: t.height,
+            blockTime: String(t.time),
+            inputValue: Number(inputValue),
+            outputValue: Number(outputValue),
+            netChange: Number(outputValue - inputValue),
+            counterparty:
+              t.inputs.length === 0
+                ? ZEC_THEM
+                : (t.outputs.find((o) => o.address !== address)?.address ?? null)
+          }
+        }),
+        pagination: {
+          page: 1,
+          limit: 100,
+          total: touching.length,
+          totalPages: 1,
+          hasNext: false,
+          hasPrev: false
+        }
+      })
+    }
+    m = /^\/v1\/transactions\/([0-9a-f]{64})$/.exec(path)
+    if (method === 'GET' && m) {
+      const t = txs.get(m[1])
+      // zecblock lists a transaction once it's in a block
+      if (!t || t.height === null) return problem(404, 'Transaction not found')
+      return ok({
+        txid: m[1],
+        blockHeight: String(t.height),
+        status: 'confirmed',
+        inputs: t.inputs.map((i) => ({
+          prev_txid: i.txid,
+          prev_vout: i.vout,
+          address: output(i.txid, i.vout)?.address,
+          value: String(output(i.txid, i.vout)?.value)
+        })),
+        outputs: t.outputs.map((o, vout) => ({
+          address: o.address,
+          value: o.value.toString(),
+          vout_index: vout,
+          spent: spentInBlock(m![1], vout)
+        }))
+      })
+    }
+    m = /^\/v1\/mempool\/([0-9a-f]{64})$/.exec(path)
+    if (method === 'GET' && m) {
+      const t = txs.get(m[1])
+      return ok(
+        t && t.height === null
+          ? { inMempool: true, transaction: { txid: m[1] } }
+          : { inMempool: false }
+      )
+    }
+    if (method === 'POST' && path === '/v1/transactions/broadcast') {
+      const refused = (): [number, string] => problem(400, 'Failed to broadcast transaction')
+      let tx: ReturnType<typeof zecRead>
+      try {
+        tx = zecRead(hex.decode((JSON.parse(body) as { rawTx: string }).rawTx))
+      } catch {
+        return refused()
+      }
+      if (tx.version !== 0x80000005 || tx.group !== 0x26a7270a || tx.branch !== 0x37a5165b)
+        return refused()
+      if (tx.expiry <= tip) return refused()
+      const coins = tx.inputs.map((i) => {
+        const txid = hex.encode(i.prevout.slice(0, 32).reverse())
+        const vout = i.prevout[32] | (i.prevout[33] << 8)
+        const o = output(txid, vout)
+        // spent by a transaction already in a block, or waiting: no
+        const taken = [...txs.values()].some((t) =>
+          t.inputs.some((x) => x.txid === txid && x.vout === vout)
+        )
+        return o && !taken ? { txid, vout, ...o } : null
+      })
+      if (coins.some((c) => !c)) return refused()
+      const spent = coins.map((c) => ({ value: c!.value, script: c!.script }))
+      for (const [n, i] of tx.inputs.entries()) {
+        // its script: the signature pushed, then the key (33 bytes) pushed
+        const s = i.script
+        const sig = s.subarray(1, 1 + s[0])
+        const key = s.subarray(2 + s[0])
+        if (s[1 + s[0]] !== 33 || key.length !== 33 || sig[sig.length - 1] !== 1) return refused()
+        if (zecAddress(key) !== coins[n]!.address) return refused()
+        if (
+          !secp256k1.verify(sig.subarray(0, -1), zecSighash(tx, spent, n), key, {
+            prehash: false,
+            format: 'der'
+          })
+        )
+          return refused()
+      }
+      const into = spent.reduce((n, s) => n + s.value, 0n)
+      const out = tx.outputs.reduce((n, o) => n + o.value, 0n)
+      // ZIP-317: 5,000 zatoshis an action, two at least; an input an action, outputs by their size
+      const outBytes = tx.outputs.reduce((n, o) => n + 9 + o.script.length, 0)
+      const actions = Math.max(2, tx.inputs.length, Math.ceil(outBytes / 34))
+      if (out > into || into - out < 5_000n * BigInt(actions)) return refused()
+      const raw = hex.decode((JSON.parse(body) as { rawTx: string }).rawTx)
+      // its ID: ZIP-244's, the tree with the transparent parts as the ID has them
+      const txid = (() => {
+        const b2 = (name: string | Uint8Array, data: number[]): number[] => [
+          ...blake2b(Uint8Array.from(data), {
+            dkLen: 32,
+            personalization: typeof name === 'string' ? new TextEncoder().encode(name) : name
+          })
+        ]
+        const le = (v: number | bigint, bytes: number): number[] =>
+          Array.from({ length: bytes }, (_, i) => Number((BigInt(v) >> BigInt(8 * i)) & 0xffn))
+        const header = b2('ZTxIdHeadersHash', [...raw.subarray(0, 20)])
+        const transparent = b2('ZTxIdTranspaHash', [
+          ...b2(
+            'ZTxIdPrevoutHash',
+            tx.inputs.flatMap((i) => [...i.prevout])
+          ),
+          ...b2(
+            'ZTxIdSequencHash',
+            tx.inputs.flatMap((i) => le(i.sequence, 4))
+          ),
+          ...b2(
+            'ZTxIdOutputsHash',
+            tx.outputs.flatMap((o) => [...le(o.value, 8), o.script.length, ...o.script])
+          )
+        ])
+        const personal = Uint8Array.of(
+          ...new TextEncoder().encode('ZcashTxHash_'),
+          ...le(tx.branch, 4)
+        )
+        return hex.encode(
+          Uint8Array.from(
+            b2(personal, [
+              ...header,
+              ...transparent,
+              ...b2('ZTxIdSaplingHash', []),
+              ...b2('ZTxIdOrchardHash', [])
+            ])
+          ).reverse()
+        )
+      })()
+      txs.set(txid, {
+        height: null,
+        time: Math.floor(Date.now() / 1000),
+        inputs: coins.map((c) => ({ txid: c!.txid, vout: c!.vout })),
+        outputs: tx.outputs.map((o) => ({
+          address: addressOf(o.script),
+          value: o.value,
+          script: o.script
+        }))
+      })
+      sent.push({
+        txid,
+        inputs: coins.map((c) => ({ txid: c!.txid, vout: c!.vout })),
+        outputs: tx.outputs.map((o) => ({ address: addressOf(o.script), value: o.value })),
+        fee: into - out
+      })
+      return ok({ txid })
+    }
+    return problem(404, 'No v1 route matches this path and method.')
+  }
+  const mine = (): void => {
+    tip++
+    for (const t of txs.values()) if (t.height === null) t.height = tip
+  }
+  return { answer, sent, mine }
 }

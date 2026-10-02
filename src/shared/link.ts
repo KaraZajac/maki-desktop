@@ -27,6 +27,8 @@ import {
   BitcoinApp,
   EthereumApp,
   BITCOINCASH_APP,
+  DASH_APP,
+  DIGIBYTE_APP,
   CARDANO_APP,
   CardanoApp,
   COSMOS_APP,
@@ -37,6 +39,10 @@ import {
   LITECOIN_APP,
   MoneroApp,
   SolanaApp,
+  TON_APP,
+  TonApp,
+  ZCASH_APP,
+  ZcashApp,
   type AppMessage,
   type MoneroNetworkValue,
   type MoneroOutput
@@ -160,6 +166,8 @@ export class Link {
   readonly litecoin: BitcoinApp
   readonly dogecoin: BitcoinApp
   readonly bitcoincash: BitcoinApp
+  readonly dash: BitcoinApp
+  readonly digibyte: BitcoinApp
   readonly ethereumApp: EthereumApp
   readonly monero: MoneroApp
   /** the Ethereum account, for sites through the browser extension */
@@ -196,6 +204,8 @@ export class Link {
     this.litecoin = new BitcoinApp(wallets, LITECOIN_APP, 'Litecoin')
     this.dogecoin = new BitcoinApp(wallets, DOGECOIN_APP, 'Dogecoin')
     this.bitcoincash = new BitcoinApp(wallets, BITCOINCASH_APP, 'Bitcoin Cash')
+    this.dash = new BitcoinApp(wallets, DASH_APP, 'Dash')
+    this.digibyte = new BitcoinApp(wallets, DIGIBYTE_APP, 'DigiByte')
     this.ethereumApp = new EthereumApp(wallets)
     this.monero = new MoneroApp(wallets)
     this.ethereum = new Ethereum(
@@ -628,7 +638,11 @@ export class Link {
             ? new CardanoApp(send, id, name)
             : id === COSMOS_APP && chains
               ? new CosmosApp(send, id, name, chains)
-              : new AccountApp(send, id, name)
+              : id === TON_APP
+                ? new TonApp(send, id, name, chains?.[0] === 'v5R1' ? 'v5R1' : 'v4R2')
+                : id === ZCASH_APP
+                  ? new ZcashApp(send, id, name)
+                  : new AccountApp(send, id, name)
       this.accountApps.set(key, app)
     }
     return app

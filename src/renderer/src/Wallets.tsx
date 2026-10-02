@@ -5,11 +5,14 @@ import {
   BITCOIN_APP,
   BITCOINCASH_APP,
   COSMOS_APP,
+  DASH_APP,
+  DIGIBYTE_APP,
   DOGECOIN_APP,
   ETHEREUM_APP,
   LITECOIN_APP,
   MONERO_APP,
-  SOLANA_APP
+  SOLANA_APP,
+  TON_APP
 } from '@shared/wallet-apps'
 import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
@@ -23,10 +26,12 @@ import { NEAR } from '@shared/coins/near'
 import { STELLAR } from '@shared/coins/stellar'
 import { TRON } from '@shared/coins/tron'
 import { XRP } from '@shared/coins/xrp'
+import { ZCASH } from '@shared/coins/zcash'
 import { AccountCard } from './AccountWallet'
-import { BitcoinCash, Dogecoin, Litecoin } from './BtcCoin'
+import { BitcoinCash, Dash, DigiByte, Dogecoin, Litecoin } from './BtcCoin'
 import { Monero } from './Monero'
 import { Solana } from './Solana'
+import { TonCard } from './TonWallet'
 import { PricesContext, useFreshPrices } from './prices-state'
 import { Button, Card, Glyph, Label, PageHeader } from './ui'
 import { useAddFromStore } from './WalletAppNeeded'
@@ -79,6 +84,27 @@ const WALLETS: WalletKind[] = [
     glyph: 'bitcoincash',
     line: 'The account Electron Cash and Ledger make, through its Electrum servers.',
     Card: BitcoinCash
+  },
+  {
+    app: DASH_APP,
+    name: 'Dash',
+    glyph: 'dash',
+    line: 'The account Dash Core, Ledger and Trezor make, through Dash’s Insight API.',
+    Card: Dash
+  },
+  {
+    app: DIGIBYTE_APP,
+    name: 'DigiByte',
+    glyph: 'digibyte',
+    line: 'Its native SegWit, taproot and legacy accounts, as Ledger and the other wallets make them.',
+    Card: DigiByte
+  },
+  {
+    app: ZCASH.app,
+    name: 'Zcash',
+    glyph: 'zcash',
+    line: 'ZEC in its transparent account, the one Ledger, Zashi and zcashd make.',
+    Card: (p) => <AccountCard {...p} chain={ZCASH} />
   },
   {
     app: KASPA.app,
@@ -163,6 +189,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'sui',
     line: 'SUI, USDC and the other coins maki knows, the account Slush and Ledger make.',
     Card: (p) => <AccountCard {...p} chain={SUI} />
+  },
+  {
+    app: TON_APP,
+    name: 'TON',
+    glyph: 'ton',
+    line: 'TON, USDT, NOT and DOGS, the account Ledger Live and Tonkeeper make, in its v4R2 and W5 wallets.',
+    Card: TonCard
   }
 ]
 

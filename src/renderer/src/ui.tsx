@@ -238,6 +238,30 @@ const glyphs: Record<string, ReactNode> = {
       <circle cx="20.2" cy="16.8" r=".6" />
     </>
   ),
+  ton: (
+    <>
+      <path d="M5 5.5h14L12 20z" />
+      <path d="M12 5.5V20" />
+    </>
+  ),
+  dash: (
+    <>
+      <path d="M8.5 7h9a1.5 1.5 0 0 1 1.45 1.9l-1.7 6.3A2.5 2.5 0 0 1 14.85 17H5" />
+      <path d="M4 12h7" />
+    </>
+  ),
+  digibyte: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 7.5v9h2.5a4.5 4.5 0 0 0 0-9z" />
+    </>
+  ),
+  zcash: (
+    <>
+      <path d="M8 7.5h8l-8 9h8" />
+      <path d="M12 4v3.5M12 16.5V20" />
+    </>
+  ),
   key: (
     <>
       <circle cx="8" cy="15" r="4" />

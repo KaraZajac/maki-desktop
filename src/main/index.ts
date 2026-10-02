@@ -34,6 +34,7 @@ import {
   type BtcNetwork
 } from '../shared/btc-wallet'
 import { cashChain, electrumEsplora } from '../shared/electrum-esplora'
+import { insightEsplora } from '../shared/insight-esplora'
 import { Electrum } from './electrum'
 import { allowed, COIN_SERVERS, type CoinId, type CoinResponse } from '../shared/coin-servers'
 import { polite } from '../shared/polite'
@@ -665,7 +666,9 @@ function ipc(): void {
     bitcoin: 'https://mempool.space/api',
     test: 'https://mempool.space/testnet4/api',
     litecoin: 'https://litecoinspace.org/api',
-    'litecoin-test': 'https://litecoinspace.org/testnet/api'
+    'litecoin-test': 'https://litecoinspace.org/testnet/api',
+    // DigiByte's community Esplora (no test network's that answers)
+    digibyte: 'https://digiexplorer.info/api'
   }
   // Bitcoin Cash: Electrum servers (Fulcrum), the ones Electron Cash lists whose certificates check
   // out; its test network is chipnet. The Esplora calls are answered from them.
@@ -697,8 +700,38 @@ function ipc(): void {
       cashChain('bchtest', BITCOINCASH_TEST)
     )
   }
+  // Dash: the Insight API Dash's own explorers run, its calls answering the Esplora ones; two a
+  // second, saying they're maki desktop's (insight.dash.org's Cloudflare challenges Node's own
+  // user agent, which a program can't answer). MAKI_INSIGHT (tests) is an Insight API to use
+  // instead, for both networks.
+  const ownInsight = process.env['MAKI_INSIGHT']
+  const insightAgent = { 'user-agent': `maki-desktop/${app.getVersion()}` }
+  const politeInsight = polite(
+    (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
+    { atOnce: 2, perSecond: 2, wait: 5000 }
+  )
+  const insight = (base: string): ReturnType<typeof insightEsplora> =>
+    insightEsplora(async (path, json) => {
+      const res = await politeInsight(
+        `${ownInsight ?? base}${path}`,
+        json === undefined
+          ? { headers: insightAgent }
+          : {
+              method: 'POST',
+              body: json,
+              headers: { ...insightAgent, 'content-type': 'application/json' }
+            }
+      ).catch(() => {
+        throw new Error('Dash’s Insight API can’t be reached')
+      })
+      return { status: res.status, text: await res.text() }
+    })
+  const dash = {
+    dash: insight('https://insight.dash.org/insight-api'),
+    'dash-test': insight('https://insight.testnet.networks.dash.org/insight-api')
+  }
   const ESPLORA_PATH =
-    /^\/(address\/[a-zA-Z0-9:]{14,110}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
+    /^\/(address\/[a-zA-Z0-9:]{14,110}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended|fee-estimates)$/
   // a wallet's first look can be a hundred requests, and mempool.space turns away bursts (and
   // then stops answering for a while): two a second to each server, and a long wait when it asks
   // for one. MAKI_ESPLORA (tests, your own server) is an Esplora API to use instead, for every
@@ -709,7 +742,11 @@ function ipc(): void {
       (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) }),
       ownEsplora ? { atOnce: 4 } : { atOnce: 2, perSecond: 2, wait: 5000 }
     )
-  const esploras = { bitcoin: politeEsplora(), litecoin: politeEsplora() }
+  const esploras = {
+    bitcoin: politeEsplora(),
+    litecoin: politeEsplora(),
+    digibyte: politeEsplora()
+  }
   ipcMain.handle('btc:esplora', async (_e, network: unknown, path: unknown, body?: unknown) => {
     try {
       if (typeof network !== 'string' || !Object.hasOwn(BTC_CHAIN, network))
@@ -721,11 +758,14 @@ function ipc(): void {
         throw new Error('not something the wallet asks')
       if (!ownEsplora && (net === 'bitcoincash' || net === 'bitcoincash-test'))
         return { text: await bitcoinCash[net](path as string, post ? (body as string) : undefined) }
+      if (!ownEsplora && (net === 'dash' || net === 'dash-test'))
+        return { text: await dash[net](path as string, post ? (body as string) : undefined) }
       const base = ownEsplora ?? ESPLORA[net]
       if (!base) throw new Error(`maki desktop has no ${COIN_NAME[BTC_CHAIN[net]]} server yet`)
       let res: Response
       try {
-        res = await esploras[BTC_CHAIN[net] === 'litecoin' ? 'litecoin' : 'bitcoin'](
+        const chain = BTC_CHAIN[net]
+        res = await esploras[chain === 'litecoin' || chain === 'digibyte' ? chain : 'bitcoin'](
           `${base}${path}`,
           {
             method: post ? 'POST' : 'GET',
@@ -818,8 +858,9 @@ function ipc(): void {
                   ? undefined
                   : { 'content-type': binary ? servers.binary! : 'application/json' }
             })
-            // a server that's down or turning this computer away: the next, if there is one
-            if (res.status === 429 || res.status >= 500) {
+            // a server that's down or turning this computer away: the next, if there is one (but a
+            // 5xx some servers answer with what they turned down, and why, goes to the wallet)
+            if (res.status === 429 || (res.status >= 500 && !servers.says5xx?.test(path))) {
               unreachable = `${new URL(base).host} answered ${res.status}`
               continue
             }

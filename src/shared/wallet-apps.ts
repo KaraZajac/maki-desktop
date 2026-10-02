@@ -30,12 +30,17 @@ export const BITCOIN_APP = 'com.leviathan.maki.bitcoin'
 export const LITECOIN_APP = 'com.leviathan.maki.litecoin'
 export const DOGECOIN_APP = 'com.leviathan.maki.dogecoin'
 export const BITCOINCASH_APP = 'com.leviathan.maki.bitcoincash'
+/** Dash's and DigiByte's too: Dash's accounts are kind 2; DigiByte's of all three kinds. */
+export const DASH_APP = 'com.leviathan.maki.dash'
+export const DIGIBYTE_APP = 'com.leviathan.maki.digibyte'
 export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
 export const MONERO_APP = 'com.leviathan.maki.monero'
 export const SOLANA_APP = 'com.leviathan.maki.solana'
 export const KASPA_APP = 'com.leviathan.maki.kaspa'
 export const CARDANO_APP = 'com.leviathan.maki.cardano'
 export const COSMOS_APP = 'com.leviathan.maki.cosmos'
+export const TON_APP = 'com.leviathan.maki.ton'
+export const ZCASH_APP = 'com.leviathan.maki.zcash'
 
 /** Talking to an app on maki (Link.appMessage): its answer, if maki has it and it answered. */
 export type AppMessage = (
@@ -896,5 +901,84 @@ export class CosmosApp extends AccountApp {
       // locked, or no answer: nothing shown
     }
     return { approval: a.approval, address }
+  }
+}
+
+/**
+ * maki's TON app, which speaks the account coins' messages and serves two wallets of one key: `A`
+ * and `D` name the wallet after the account (nothing for v4R2, the app's own first, as Ledger Live
+ * has it; `v5R1` for W5), and answer with that wallet's address; `T` takes the cell the wallet's key
+ * signs, in a bag of cells, which names its wallet itself.
+ */
+export class TonApp extends AccountApp {
+  constructor(
+    send: AppMessage,
+    id: string,
+    name: string,
+    /** the wallet `A` and `D` ask about */
+    private wallet: 'v4R2' | 'v5R1' = 'v4R2'
+  ) {
+    super(send, id, name)
+  }
+
+  private head(kind: number, network: 0 | 1, index: number): Uint8Array {
+    const w = new Writer().u8(kind).u8(network).u32(index)
+    return (this.wallet === 'v4R2' ? w : w.bytes16(new TextEncoder().encode(this.wallet))).finish()
+  }
+
+  override async account(
+    network: 0 | 1,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; publicKey: Uint8Array; address: string }> {
+    const none = { publicKey: new Uint8Array(), address: '' }
+    const a = await this.ask(this.head(0x41, network, index), SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', ...none }
+    if (a.approval !== 'approved') return { approval: a.approval, reason: a.reason(), ...none }
+    try {
+      const publicKey = a.fixed(a.fixed(1)[0])
+      return { approval: a.approval, reason: '', publicKey, address: a.text() }
+    } catch {
+      return { approval: 'unavailable', reason: '', ...none }
+    }
+  }
+
+  override async address(
+    network: 0 | 1,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    const a = await this.ask(this.head(0x44, network, index), SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '' }
+    let address = ''
+    try {
+      address = a.text()
+    } catch {
+      // locked, or no answer: nothing shown
+    }
+    return { approval: a.approval, address }
+  }
+}
+
+/**
+ * maki's Zcash app (transparent): the Kaspa app's messages for the account (`A` its key and chain
+ * code, and its first address; `D` any of its addresses), and `T` a request (maki-zec's) answered
+ * with each input's signature, after its length, as its script pushes it.
+ */
+export class ZcashApp extends KaspaApp {
+  override async sign(
+    network: 0 | 1,
+    _index: number,
+    payload: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    const m = Uint8Array.from([0x54, network, ...payload])
+    if (payload.length === 0 || m.length > MAX_APP_MESSAGE)
+      return { approval: 'refused', reason: 'bigger than maki takes', signature: null }
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', signature: null }
+    if (a.approval !== 'approved')
+      return { approval: a.approval, reason: a.reason(), signature: null }
+    const signature = a.rest()
+    return signature.length > 0
+      ? { approval: a.approval, reason: '', signature }
+      : { approval: 'unavailable', reason: '', signature: null }
   }
 }

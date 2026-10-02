@@ -1,0 +1,216 @@
+{
+ "_note": "toncenter.com v3's answers, 2026-10-02: walletInformation for an active v4R2 and W5 wallet and an unused one; actions of the v4R2 wallet (TON sent) and of a wallet sending USDT (jetton transfers), each trimmed to a few",
+ "walletInformation": {
+  "v4R2": {
+   "balance": "21968459886270",
+   "wallet_type": "wallet v4 r2",
+   "seqno": 373972,
+   "wallet_id": 698983191,
+   "last_transaction_lt": "107358062000018",
+   "last_transaction_hash": "L85ELOFNopuAWWF5y1DpEnp940l9EPorJYCq0TX/vnM=",
+   "status": "active"
+  },
+  "v5R1": {
+   "balance": "35113190080",
+   "wallet_type": "wallet v5 r1",
+   "seqno": 6558,
+   "wallet_id": 2147483409,
+   "last_transaction_lt": "107358062000024",
+   "last_transaction_hash": "sBAeMruyrFCGTjhnHFtsMsRnaIM/MPnHRpFVuyGDXjg=",
+   "status": "active"
+  },
+  "uninit": {
+   "balance": "0",
+   "last_transaction_lt": "0",
+   "last_transaction_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+   "status": "uninit"
+  }
+ },
+ "actions": {
+  "account": "0:C1ECBDD54AA1AE33C32415711BB8A8FEC12A634A8A46BEFEDE3E52D5BC5AA224",
+  "actions": [
+   {
+    "trace_id": "L85ELOFNopuAWWF5y1DpEnp940l9EPorJYCq0TX/vnM=",
+    "action_id": "Jy3oUHsOmh3fIERu+bR8Sy3+7ib72+T5wFLW8cNYEyk=",
+    "start_lt": "107358062000019",
+    "end_lt": "107358062000020",
+    "start_utime": 1790960689,
+    "end_utime": 1790960689,
+    "trace_end_lt": "107358062000020",
+    "trace_end_utime": 1790960689,
+    "trace_mc_seqno_end": 96494688,
+    "transactions": [
+     "L85ELOFNopuAWWF5y1DpEnp940l9EPorJYCq0TX/vnM=",
+     "bRm3ojcZ/zZNx/IJlqwLq4QBQMiTe9fkc4tYggXXCsU="
+    ],
+    "success": true,
+    "type": "ton_transfer",
+    "details": {
+     "source": "0:C1ECBDD54AA1AE33C32415711BB8A8FEC12A634A8A46BEFEDE3E52D5BC5AA224",
+     "destination": "0:852443F8599FE6A5DA34FE43049AC4E0BEB3071BB2BFB56635EA9421287C283A",
+     "value": "3090500000",
+     "value_extra_currencies": {},
+     "comment": "312 Telegram Stars \n\nRef#x9aPDryKf",
+     "encrypted": false
+    },
+    "trace_external_hash": "XTo9KSEb+5SBas+JW8C3KZzAErGJ8YKFLz80x0xH24Y=",
+    "trace_external_hash_norm": "pb6yhR4fPel75zCKFQuWY3AAZRA2wHNB913o/IHqAtA=",
+    "finality": "finalized"
+   },
+   {
+    "trace_id": "RJ4yAPW6w/M9pZNlEP0zXjT1In0byFaQiUYAncdGt/g=",
+    "action_id": "sxQKWtsc/QvEToLiVkUHIOCZnZi3GlBXt/aJDrNw5Xk=",
+    "start_lt": "107357856000002",
+    "end_lt": "107357856000003",
+    "start_utime": 1790960607,
+    "end_utime": 1790960607,
+    "trace_end_lt": "107357856000003",
+    "trace_end_utime": 1790960607,
+    "trace_mc_seqno_end": 96494490,
+    "transactions": [
+     "RJ4yAPW6w/M9pZNlEP0zXjT1In0byFaQiUYAncdGt/g=",
+     "OyRzg/kfaWPP6ZUaAQWJAvcVdlADGl2/RWYJVp9ZvDU="
+    ],
+    "success": true,
+    "type": "ton_transfer",
+    "details": {
+     "source": "0:C1ECBDD54AA1AE33C32415711BB8A8FEC12A634A8A46BEFEDE3E52D5BC5AA224",
+     "destination": "0:852443F8599FE6A5DA34FE43049AC4E0BEB3071BB2BFB56635EA9421287C283A",
+     "value": "495200000",
+     "value_extra_currencies": {},
+     "comment": "50 Telegram Stars \n\nRef#eaaOyF1gD",
+     "encrypted": false
+    },
+    "trace_external_hash": "xXAfQbiGB8vxE3BzT4Qu0a4+zS6OueKsaKdcx2UhOSg=",
+    "trace_external_hash_norm": "3VJk7HdEVOtdrxezDU0fDwXa2i9eoUgyeH7lJpcjXo8=",
+    "finality": "finalized"
+   },
+   {
+    "trace_id": "lo9/7AXKhrJ/3no0tUi1FPCR7VI7211/qhUHTIX+Z8I=",
+    "action_id": "2JdDbN81+yORtEo2mxbZ2bA4P3Uf2RxekRKdvuwrSpI=",
+    "start_lt": "107357849000011",
+    "end_lt": "107357849000012",
+    "start_utime": 1790960604,
+    "end_utime": 1790960604,
+    "trace_end_lt": "107357849000012",
+    "trace_end_utime": 1790960604,
+    "trace_mc_seqno_end": 96494483,
+    "transactions": [
+     "2byi51Fe7DTXZicNoNHv3O94kwpUTulPNag6zL/yBmE=",
+     "lo9/7AXKhrJ/3no0tUi1FPCR7VI7211/qhUHTIX+Z8I="
+    ],
+    "success": true,
+    "type": "ton_transfer",
+    "details": {
+     "source": "0:C1ECBDD54AA1AE33C32415711BB8A8FEC12A634A8A46BEFEDE3E52D5BC5AA224",
+     "destination": "0:852443F8599FE6A5DA34FE43049AC4E0BEB3071BB2BFB56635EA9421287C283A",
+     "value": "1228200000",
+     "value_extra_currencies": {},
+     "comment": "124 Telegram Stars \n\nRef#BVdkJzU4t",
+     "encrypted": false
+    },
+    "trace_external_hash": "9Ek/yBcGhrYU56SrBXQOovATw/iZqBWgQZe722dA8So=",
+    "trace_external_hash_norm": "7oKjOAPzcK1TfPmZQo+rFtJibf9g1uKxj0Mjc1v9Jtw=",
+    "finality": "finalized"
+   }
+  ],
+  "address_book": {
+   "0:852443F8599FE6A5DA34FE43049AC4E0BEB3071BB2BFB56635EA9421287C283A": {
+    "user_friendly": "EQCFJEP4WZ_mpdo0_kMEmsTgvrMHG7K_tWY16pQhKHwoOoy2",
+    "domain": null,
+    "interfaces": [
+     "wallet_highload_v3r1"
+    ]
+   },
+   "0:C1ECBDD54AA1AE33C32415711BB8A8FEC12A634A8A46BEFEDE3E52D5BC5AA224": {
+    "user_friendly": "UQDB7L3VSqGuM8MkFXEbuKj-wSpjSopGvv7ePlLVvFqiJDKx",
+    "domain": null,
+    "interfaces": [
+     "wallet_v4r2"
+    ]
+   }
+  }
+ },
+ "jettonActions": {
+  "account": "0:2BCD50E53CF0732DE6659629B3511DDB928BFE9F1234BE07033DDC3BF094B294",
+  "actions": [
+   {
+    "trace_id": "hzOX9nMojpr5+jNXd7SSBMIOnNCiufuV120Idtz+Mgc=",
+    "action_id": "FOKUiAw5KLjSHQOeD3uh39XM3Rnjj/g8UPmFSQ8Ffz8=",
+    "start_lt": "107358426000009",
+    "end_lt": "107358426000015",
+    "start_utime": 1790960835,
+    "end_utime": 1790960835,
+    "trace_end_lt": "107358426000015",
+    "trace_end_utime": 1790960835,
+    "trace_mc_seqno_end": 96495045,
+    "transactions": [
+     "ZPcGRXmKVALAQop2VS8lvkSQJiC5EcDiIWF6I/J950w=",
+     "R7z8nkkqbxawOlum94DPDdmCausdG1l1i6x3lgcpc4w=",
+     "pEU6X0InMOxi2n0xQ2qJ+pkAudxv4rByF2HePKpincE=",
+     "B8aKHTn10x2Z6gIFAC1j5G1n1Rmoky9HDVMb8BAdsEI=",
+     "hzOX9nMojpr5+jNXd7SSBMIOnNCiufuV120Idtz+Mgc="
+    ],
+    "success": true,
+    "type": "jetton_transfer",
+    "details": {
+     "asset": "0:B113A994B5024A16719F69139328EB759596C38A25F59028B146FECDC3621DFE",
+     "sender": "0:2BCD50E53CF0732DE6659629B3511DDB928BFE9F1234BE07033DDC3BF094B294",
+     "receiver": "0:852443F8599FE6A5DA34FE43049AC4E0BEB3071BB2BFB56635EA9421287C283A",
+     "sender_jetton_wallet": "0:1E0D4B2790C7A331C5D027542D7486BD7CA67FAE2C000A040ABE3FEB8FCD1451",
+     "receiver_jetton_wallet": "0:32081D54752B9340A75C777A94AF0483F07329DD296EB4F915BB45E477B93F8A",
+     "amount": "21750000",
+     "comment": "1450 Telegram Stars \n\nRef#vj4H1maQN",
+     "is_encrypted_comment": false,
+     "query_id": "12803578453472944574",
+     "response_destination": "0:2BCD50E53CF0732DE6659629B3511DDB928BFE9F1234BE07033DDC3BF094B294",
+     "custom_payload": null,
+     "forward_payload": "te6cckEBAQEAKQAATgAAAAAxNDUwIFRlbGVncmFtIFN0YXJzIAoKUmVmI3ZqNEgxbWFRThPeZZ0=",
+     "forward_amount": "1"
+    },
+    "trace_external_hash": "Na4Dr4WySinM4Yd1ZIvnrBjc6GNNKcB44isEa+coc98=",
+    "trace_external_hash_norm": "8Oz9DBkh3O2pfq688qzA6IDLZGtKfmSieU5Kk3K3i7k=",
+    "finality": "finalized"
+   },
+   {
+    "trace_id": "HW0igPFm4xbQJMXy9hicqoRu5Z1dd7MzLSLsZgUHQPY=",
+    "action_id": "QHim09IRJYXJiMdxO90GeuYQ1mAoCUln/oLvcXHMu4I=",
+    "start_lt": "107357253000002",
+    "end_lt": "107357253000008",
+    "start_utime": 1790960366,
+    "end_utime": 1790960366,
+    "trace_end_lt": "107357253000008",
+    "trace_end_utime": 1790960366,
+    "trace_mc_seqno_end": 96493900,
+    "transactions": [
+     "DZ2lgviG1DBSOvA/9eFqSLrZ5cj64ngGtA2OkX9WD2I=",
+     "JsblIxycAaGIrVrtzZ8zDnrVt+oHvUPMxVt6Z0ZuhFk=",
+     "WLIyfZr5teFVZImUsPvGxthJVHmSsJoJlAPQAEFoKTI=",
+     "T6sfOnACGgnDlIMS061PO3WTtCPkZlBMmEsiKKtnFuA=",
+     "HW0igPFm4xbQJMXy9hicqoRu5Z1dd7MzLSLsZgUHQPY="
+    ],
+    "success": true,
+    "type": "jetton_transfer",
+    "details": {
+     "asset": "0:B113A994B5024A16719F69139328EB759596C38A25F59028B146FECDC3621DFE",
+     "sender": "0:2BCD50E53CF0732DE6659629B3511DDB928BFE9F1234BE07033DDC3BF094B294",
+     "receiver": "0:852443F8599FE6A5DA34FE43049AC4E0BEB3071BB2BFB56635EA9421287C283A",
+     "sender_jetton_wallet": "0:1E0D4B2790C7A331C5D027542D7486BD7CA67FAE2C000A040ABE3FEB8FCD1451",
+     "receiver_jetton_wallet": "0:32081D54752B9340A75C777A94AF0483F07329DD296EB4F915BB45E477B93F8A",
+     "amount": "1500000",
+     "comment": "100 Telegram Stars \n\nRef#hUdCbh7bt",
+     "is_encrypted_comment": false,
+     "query_id": "10896694646859119674",
+     "response_destination": "0:2BCD50E53CF0732DE6659629B3511DDB928BFE9F1234BE07033DDC3BF094B294",
+     "custom_payload": null,
+     "forward_payload": "te6cckEBAQEAKAAATAAAAAAxMDAgVGVsZWdyYW0gU3RhcnMgCgpSZWYjaFVkQ2JoN2J0k5jfEQ==",
+     "forward_amount": "1"
+    },
+    "trace_external_hash": "3P8jC+sEROtgxTwQ2UhqNr0Ah6V4HxbN/BlTvPZpd2w=",
+    "trace_external_hash_norm": "Qp7c7cT+joOJ7XhuGrq0zxWtfafdi2zvyjPgOnYqkEE=",
+    "finality": "finalized"
+   }
+  ],
+  "address_book": {}
+ }
+}

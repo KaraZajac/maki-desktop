@@ -5,8 +5,8 @@ import {
   BtcWallet,
   CHAIN,
   COIN_WORD,
-  EXPLORER,
   EXPLORER_NAME,
+  explorerLink,
   isTest,
   UNIT,
   type BtcAccountInfo,
@@ -40,7 +40,9 @@ const PRICED: Record<BtcChain, string> = {
   bitcoin: 'BTC',
   litecoin: 'LTC',
   dogecoin: 'DOGE',
-  bitcoincash: 'BCH'
+  bitcoincash: 'BCH',
+  dash: 'DASH',
+  digibyte: 'DGB'
 }
 /** What an address of each network starts with, as a hint where one goes. */
 const STARTS: Record<BtcAccountInfo['network'], string> = {
@@ -51,7 +53,11 @@ const STARTS: Record<BtcAccountInfo['network'], string> = {
   dogecoin: 'D…',
   'dogecoin-test': 'n…',
   bitcoincash: 'bitcoincash:q…',
-  'bitcoincash-test': 'bchtest:q…'
+  'bitcoincash-test': 'bchtest:q…',
+  dash: 'X…',
+  'dash-test': 'y…',
+  digibyte: 'dgb1…, D… or S…',
+  'digibyte-test': 'dgbt1…'
 }
 /** Older than this, it's looked up again. */
 const STALE_MS = 60_000
@@ -120,7 +126,8 @@ export function BitcoinWallet({
   kind: BtcAccountValue
 }): React.JSX.Element {
   const wallet = useMemo(() => walletFor(info), [info])
-  const explorer = EXPLORER[info.network]
+  const explorer = (kind: 'tx' | 'address', id: string): string =>
+    explorerLink(info.network, kind, id)
   const site = EXPLORER_NAME[info.network]
   const unit = UNIT[info.network]
   const chain = CHAIN[info.network]
@@ -336,7 +343,7 @@ export function BitcoinWallet({
                     className="rounded-md p-1.5 text-overlay1 transition-colors hover:bg-surface0 hover:text-fg"
                     title={`See it on ${site}`}
                     aria-label={`See it on ${site}`}
-                    onClick={() => void window.maki.openExternal(`${explorer}/tx/${a.txid}`)}
+                    onClick={() => void window.maki.openExternal(explorer('tx', a.txid))}
                   >
                     <Glyph name="external" className="h-3.5 w-3.5" />
                   </button>
@@ -379,7 +386,7 @@ function Receive({
   network: NetworkValue
   kind: BtcAccountValue
   chain: BtcChain
-  explorer: string
+  explorer: (kind: 'tx' | 'address', id: string) => string
   site: string
   linked: boolean
 }): React.JSX.Element {
@@ -443,7 +450,7 @@ function Receive({
           <Button
             small
             glyph="external"
-            onClick={() => void window.maki.openExternal(`${explorer}/address/${address}`)}
+            onClick={() => void window.maki.openExternal(explorer('address', address))}
           >
             {site}
           </Button>
@@ -499,7 +506,7 @@ function Send({
   unit: string
   /** what an address starts with */
   hint: string
-  explorer: string
+  explorer: (kind: 'tx' | 'address', id: string) => string
   site: string
   linked: boolean
   sent: () => void
@@ -592,7 +599,7 @@ function Send({
           <Button
             small
             glyph="external"
-            onClick={() => void window.maki.openExternal(`${explorer}/tx/${done.txid}`)}
+            onClick={() => void window.maki.openExternal(explorer('tx', done.txid))}
           >
             Follow it on {site}
           </Button>

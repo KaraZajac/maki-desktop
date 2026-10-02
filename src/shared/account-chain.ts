@@ -81,7 +81,10 @@ export interface AccountChain {
   priced: string
   /** its own network's name, and its test network's if maki's app knows one */
   networks: [string, string | null]
-  /** the chain's ID on each network, for an app that serves more than one chain (Cosmos's) */
+  /**
+   * the chain's ID on each network, for an app that serves more than one chain (Cosmos's); or the
+   * wallet its messages name, for one that serves more than one wallet of a key (TON's W5)
+   */
   appChain?: [string, string | null]
   /** what an address looks like, as a hint where one goes */
   hint: string

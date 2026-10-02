@@ -48,13 +48,19 @@ export function AccountCard({
   link,
   apps,
   chain,
-  choose
+  choose,
+  title,
+  more
 }: {
   link: Link
   apps: Apps
   chain: AccountChain
   /** beside the network: a way to choose among the chains one app serves */
   choose?: React.ReactNode
+  /** what the account's wallet is called, where its key has more than one (TON's) */
+  title?: string
+  /** after the account's wallet: the key's others (TON's W5) */
+  more?: (account: SharedAccount) => React.ReactNode
 }): React.JSX.Element {
   const linked = link.state.linked
   const [chosen, setNetwork] = useState<0 | 1>(() => savedNetwork(chain))
@@ -141,7 +147,16 @@ export function AccountCard({
       <WalletAppNeeded link={link} apps={apps} id={chain.app} name={chain.name} />
 
       {all === null ? null : account ? (
-        <AccountWallet key={keyOf(chain, account)} link={link} chain={chain} account={account} />
+        <>
+          <AccountWallet
+            key={keyOf(chain, account)}
+            link={link}
+            chain={chain}
+            account={account}
+            title={title}
+          />
+          {more?.(account)}
+        </>
       ) : (
         <div className="mt-6 flex flex-wrap items-center gap-6 rounded-xl border border-dashed border-surface1 p-6">
           <span
@@ -184,14 +199,17 @@ export function AccountCard({
 }
 
 /** The account as a wallet: what it holds, receiving, sending, and its activity. */
-function AccountWallet({
+export function AccountWallet({
   link,
   chain,
-  account
+  account,
+  title
 }: {
   link: Link
   chain: AccountChain
   account: SharedAccount
+  /** which of the key's wallets it is, where it has more than one */
+  title?: string
 }): React.JSX.Element {
   const fetch = useMemo(() => fetcher(chain), [chain])
   const network = account.network
@@ -240,7 +258,7 @@ function AccountWallet({
       <div className="mt-6 flex flex-wrap items-end justify-between gap-5">
         <div className="min-w-0">
           <div className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1">
-            Balance
+            {title ? `${title} · balance` : 'Balance'}
           </div>
           <div className="mt-1.5 font-mono leading-none text-fg">
             {coin === null ? (
@@ -535,6 +553,8 @@ function Send({
   const [stage, setStage] = useState<Stage | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [done, setDone] = useState<{ id: string; amount: string } | null>(null)
+  // what the payment being signed says of itself (its fee, if the chain can't bound it)
+  const [notes, setNotes] = useState<string[]>([])
   const linked = link.state.linked
 
   const holding = state.holdings.find((h) => (h.token?.id ?? 'coin') === what) ?? null
@@ -580,6 +600,7 @@ function Send({
         token,
         memo.trim()
       )
+      setNotes(payment.notes)
       setStage('maki')
       link.note(`${chain.name} payment sent: go through it on maki`)
       const r = await link
@@ -717,6 +738,12 @@ function Send({
           were given, then approve it there.
         </p>
       )}
+      {stage === 'maki' &&
+        notes.map((n) => (
+          <p key={n} className="mt-2 max-w-2xl text-xs leading-relaxed text-subtext0">
+            {n}
+          </p>
+        ))}
       {problem && <p className="mt-3 text-sm text-yellow">{problem}</p>}
     </div>
   )

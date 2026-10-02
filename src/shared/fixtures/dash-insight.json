@@ -1,0 +1,166 @@
+{
+ "_note": "insight.dash.org's answers, 2026-10-02, for maki desktop's Insight calls: the API's status, an address's totals (noTxList), its coins, a page of its transactions, and two transactions' bytes (a plain one and a coinbase, special type 5, with its payload)",
+ "status": {
+  "info": {
+   "version": 220000,
+   "insightversion": "4.0.8",
+   "protocolversion": 70235,
+   "blocks": 2548671,
+   "timeoffset": 0,
+   "connections": 10,
+   "difficulty": 122247752.1848839,
+   "relayfee": 1e-05,
+   "errors": "",
+   "network": "livenet"
+  }
+ },
+ "address": "XwxcKLWVdzRgPqtvVw96L2FtzcXeqAA9YA",
+ "receiver": "XtNTcJBRDXN6xLh8o56kAMSvgFpxwVh4rJ",
+ "addr": {
+  "addrStr": "XtNTcJBRDXN6xLh8o56kAMSvgFpxwVh4rJ",
+  "balance": 0.0003,
+  "balanceSat": 30000,
+  "totalReceived": 0.0003,
+  "totalReceivedSat": 30000,
+  "totalSent": 0,
+  "totalSentSat": 0,
+  "unconfirmedBalance": 0,
+  "unconfirmedBalanceSat": 0,
+  "unconfirmedTxApperances": 0,
+  "unconfirmedAppearances": 0,
+  "txApperances": 1,
+  "txAppearances": 1
+ },
+ "utxo": [
+  {
+   "address": "XtNTcJBRDXN6xLh8o56kAMSvgFpxwVh4rJ",
+   "txid": "ad81885d6ed6cf0e5a4c797d370841def52bb6b275d95ad93b5967a57fdc4c15",
+   "vout": 0,
+   "scriptPubKey": "76a914c1f839c3f95f67f3bfe60ca72953d3b32380ea5d88ac",
+   "amount": 0.0003,
+   "satoshis": 30000,
+   "height": 2548671,
+   "confirmations": 1
+  }
+ ],
+ "txs": {
+  "pagesTotal": 1,
+  "txs": [
+   {
+    "txid": "ad81885d6ed6cf0e5a4c797d370841def52bb6b275d95ad93b5967a57fdc4c15",
+    "version": 2,
+    "locktime": 0,
+    "vin": [
+     {
+      "txid": "56ba33d1b9583952fa88d0d28d37560dcc392134bb08589cf6681b81c929fc35",
+      "vout": 0,
+      "sequence": 4294967295,
+      "n": 0,
+      "scriptSig": {
+       "hex": "47304402203a58eb67e3314d78b0618d336fdae27a929e9005e6b3f9a6a023ce2ca69cc01c022060259826da5c95e43204d60fc3fcd223f31eeac2e578f6ee51c1224e5673bba7012102d44ed1acae034e84e706278c515a837c5e72bdb9a158e35f3ffeec861b17c4da",
+       "asm": "304402203a58eb67e3314d78b0618d336fdae27a929e9005e6b3f9a6a023ce2ca69cc01c022060259826da5c95e43204d60fc3fcd223f31eeac2e578f6ee51c1224e5673bba7[ALL] 02d44ed1acae034e84e706278c515a837c5e72bdb9a158e35f3ffeec861b17c4da"
+      },
+      "addr": "XwxcKLWVdzRgPqtvVw96L2FtzcXeqAA9YA",
+      "valueSat": 40000,
+      "value": 0.0004,
+      "doubleSpentTxID": null
+     }
+    ],
+    "vout": [
+     {
+      "value": "0.00030000",
+      "n": 0,
+      "scriptPubKey": {
+       "hex": "76a914c1f839c3f95f67f3bfe60ca72953d3b32380ea5d88ac",
+       "asm": "OP_DUP OP_HASH160 c1f839c3f95f67f3bfe60ca72953d3b32380ea5d OP_EQUALVERIFY OP_CHECKSIG",
+       "addresses": [
+        "XtNTcJBRDXN6xLh8o56kAMSvgFpxwVh4rJ"
+       ],
+       "type": "pubkeyhash"
+      },
+      "spentTxId": null,
+      "spentIndex": null,
+      "spentHeight": null
+     }
+    ],
+    "blockhash": "000000000000001a70f20551167c3905aea13f3cf61d5d830ff32b0ca5c1cb4d",
+    "blockheight": 2548671,
+    "confirmations": 1,
+    "time": 1790960500,
+    "blocktime": 1790960500,
+    "valueOut": 0.0003,
+    "size": 191,
+    "valueIn": 0.0004,
+    "fees": 0.0001,
+    "txlock": true
+   },
+   {
+    "txid": "56ba33d1b9583952fa88d0d28d37560dcc392134bb08589cf6681b81c929fc35",
+    "version": 2,
+    "locktime": 2548663,
+    "vin": [
+     {
+      "txid": "b4cd6237e61ce3f6ee37cba86582e08fe07d620efd510dfcc0237642d46170c7",
+      "vout": 0,
+      "sequence": 4294967294,
+      "n": 0,
+      "scriptSig": {
+       "hex": "473044022025be3edbaa11e581e67815635a05ba12671dfb6513e6aca53e02b0e442a9ba07022055ab3cd01515c68c069bf8aca141f61bf3b77833a5faf9aedac467fdb856800d012102cba9896993a016d1ef1f691cc800cba95a5ca101c1ff8220279d83b94663a944",
+       "asm": "3044022025be3edbaa11e581e67815635a05ba12671dfb6513e6aca53e02b0e442a9ba07022055ab3cd01515c68c069bf8aca141f61bf3b77833a5faf9aedac467fdb856800d[ALL] 02cba9896993a016d1ef1f691cc800cba95a5ca101c1ff8220279d83b94663a944"
+      },
+      "addr": "XqmjLL2Dfja7qvPPFaFuikAU8M35BqKKcX",
+      "valueSat": 98408,
+      "value": 0.00098408,
+      "doubleSpentTxID": null
+     }
+    ],
+    "vout": [
+     {
+      "value": "0.00040000",
+      "n": 0,
+      "scriptPubKey": {
+       "hex": "76a914e95603b18b7ac9b342a894d54b155f11652264e088ac",
+       "asm": "OP_DUP OP_HASH160 e95603b18b7ac9b342a894d54b155f11652264e0 OP_EQUALVERIFY OP_CHECKSIG",
+       "addresses": [
+        "XwxcKLWVdzRgPqtvVw96L2FtzcXeqAA9YA"
+       ],
+       "type": "pubkeyhash"
+      },
+      "spentTxId": "ad81885d6ed6cf0e5a4c797d370841def52bb6b275d95ad93b5967a57fdc4c15",
+      "spentIndex": 0,
+      "spentHeight": 2548671
+     },
+     {
+      "value": "0.00058183",
+      "n": 1,
+      "scriptPubKey": {
+       "hex": "76a91473337e682ac6b0f0a118e5695bab22e9467269f188ac",
+       "asm": "OP_DUP OP_HASH160 73337e682ac6b0f0a118e5695bab22e9467269f1 OP_EQUALVERIFY OP_CHECKSIG",
+       "addresses": [
+        "XmByEAUyscJHZhYsqJvnqbDaA9NcAeMMmN"
+       ],
+       "type": "pubkeyhash"
+      },
+      "spentTxId": "6b9c2682006983e492ac043ce48b9f893a3983ba562bfc2324e37302ea282e1c",
+      "spentIndex": 0,
+      "spentHeight": 2548667
+     }
+    ],
+    "blockhash": "000000000000000fd7e5fa673290c2565d92bc7cc5e641c7bab2441d76acaac2",
+    "blockheight": 2548664,
+    "confirmations": 8,
+    "time": 1790959323,
+    "blocktime": 1790959323,
+    "valueOut": 0.00098183,
+    "size": 225,
+    "valueIn": 0.00098408,
+    "fees": 2.25e-06,
+    "txlock": true
+   }
+  ]
+ },
+ "rawtx": {
+  "ad81885d6ed6cf0e5a4c797d370841def52bb6b275d95ad93b5967a57fdc4c15": "020000000135fc29c9811b68f69c5808bb342139cc0d56378dd2d088fa523958b9d133ba56000000006a47304402203a58eb67e3314d78b0618d336fdae27a929e9005e6b3f9a6a023ce2ca69cc01c022060259826da5c95e43204d60fc3fcd223f31eeac2e578f6ee51c1224e5673bba7012102d44ed1acae034e84e706278c515a837c5e72bdb9a158e35f3ffeec861b17c4daffffffff0130750000000000001976a914c1f839c3f95f67f3bfe60ca72953d3b32380ea5d88ac00000000",
+  "00c0910dc5e0431c409e0d5c0c32d3189de809f2a03d844e9d8a111dd319191c": "03000500010000000000000000000000000000000000000000000000000000000000000000ffffffff3403bfe3261e2f5669614254432f4d696e656420627920706f6b68616b686f6e7461732f104e53c800fb779925cc8a3d80311b0100ffffffff03b9567302000000001976a914bc89d6071dabc5b4494d303af761a052a5c70d5788ac1b6fc10200000000016a0e959804000000001976a914869bb8682385262cd5a0902e5ac03cdf0b2bf7ab88ac00000000af0300bfe32600430152c39cb711fa4acba16d9ad33446ef543c8f00ab205ab4f36389d28309f7f76865644cf28548e0a747d9b6628fb005e74af3b769c28a795765886006264b008c9e5cf1bf7aaeaf670d97587c48b5ca920237d8e50548a40186fa31a1ba79b7f0b714e98461ce53883853a96050ce9a0c4fd4f2a77b5de802d93ad58453ee656202b7dc782a8666e107dcf0ba5c0807caff90d6bc75cbb3c0834094f9fe9254a45a75ae6b030000"
+ }
+}

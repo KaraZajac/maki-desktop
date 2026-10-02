@@ -43,6 +43,12 @@ const IDS: Record<string, string> = {
   XMR: 'monero',
   SOL: 'solana',
   PYUSD: 'paypal-usd',
+  TON: 'the-open-network',
+  NOT: 'notcoin',
+  DOGS: 'dogs-2',
+  DASH: 'dash',
+  DGB: 'digibyte',
+  ZEC: 'zcash',
   // the Ethereum account's other networks' coins, and their tokens (checked against CoinGecko's
   // simple price, and USDC.e by its contract on Gnosis)
   BNB: 'binancecoin',

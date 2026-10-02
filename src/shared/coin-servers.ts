@@ -17,6 +17,8 @@ export type CoinId =
   | 'sui'
   | 'aptos'
   | 'cardano'
+  | 'ton'
+  | 'zcash'
   // the Cosmos chains maki's Cosmos app serves
   | 'cosmos'
   | 'osmosis'
@@ -43,6 +45,11 @@ export interface CoinServers {
   binary?: string
   /** another service the wallet asks, for paths that start with `prefix` (which it doesn't see) */
   also?: { prefix: string; main: string[]; test: string[]; perSecond: number }
+  /**
+   * the paths where a 5xx answer is the server's word, not its absence (toncenter turns a message
+   * down with a 500 and why): passed on to the wallet, not taken as the server being down
+   */
+  says5xx?: RegExp
 }
 
 /** What each Cosmos chain's wallet asks of its REST API (cosmos.directory's, the same for every chain). */
@@ -155,6 +162,28 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
     get: /$^/,
     post: /^\/graphql$/,
     perSecond: 3
+  },
+  // toncenter's v3 API, TON's own (a request a second without a key): a wallet's balance, seqno
+  // and contract, its jetton wallets, its history as actions; a fee estimate, sending, and the
+  // transaction a message started. It answers a message (or an estimate) it turns down with a 500
+  // and its reason.
+  ton: {
+    main: ['https://toncenter.com/api/v3'],
+    test: ['https://testnet.toncenter.com/api/v3'],
+    get: /^\/(walletInformation\?address=[A-Za-z0-9_-]{48}&use_v2=false|jetton\/wallets\?owner_address=[A-Za-z0-9_-]{48}&limit=50&offset=0|actions\?account=[A-Za-z0-9_-]{48}&limit=20&offset=0&sort=desc|transactionsByMessage\?msg_hash=[0-9a-f]{64}&direction=in&limit=1)$/,
+    post: /^\/(estimateFee|message)$/,
+    perSecond: 1,
+    says5xx: /^\/(message|estimateFee)$/
+  },
+  // zecblock's API (keyless): the chain's tip and the upgrade in force, each address's balance and
+  // transactions, a transaction's outputs (each saying whether it's spent), whether a payment sent
+  // waits in the mempool, and sending
+  zcash: {
+    main: ['https://api.zecblock.com'],
+    test: ['https://api.testnet.zecblock.com'],
+    get: /^\/v1\/(network\/blockchain-info|addresses\/t[1-9A-HJ-NP-Za-km-z]{34}\?page=1&limit=100|transactions\/[0-9a-f]{64}|mempool\/[0-9a-f]{64})$/,
+    post: /^\/v1\/transactions\/broadcast$/,
+    perSecond: 2
   }
 }
 

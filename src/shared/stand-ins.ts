@@ -1,13 +1,15 @@
 /**
  * Stand-ins for the networks the wallets use, for tests (Node only): a Bitcoin chain holding one
  * coin, behind an Esplora API, and an Ethereum network that holds a little of everything, behind
- * JSON-RPC; each keeps what it's sent. And what a signed Ethereum transaction says, read back.
+ * JSON-RPC; each keeps what it's sent. Dash's Insight API, its special transactions among its own. And what a signed Ethereum transaction says, read back.
  * And Solana: LiteSVM, Solana's runtime, behind the JSON-RPC calls maki desktop's wallet makes.
  */
 import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { sha256 } from '@noble/hashes/sha2.js'
 import { keccak_256 } from '@noble/hashes/sha3.js'
 import { hex } from '@scure/base'
 import * as btc from '@scure/btc-signer'
+import { hash160 } from '@scure/btc-signer/utils.js'
 import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -39,6 +41,19 @@ export const PRETEND_FEES = {
   hourFee: 3,
   economyFee: 2,
   minimumFee: 1
+}
+
+/** What a plain Esplora's estimates say, sat/vB by blocks: digiexplorer.info's of 2026-10-02. */
+export const PRETEND_ESTIMATES = {
+  '1': 369.314,
+  '2': 369.314,
+  '3': 369.314,
+  '6': 369.314,
+  '10': 150.0,
+  '25': 150.0,
+  '144': 150.0,
+  '504': 150.0,
+  '1008': 150.0
 }
 
 /**
@@ -152,6 +167,8 @@ export class PretendChain {
       return this.add(tx, false)
     }
     if (path === '/v1/fees/recommended') return JSON.stringify(PRETEND_FEES)
+    // a plain Esplora's (DigiByte's): sat/vB by blocks, as digiexplorer.info answers
+    if (path === '/fee-estimates') return JSON.stringify(PRETEND_ESTIMATES)
     const raw = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(path)
     if (raw) {
       const e = this.entries.get(raw[1])
@@ -540,4 +557,402 @@ export function serveSolRpc(rpc: SolRpc): Promise<{ url: string; close: () => vo
       ]
     }
   })
+}
+
+// ---- Dash ----
+
+/** A Dash transaction as Dash writes it (DIP-2), read here on its own. */
+export interface DashTx {
+  version: number
+  /** the special transaction's type: 0 for a plain one */
+  type: number
+  inputs: { txid: string; vout: number; script: Uint8Array; sequence: number }[]
+  outputs: { value: bigint; script: Uint8Array }[]
+  lockTime: number
+  payload: Uint8Array
+}
+
+/** Bytes read in order, little-endian, as Dash writes a transaction. */
+function dashReader(b: Uint8Array) {
+  let at = 0
+  const take = (n: number): Uint8Array => {
+    if (at + n > b.length) throw new Error('a Dash transaction cut short')
+    at += n
+    return b.subarray(at - n, at)
+  }
+  const le = (n: number): number => take(n).reduceRight((v, x) => v * 256 + x, 0)
+  const varint = (): number => {
+    const first = le(1)
+    return first < 0xfd ? first : le(first === 0xfd ? 2 : first === 0xfe ? 4 : 8)
+  }
+  return { take, le, varint, done: () => at === b.length }
+}
+
+/** A Dash transaction's fields; its payload after the lock time, if it's special (version 3 and up). */
+export function readDashTx(raw: Uint8Array): DashTx {
+  const r = dashReader(raw)
+  const field = r.le(4)
+  const version = field & 0xffff
+  const type = field >>> 16
+  const inputs = Array.from({ length: r.varint() }, () => ({
+    txid: hex.encode(r.take(32).slice().reverse()),
+    vout: r.le(4),
+    script: r.take(r.varint()).slice(),
+    sequence: r.le(4)
+  }))
+  const outputs = Array.from({ length: r.varint() }, () => ({
+    value: BigInt(r.le(8)),
+    script: r.take(r.varint()).slice()
+  }))
+  const lockTime = r.le(4)
+  const payload = version >= 3 && type !== 0 ? r.take(r.varint()).slice() : new Uint8Array()
+  if (!r.done()) throw new Error('bytes after a Dash transaction')
+  return { version, type, inputs, outputs, lockTime, payload }
+}
+
+/** Its ID: the double SHA-256 of its bytes as they are, reversed. */
+const dashTxid = (raw: Uint8Array): string => hex.encode(sha256(sha256(raw)).reverse())
+
+/**
+ * The digest a plain Dash transaction's input `n` signs with SIGHASH_ALL (Bitcoin's from before
+ * SegWit): the transaction with that input's script the coin's and the others' empty, then the hash
+ * type, hashed twice.
+ */
+export function dashSighash(tx: DashTx, n: number, coinScript: Uint8Array): Uint8Array {
+  const out: number[] = []
+  const le = (v: number | bigint, bytes: number): void => {
+    for (let i = 0; i < bytes; i++) out.push(Number((BigInt(v) >> BigInt(8 * i)) & 0xffn))
+  }
+  const varBytes = (b: Uint8Array): void => {
+    if (b.length >= 0xfd) throw new Error('a script too long for this stand-in')
+    out.push(b.length, ...b)
+  }
+  le(tx.version | (tx.type << 16), 4)
+  out.push(tx.inputs.length)
+  tx.inputs.forEach((i, k) => {
+    out.push(...hex.decode(i.txid).reverse())
+    le(i.vout, 4)
+    varBytes(k === n ? coinScript : new Uint8Array())
+    le(i.sequence, 4)
+  })
+  out.push(tx.outputs.length)
+  for (const o of tx.outputs) {
+    le(o.value, 8)
+    varBytes(o.script)
+  }
+  le(tx.lockTime, 4)
+  le(1, 4)
+  return sha256(sha256(Uint8Array.from(out)))
+}
+
+/** A payment the Dash stand-in took. */
+export interface DashSent {
+  txid: string
+  inputs: { txid: string; vout: number }[]
+  outputs: { address: string | undefined; value: bigint }[]
+  fee: bigint
+}
+
+/**
+ * Dash's Insight API (insight.dash.org's, as Dash's explorers run it), as a stand-in: a ledger of
+ * Dash transactions, some special (a withdrawal from Dash Platform pays a coin with a payload after
+ * its lock time), answering the calls maki desktop's wallet makes in Insight's own shapes: an
+ * address's totals, its coins and its transactions, a transaction's bytes, the network's relay fee.
+ * A broadcast is taken only if it's a plain transaction spending coins the ledger has, each input's
+ * script the signature of the coin's own key over the digest from before SegWit (SIGHASH_ALL) and
+ * that key, paying no more than it spends; it's kept, waiting for a block.
+ */
+export class DashInsight {
+  private txs = new Map<string, { raw: Uint8Array; confirmed: boolean; time: number }>()
+  readonly sent: DashSent[] = []
+
+  constructor(private network: typeof btc.NETWORK) {}
+
+  private address(script: Uint8Array): string | undefined {
+    try {
+      return btc.Address(this.network).encode(btc.OutScript.decode(script))
+    } catch {
+      return undefined
+    }
+  }
+
+  private output(txid: string, vout: number): DashTx['outputs'][number] | undefined {
+    const t = this.txs.get(txid)
+    return t && readDashTx(t.raw).outputs[vout]
+  }
+
+  private spender(txid: string, vout: number): boolean {
+    return [...this.txs.values()].some((t) =>
+      readDashTx(t.raw).inputs.some((i) => i.txid === txid && i.vout === vout)
+    )
+  }
+
+  /** A transaction, in a block or waiting for one; its ID. */
+  add(raw: Uint8Array, confirmed = true, time = 1_790_000_000): string {
+    const txid = dashTxid(raw)
+    this.txs.set(txid, { raw, confirmed, time })
+    return txid
+  }
+
+  /** `value` duffs to `address`, in a plain transaction from a coin no one has; its ID. */
+  fund(address: string, value: bigint): string {
+    const tx = btc.RawTx.encode({
+      version: 2,
+      segwitFlag: false,
+      inputs: [
+        {
+          txid: randomBytes(32),
+          index: 0,
+          finalScriptSig: Uint8Array.of(0x51),
+          sequence: 0xffffffff
+        }
+      ],
+      outputs: [
+        { amount: value, script: btc.OutScript.encode(btc.Address(this.network).decode(address)) }
+      ],
+      lockTime: 0
+    })
+    return this.add(tx)
+  }
+
+  /**
+   * `value` duffs to `address` from Dash Platform: an asset unlock (special transaction type 9),
+   * no inputs, its payload after the lock time, as Dash Core writes one; its ID.
+   */
+  withdraw(address: string, value: bigint): string {
+    const script = btc.OutScript.encode(btc.Address(this.network).decode(address))
+    const payload = Uint8Array.from([
+      1,
+      ...new Uint8Array(8).fill(7),
+      0xe8,
+      3,
+      0,
+      0,
+      ...new Uint8Array(4),
+      ...new Uint8Array(32 + 96).fill(0x22)
+    ])
+    const amount = new Uint8Array(8)
+    new DataView(amount.buffer).setBigUint64(0, value, true)
+    const raw = Uint8Array.from([
+      ...[0x03, 0x00, 0x09, 0x00],
+      0,
+      1,
+      ...amount,
+      script.length,
+      ...script,
+      ...[0, 0, 0, 0],
+      payload.length,
+      ...payload
+    ])
+    return this.add(raw)
+  }
+
+  /** The transaction as Insight describes it. */
+  private describe(txid: string): object {
+    const { raw, confirmed, time } = this.txs.get(txid)!
+    const tx = readDashTx(raw)
+    const coins = (v: bigint): string =>
+      `${v / 100_000_000n}.${(v % 100_000_000n).toString().padStart(8, '0')}`
+    // a coin the ledger doesn't have (a funding transaction's) is shown as a coinbase's: from nowhere
+    const vin = tx.inputs.map((i, n) => {
+      const prev = this.output(i.txid, i.vout)
+      if (!prev) return { coinbase: hex.encode(i.script), sequence: i.sequence, n }
+      return {
+        txid: i.txid,
+        vout: i.vout,
+        sequence: i.sequence,
+        n,
+        scriptSig: { hex: hex.encode(i.script) },
+        addr: this.address(prev.script),
+        valueSat: Number(prev.value),
+        value: Number(prev.value) / 1e8,
+        doubleSpentTxID: null
+      }
+    })
+    const vout = tx.outputs.map((o, n) => {
+      const address = this.address(o.script)
+      return {
+        value: coins(o.value),
+        n,
+        scriptPubKey: {
+          hex: hex.encode(o.script),
+          ...(address ? { addresses: [address], type: 'pubkeyhash' } : {})
+        },
+        spentTxId: null,
+        spentIndex: null,
+        spentHeight: null
+      }
+    })
+    return {
+      txid,
+      version: tx.version,
+      ...(tx.type
+        ? {
+            type: tx.type,
+            extraPayloadSize: tx.payload.length,
+            extraPayload: hex.encode(tx.payload)
+          }
+        : {}),
+      locktime: tx.lockTime,
+      vin,
+      vout,
+      ...(tx.inputs.length && tx.inputs.every((i) => !this.output(i.txid, i.vout))
+        ? { isCoinBase: true }
+        : {}),
+      ...(confirmed
+        ? {
+            blockhash: '00'.repeat(32),
+            blockheight: 2_548_000,
+            confirmations: 6,
+            time,
+            blocktime: time
+          }
+        : { confirmations: 0, time }),
+      size: raw.length,
+      txlock: true
+    }
+  }
+
+  /** The ledger's transactions that pay or spend `address`, the newest first, those waiting before them. */
+  private touching(address: string): string[] {
+    return [...this.txs.entries()]
+      .filter(([, t]) => {
+        const tx = readDashTx(t.raw)
+        return (
+          tx.outputs.some((o) => this.address(o.script) === address) ||
+          tx.inputs.some((i) => {
+            const prev = this.output(i.txid, i.vout)
+            return prev && this.address(prev.script) === address
+          })
+        )
+      })
+      .sort(([, a], [, b]) => (b.confirmed ? b.time : Infinity) - (a.confirmed ? a.time : Infinity))
+      .map(([id]) => id)
+  }
+
+  /** The broadcast, read and checked; why not, or null once it's taken. */
+  private take(rawHex: string): string | null {
+    const raw = hex.decode(rawHex)
+    const tx = readDashTx(raw)
+    if (tx.type !== 0 || tx.version < 1 || tx.version > 3) return 'not a plain Dash transaction'
+    let spent = 0n
+    for (const [n, i] of tx.inputs.entries()) {
+      const coin = this.output(i.txid, i.vout)
+      if (!coin || this.spender(i.txid, i.vout))
+        return `bad-txns-inputs-missingorspent (input ${n})`
+      const [sig, key] = btc.Script.decode(i.script) as Uint8Array[]
+      if (!(sig instanceof Uint8Array) || !(key instanceof Uint8Array) || sig[sig.length - 1] !== 1)
+        return `mandatory-script-verify-flag-failed (input ${n})`
+      if (
+        hex.encode(btc.OutScript.encode({ type: 'pkh', hash: hash160(key) })) !==
+        hex.encode(coin.script)
+      )
+        return `mandatory-script-verify-flag-failed (input ${n}: another key)`
+      const digest = dashSighash(tx, n, coin.script)
+      if (!secp256k1.verify(sig.subarray(0, -1), digest, key, { prehash: false, format: 'der' }))
+        return `mandatory-script-verify-flag-failed (input ${n}: a bad signature)`
+      spent += coin.value
+    }
+    const paid = tx.outputs.reduce((n, o) => n + o.value, 0n)
+    if (paid > spent) return 'bad-txns-in-belowout'
+    const txid = this.add(raw, false)
+    this.sent.push({
+      txid,
+      inputs: tx.inputs.map(({ txid, vout }) => ({ txid, vout })),
+      outputs: tx.outputs.map((o) => ({ address: this.address(o.script), value: o.value })),
+      fee: spent - paid
+    })
+    return null
+  }
+
+  readonly answer = async (
+    method: string,
+    path: string,
+    body: string
+  ): Promise<[number, string]> => {
+    const json = (v: unknown): [number, string] => [200, JSON.stringify(v)]
+    if (method === 'POST' && path === '/tx/send') {
+      const { rawtx } = JSON.parse(body) as { rawtx: string }
+      const why = this.take(rawtx)
+      return why ? [400, `${why}. Code:-26`] : json({ txid: dashTxid(hex.decode(rawtx)) })
+    }
+    if (path === '/status?q=getInfo')
+      return json({
+        info: {
+          version: 220000,
+          blocks: 2548671,
+          relayfee: 0.00001,
+          errors: '',
+          network: 'livenet'
+        }
+      })
+    let m = /^\/rawtx\/([0-9a-f]{64})$/.exec(path)
+    if (m) {
+      const t = this.txs.get(m[1])
+      return t ? json({ rawtx: hex.encode(t.raw) }) : [404, 'Not found']
+    }
+    m = /^\/addr\/([^/?]+)\?noTxList=1$/.exec(path)
+    if (m) {
+      const address = m[1]
+      const touching = this.touching(address)
+      let balance = 0
+      let waiting = 0
+      for (const id of touching) {
+        const t = this.txs.get(id)!
+        const tx = readDashTx(t.raw)
+        let net = 0
+        for (const o of tx.outputs) if (this.address(o.script) === address) net += Number(o.value)
+        for (const i of tx.inputs) {
+          const prev = this.output(i.txid, i.vout)
+          if (prev && this.address(prev.script) === address) net -= Number(prev.value)
+        }
+        if (t.confirmed) balance += net
+        else waiting += net
+      }
+      const confirmedCount = touching.filter((id) => this.txs.get(id)!.confirmed).length
+      return json({
+        addrStr: address,
+        balance: balance / 1e8,
+        balanceSat: balance,
+        totalReceived: 0,
+        totalReceivedSat: 0,
+        totalSent: 0,
+        totalSentSat: 0,
+        unconfirmedBalance: waiting / 1e8,
+        unconfirmedBalanceSat: waiting,
+        unconfirmedTxApperances: touching.length - confirmedCount,
+        unconfirmedAppearances: touching.length - confirmedCount,
+        txApperances: confirmedCount,
+        txAppearances: confirmedCount
+      })
+    }
+    m = /^\/addrs\/([^/]+)\/utxo$/.exec(path)
+    if (m) {
+      const address = m[1]
+      return json(
+        this.touching(address).flatMap((id) =>
+          readDashTx(this.txs.get(id)!.raw)
+            .outputs.map((o, vout) => ({ o, vout }))
+            .filter(({ o, vout }) => this.address(o.script) === address && !this.spender(id, vout))
+            .map(({ o, vout }) => ({
+              address,
+              txid: id,
+              vout,
+              scriptPubKey: hex.encode(o.script),
+              amount: Number(o.value) / 1e8,
+              satoshis: Number(o.value),
+              ...(this.txs.get(id)!.confirmed
+                ? { height: 2_548_000, confirmations: 6 }
+                : { confirmations: 0 })
+            }))
+        )
+      )
+    }
+    m = /^\/txs\?address=([^&]+)&pageNum=0$/.exec(path)
+    if (m) {
+      const ids = this.touching(m[1])
+      return json({ pagesTotal: 1, txs: ids.slice(0, 10).map((id) => this.describe(id)) })
+    }
+    return [404, 'Not found']
+  }
 }

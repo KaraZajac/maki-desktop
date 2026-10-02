@@ -2,13 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Link } from '@shared/link'
 import { BtcAccount, Network, type BtcAccountValue, type NetworkValue } from '@shared/protocol'
 import {
-  LEGACY,
+  KINDS,
   NETWORKS_OF,
   parseDescriptor,
   type BtcAccountInfo,
-  type BtcChain
+  type BtcChain,
+  type BtcKind
 } from '@shared/btc-wallet'
-import { BITCOINCASH_APP, DOGECOIN_APP, LITECOIN_APP } from '@shared/wallet-apps'
+import {
+  BITCOINCASH_APP,
+  DASH_APP,
+  DIGIBYTE_APP,
+  DOGECOIN_APP,
+  LITECOIN_APP
+} from '@shared/wallet-apps'
 import type { Apps } from './apps-state'
 import { BitcoinWallet } from './BitcoinWallet'
 import { Button, Card, Glyph, Label, Segmented } from './ui'
@@ -25,6 +32,8 @@ interface CoinCard {
   wallets: string
   /** where its balance comes from, and who sees what */
   servers: string
+  /** its test network's name on the card; null for none maki desktop has a server for */
+  test?: string | null
 }
 
 const COINS: Record<Exclude<BtcChain, 'bitcoin'>, CoinCard> = {
@@ -54,7 +63,32 @@ const COINS: Record<Exclude<BtcChain, 'bitcoin'>, CoinCard> = {
     wallets: 'Electron Cash, Ledger and the other BIP44 wallets make',
     servers:
       'Balances and payments go through Bitcoin Cash’s Electrum servers (bch.imaginary.cash and others, as Electron Cash lists them), which see the account’s addresses and this computer’s IP address. The test network is chipnet.'
+  },
+  dash: {
+    name: 'Dash',
+    app: DASH_APP,
+    glyph: 'dash',
+    tint: 'bg-sapphire/10 text-sapphire',
+    wallets: 'Dash Core, Ledger and Trezor make',
+    servers:
+      'Balances and payments go through insight.dash.org, Dash’s own Insight API, which sees the account’s addresses and this computer’s IP address. maki signs payments alone: a masternode’s or Dash Platform’s transactions it refuses, and coins Dash Platform paid out it spends like any other.'
+  },
+  digibyte: {
+    name: 'DigiByte',
+    app: DIGIBYTE_APP,
+    glyph: 'digibyte',
+    tint: 'bg-blue/10 text-blue',
+    wallets: 'Ledger and the other BIP44 wallets make',
+    servers:
+      'Balances and payments go through digiexplorer.info, which sees the account’s addresses and this computer’s IP address; there’s no test network server it can use. maki won’t sign DigiDollar’s transactions or spend its coins of no DGB; it can’t see DigiAssets either, so a payment from an address that holds some would lose them, as one spending Omni coins on Bitcoin would.',
+    test: null
   }
+}
+/** Each kind of account as the card names it, and as maki's apps number it. */
+const KIND_OF: Record<BtcKind, [BtcAccountValue, string]> = {
+  segwit: [BtcAccount.SEGWIT, 'Native SegWit'],
+  taproot: [BtcAccount.TAPROOT, 'Taproot'],
+  legacy: [BtcAccount.LEGACY, 'Legacy']
 }
 
 function saved<T>(key: string, one: T, other: T): T {
@@ -75,8 +109,9 @@ function remember(key: string, value: number): void {
 
 /**
  * One of maki's accounts on a chain of Bitcoin's kind besides Bitcoin (Litecoin, Dogecoin, Bitcoin
- * Cash): a wallet here (balance, receive, send, activity) once maki's app for it has shared the
- * account's public key. Its transactions are Bitcoin's, so it's the Bitcoin wallet on its networks.
+ * Cash, Dash, DigiByte): a wallet here (balance, receive, send, activity) once maki's app for it has
+ * shared the account's public key. Its transactions are Bitcoin's, so it's the Bitcoin wallet on its
+ * networks.
  */
 export function BtcCoin({
   link,
@@ -88,15 +123,22 @@ export function BtcCoin({
   chain: Exclude<BtcChain, 'bitcoin'>
 }): React.JSX.Element {
   const coin = COINS[chain]
-  const legacy = LEGACY[chain]
+  const kinds = KINDS[chain]
   const linked = link.state.linked
-  const [network, setNetwork] = useState<NetworkValue>(() =>
+  const [chosenNetwork, setNetwork] = useState<NetworkValue>(() =>
     saved(`maki.${chain}Network`, Network.BITCOIN, Network.TESTNET)
   )
-  const [chosen, setKind] = useState<BtcAccountValue>(() =>
-    saved(`maki.${chain}Account`, BtcAccount.SEGWIT, BtcAccount.TAPROOT)
-  )
-  const kind = legacy ? BtcAccount.LEGACY : chosen
+  // a chain without a test network server is on its own
+  const network = coin.test === null ? Network.BITCOIN : chosenNetwork
+  const [chosen, setKind] = useState<BtcAccountValue>(() => {
+    try {
+      const v = Number(localStorage.getItem(`maki.${chain}Account`))
+      return kinds.map((k) => KIND_OF[k][0]).find((n) => n === v) ?? KIND_OF[kinds[0]][0]
+    } catch {
+      return KIND_OF[kinds[0]][0]
+    }
+  })
+  const kind = kinds.length === 1 ? KIND_OF[kinds[0]][0] : chosen
   const [descriptors, setDescriptors] = useState<string[] | null>(null)
   const [adding, setAdding] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -108,7 +150,8 @@ export function BtcCoin({
   }, [chain])
 
   const net = NETWORKS_OF[chain][network === Network.TESTNET ? 1 : 0]
-  const k = legacy ? 'legacy' : kind === BtcAccount.TAPROOT ? 'taproot' : 'segwit'
+  const k: BtcKind =
+    kind === BtcAccount.LEGACY ? 'legacy' : kind === BtcAccount.TAPROOT ? 'taproot' : 'segwit'
   const accountOf = (d: string): BtcAccountInfo | null => {
     try {
       return parseDescriptor(d, chain)
@@ -121,7 +164,14 @@ export function BtcCoin({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [descriptors, net, k]
   )
-  const which = k === 'taproot' ? 'taproot' : k === 'segwit' ? 'native SegWit' : ''
+  const which =
+    k === 'taproot'
+      ? 'taproot'
+      : k === 'segwit'
+        ? 'native SegWit'
+        : kinds.length > 1
+          ? 'legacy'
+          : ''
 
   const keep = async (list: string[]): Promise<void> => {
     await window.maki.bitcoin.save(list, chain, wallet)
@@ -167,14 +217,11 @@ export function BtcCoin({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Label>{coin.name}</Label>
         <div className="flex flex-wrap gap-2">
-          {!legacy && (
+          {kinds.length > 1 && (
             <Segmented
               label="Account"
-              value={chosen}
-              options={[
-                [BtcAccount.SEGWIT, 'Native SegWit'],
-                [BtcAccount.TAPROOT, 'Taproot']
-              ]}
+              value={kind}
+              options={kinds.map((k) => KIND_OF[k])}
               onChange={(v) => {
                 setKind(v)
                 setProblem(null)
@@ -182,19 +229,21 @@ export function BtcCoin({
               }}
             />
           )}
-          <Segmented
-            label="Network"
-            value={network}
-            options={[
-              [Network.BITCOIN, coin.name],
-              [Network.TESTNET, chain === 'bitcoincash' ? 'Chipnet' : 'Testnet']
-            ]}
-            onChange={(v) => {
-              setNetwork(v)
-              setProblem(null)
-              remember(`maki.${chain}Network`, v)
-            }}
-          />
+          {coin.test !== null && (
+            <Segmented
+              label="Network"
+              value={network}
+              options={[
+                [Network.BITCOIN, coin.name],
+                [Network.TESTNET, coin.test ?? (chain === 'bitcoincash' ? 'Chipnet' : 'Testnet')]
+              ]}
+              onChange={(v) => {
+                setNetwork(v)
+                setProblem(null)
+                remember(`maki.${chain}Network`, v)
+              }}
+            />
+          )}
         </div>
       </div>
       <WalletAppNeeded link={link} apps={apps} id={coin.app} name={coin.name} />
@@ -257,4 +306,10 @@ export const Dogecoin = (p: { link: Link; apps: Apps }): React.JSX.Element => (
 )
 export const BitcoinCash = (p: { link: Link; apps: Apps }): React.JSX.Element => (
   <BtcCoin {...p} chain="bitcoincash" />
+)
+export const Dash = (p: { link: Link; apps: Apps }): React.JSX.Element => (
+  <BtcCoin {...p} chain="dash" />
+)
+export const DigiByte = (p: { link: Link; apps: Apps }): React.JSX.Element => (
+  <BtcCoin {...p} chain="digibyte" />
 )
