@@ -9,7 +9,25 @@
 
 /** maki's account wallets, by the coin's name. */
 export type CoinId =
-  'tron' | 'xrp' | 'stellar' | 'kaspa' | 'cosmos' | 'near' | 'sui' | 'aptos' | 'cardano'
+  | 'tron'
+  | 'xrp'
+  | 'stellar'
+  | 'kaspa'
+  | 'near'
+  | 'sui'
+  | 'aptos'
+  | 'cardano'
+  // the Cosmos chains maki's Cosmos app serves
+  | 'cosmos'
+  | 'osmosis'
+  | 'celestia'
+  | 'noble'
+  | 'dydx'
+  | 'neutron'
+  | 'akash'
+  | 'axelar'
+  | 'babylon'
+  | 'juno'
 
 export interface CoinServers {
   /** base addresses, tried in turn: the coin's own network's, then its test network's */
@@ -27,8 +45,37 @@ export interface CoinServers {
   also?: { prefix: string; main: string[]; test: string[]; perSecond: number }
 }
 
+/** What each Cosmos chain's wallet asks of its REST API (cosmos.directory's, the same for every chain). */
+const ADDRESS = '[a-z]{3,12}1[02-9ac-hj-np-z]{38,58}'
+const cosmosRest = (main: string, test: string[] = []): CoinServers => ({
+  main: [main],
+  test,
+  get: new RegExp(
+    `^/(cosmos/bank/v1beta1/balances/${ADDRESS}|cosmos/auth/v1beta1/accounts/${ADDRESS}|feemarket/v1/gas_price/[a-z]{3,10}|osmosis/txfees/v1beta1/cur_eip_base_fee|cosmos/tx/v1beta1/txs\\?query=(message\\.sender|transfer\\.recipient)%3D%27${ADDRESS}%27&order_by=ORDER_BY_DESC&pagination\\.limit=10)$`
+  ),
+  post: /^\/cosmos\/tx\/v1beta1\/(txs|simulate)$/,
+  perSecond: 3
+})
+
 /** Each coin's servers; a coin's entry comes with its wallet. */
 export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
+  // the Cosmos chains maki's Cosmos app serves, each through cosmos.directory's REST proxy
+  cosmos: cosmosRest('https://rest.cosmos.directory/cosmoshub', [
+    'https://rest.testcosmos.directory/cosmosicsprovidertestnet'
+  ]),
+  osmosis: cosmosRest('https://rest.cosmos.directory/osmosis', [
+    'https://lcd.osmotest5.osmosis.zone'
+  ]),
+  celestia: cosmosRest('https://rest.cosmos.directory/celestia', [
+    'https://rest.testcosmos.directory/celestiatestnet4'
+  ]),
+  noble: cosmosRest('https://rest.cosmos.directory/noble'),
+  dydx: cosmosRest('https://rest.cosmos.directory/dydx'),
+  neutron: cosmosRest('https://rest.cosmos.directory/neutron'),
+  akash: cosmosRest('https://rest.cosmos.directory/akash'),
+  axelar: cosmosRest('https://rest.cosmos.directory/axelar'),
+  babylon: cosmosRest('https://rest.cosmos.directory/babylon'),
+  juno: cosmosRest('https://rest.cosmos.directory/juno'),
   // rippled's JSON-RPC, all at the root: the community's cluster first, then Ripple's own
   xrp: {
     main: ['https://xrplcluster.com', 'https://s1.ripple.com:51234', 'https://s2.ripple.com:51234'],

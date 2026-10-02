@@ -28,6 +28,8 @@ import {
   BITCOINCASH_APP,
   CARDANO_APP,
   CardanoApp,
+  COSMOS_APP,
+  CosmosApp,
   DOGECOIN_APP,
   KASPA_APP,
   KaspaApp,
@@ -445,8 +447,10 @@ export class Link {
   }
 
   /** maki's app for a chain of accounts, by its ID: its messages (`AccountApp`). */
-  accountApp(id: string, name: string): AccountApp {
-    let app = this.accountApps.get(id)
+  accountApp(id: string, name: string, chains?: [string, string | null]): AccountApp {
+    // one for each chain an app serves (Cosmos's serves several)
+    const key = chains ? `${id}|${chains[0]}` : id
+    let app = this.accountApps.get(key)
     if (!app) {
       const send: AppMessage = (a, message, timeoutMs) => this.appMessage(a, message, timeoutMs)
       // Kaspa's app speaks the same messages with fields of its own
@@ -455,8 +459,10 @@ export class Link {
           ? new KaspaApp(send, id, name)
           : id === CARDANO_APP
             ? new CardanoApp(send, id, name)
-            : new AccountApp(send, id, name)
-      this.accountApps.set(id, app)
+            : id === COSMOS_APP && chains
+              ? new CosmosApp(send, id, name, chains)
+              : new AccountApp(send, id, name)
+      this.accountApps.set(key, app)
     }
     return app
   }

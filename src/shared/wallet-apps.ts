@@ -35,6 +35,7 @@ export const MONERO_APP = 'com.leviathan.maki.monero'
 export const SOLANA_APP = 'com.leviathan.maki.solana'
 export const KASPA_APP = 'com.leviathan.maki.kaspa'
 export const CARDANO_APP = 'com.leviathan.maki.cardano'
+export const COSMOS_APP = 'com.leviathan.maki.cosmos'
 
 /** Talking to an app on maki (Link.appMessage): its answer, if maki has it and it answered. */
 export type AppMessage = (
@@ -831,5 +832,69 @@ export class CardanoApp extends AccountApp {
     return signature.length > 0 && signature.length % 96 === 0
       ? { approval: a.approval, reason: '', signature }
       : { approval: 'unavailable', reason: '', signature: null }
+  }
+}
+
+/**
+ * maki's Cosmos app, which serves the Cosmos Hub and the chains that share its keys: `A` and `D` name
+ * the chain (its ID, after the account's index), so maki shares and shows the address on that chain;
+ * `T` takes a sign doc, which names its chain itself.
+ */
+export class CosmosApp extends AccountApp {
+  constructor(
+    send: AppMessage,
+    id: string,
+    name: string,
+    /** the chain's ID on each network */
+    private chains: [string, string | null]
+  ) {
+    super(send, id, name)
+  }
+
+  private head(kind: number, network: 0 | 1, index: number): Uint8Array | null {
+    const chain = this.chains[network]
+    return chain === null
+      ? null
+      : new Writer()
+          .u8(kind)
+          .u8(network)
+          .u32(index)
+          .bytes16(new TextEncoder().encode(chain))
+          .finish()
+  }
+
+  override async account(
+    network: 0 | 1,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; publicKey: Uint8Array; address: string }> {
+    const none = { publicKey: new Uint8Array(), address: '' }
+    const m = this.head(0x41, network, index)
+    if (!m) return { approval: 'refused', reason: 'no test network maki knows', ...none }
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', ...none }
+    if (a.approval !== 'approved') return { approval: a.approval, reason: a.reason(), ...none }
+    try {
+      const publicKey = a.fixed(a.fixed(1)[0])
+      return { approval: a.approval, reason: '', publicKey, address: a.text() }
+    } catch {
+      return { approval: 'unavailable', reason: '', ...none }
+    }
+  }
+
+  override async address(
+    network: 0 | 1,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    const m = this.head(0x44, network, index)
+    if (!m) return { approval: 'refused', address: '' }
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '' }
+    let address = ''
+    try {
+      address = a.text()
+    } catch {
+      // locked, or no answer: nothing shown
+    }
+    return { approval: a.approval, address }
   }
 }

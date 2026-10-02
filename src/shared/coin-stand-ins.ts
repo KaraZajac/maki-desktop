@@ -1,6 +1,7 @@
 /**
  * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon,
- * Tron's TronGrid, api.kaspa.org, Aptos Labs' API, NEAR's RPC (with NearBlocks) and Koios, each answering what maki desktop's wallet asks of it, for the test phrase's
+ * Tron's TronGrid, api.kaspa.org, Aptos Labs' API, NEAR's RPC (with NearBlocks), Koios and a Cosmos
+ * chain's REST API, each answering what maki desktop's wallet asks of it, for the test phrase's
  * account holding some of the coin and of a token. What each is sent is read back here byte by byte,
  * apart from maki desktop's own encoding, and taken only if its signature checks out over the hash
  * the network has signed, by the account's own key, as the network would check it; each keeps what
@@ -1327,6 +1328,171 @@ export function cardanoStandIn(
       return json(202, id)
     }
     return [404, '{}']
+  }
+  return { answer, sent }
+}
+
+// ---- Cosmos ----
+
+/** The test phrase's key at m/44'/118'/0'/0/0 (as the Hub has it on chain), and someone to pay. */
+export const ATOM_KEY = base64.decode('Ak9OKtmcNNYLm6YoPJQxqEGK+GcyEpYfl6d7Y3f80Fti')
+const cosmosAddress = (key: Uint8Array, prefix: string): string =>
+  bech32.encode(prefix, bech32.toWords(ripemd160(sha256(key))))
+export const atomOf = (prefix: string): string => cosmosAddress(ATOM_KEY, prefix)
+export const atomThem = (prefix: string): string =>
+  bech32.encode(prefix, bech32.toWords(new Uint8Array(20).fill(0x55)))
+
+/** A send a Cosmos stand-in took. */
+export interface AtomSent {
+  hash: string
+  from: string
+  to: string
+  amount: bigint
+  denom: string
+  fee: bigint
+  gas: bigint
+  memo: string
+  sequence: bigint
+}
+
+/**
+ * A Cosmos chain's REST API, answering maki desktop's wallet on `chain` (its ID, address prefix,
+ * coin and gas price): the account (number 1425847, sequence 7) holds 25 of the coin and one coin
+ * from elsewhere; a send uses 71,234 gas. A transaction is taken if it's one bank send from the
+ * account, signed (Amino JSON, as the chain rebuilds the doc from the transaction: here, by hand)
+ * by the key it names, whose address is the sender, at the account's sequence, paying at least the
+ * gas price.
+ */
+export function cosmosStandIn(chain: {
+  id: string
+  prefix: string
+  denom: string
+  gasPrice: number
+}): {
+  answer: Answer
+  sent: AtomSent[]
+} {
+  const sent: AtomSent[] = []
+  const me = atomOf(chain.prefix)
+  let sequence = 7n
+  const json = (status: number, body: unknown): [number, string] => [status, JSON.stringify(body)]
+  const answer: Answer = async (method, path, body) => {
+    if (method === 'GET' && path === `/cosmos/bank/v1beta1/balances/${me}`)
+      return json(200, {
+        balances: [
+          {
+            denom: 'ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2',
+            amount: '5'
+          },
+          { denom: chain.denom, amount: '25000000' }
+        ]
+      })
+    if (method === 'GET' && path === `/cosmos/auth/v1beta1/accounts/${me}`)
+      return json(200, {
+        account: {
+          '@type': '/cosmos.auth.v1beta1.BaseAccount',
+          address: me,
+          account_number: '1425847',
+          sequence: sequence.toString()
+        }
+      })
+    if (method === 'GET' && path.startsWith('/feemarket/v1/gas_price/'))
+      return json(200, { price: { denom: chain.denom, amount: chain.gasPrice.toFixed(18) } })
+    if (method === 'GET' && path === '/osmosis/txfees/v1beta1/cur_eip_base_fee')
+      return json(200, { base_fee: chain.gasPrice.toFixed(18) })
+    if (method === 'GET' && path.startsWith('/cosmos/tx/v1beta1/txs?query=transfer.recipient'))
+      return json(200, {
+        tx_responses: [
+          {
+            txhash: 'A1'.repeat(32),
+            code: 0,
+            timestamp: '2026-09-30T12:00:00Z',
+            tx: {
+              body: {
+                messages: [
+                  {
+                    '@type': '/cosmos.bank.v1beta1.MsgSend',
+                    from_address: atomThem(chain.prefix),
+                    to_address: me,
+                    amount: [{ denom: chain.denom, amount: '25000000' }]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      })
+    if (method === 'GET' && path.startsWith('/cosmos/tx/v1beta1/txs?'))
+      return json(200, { tx_responses: [] })
+    if (
+      method === 'POST' &&
+      (path === '/cosmos/tx/v1beta1/simulate' || path === '/cosmos/tx/v1beta1/txs')
+    ) {
+      const raw = base64.decode((JSON.parse(body) as { tx_bytes: string }).tx_bytes)
+      // TxRaw: the body, the auth info, the signature
+      const tx = protoFields(raw)
+      const bodyF = protoFields(field<Uint8Array>(tx, 1)!)
+      const authF = protoFields(field<Uint8Array>(tx, 2)!)
+      const signature = tx.filter((f) => f.field === 3).map((f) => f.value as Uint8Array)
+      const any = protoFields(field<Uint8Array>(bodyF, 1)!)
+      if (new TextDecoder().decode(field<Uint8Array>(any, 1)) !== '/cosmos.bank.v1beta1.MsgSend')
+        return json(400, { code: 3, message: 'not a send' })
+      const send = protoFields(field<Uint8Array>(any, 2)!)
+      const text = (f: { field: number; value: bigint | Uint8Array }[], n: number): string =>
+        new TextDecoder().decode((field<Uint8Array>(f, n) ?? new Uint8Array()) as Uint8Array)
+      const coin = protoFields(field<Uint8Array>(send, 3)!)
+      const signer = protoFields(field<Uint8Array>(authF, 1)!)
+      const key = field<Uint8Array>(
+        protoFields(field<Uint8Array>(protoFields(field<Uint8Array>(signer, 1)!), 2)!),
+        1
+      )!
+      const mode = field<bigint>(
+        protoFields(field<Uint8Array>(protoFields(field<Uint8Array>(signer, 2)!), 1)!),
+        1
+      )
+      const seq = field<bigint>(signer, 3) ?? 0n
+      const feeF = protoFields(field<Uint8Array>(authF, 2)!)
+      const feeCoin = field<Uint8Array>(feeF, 1)
+      const fee = feeCoin ? BigInt(text(protoFields(feeCoin), 2)) : 0n
+      const gas = field<bigint>(feeF, 2) ?? 0n
+      const out: AtomSent = {
+        hash: hex.encode(sha256(raw)).toUpperCase(),
+        from: text(send, 1),
+        to: text(send, 2),
+        amount: BigInt(text(coin, 2)),
+        denom: text(coin, 1),
+        fee,
+        gas,
+        memo: text(bodyF, 2),
+        sequence: seq
+      }
+      if (out.from !== me || cosmosAddress(key, chain.prefix) !== me)
+        return json(400, { code: 4, message: 'unauthorized' })
+      if (path.endsWith('/simulate'))
+        return json(200, { gas_info: { gas_used: '71234', gas_wanted: '0' } })
+      // the doc the chain rebuilds from the transaction, Amino JSON, its keys in order
+      const doc = `{"account_number":"1425847","chain_id":"${chain.id}","fee":{"amount":${fee > 0n ? `[{"amount":"${fee}","denom":"${out.denom}"}]` : '[]'},"gas":"${gas}"},"memo":${JSON.stringify(out.memo).replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')},"msgs":[{"type":"cosmos-sdk/MsgSend","value":{"amount":[{"amount":"${out.amount}","denom":"${out.denom}"}],"from_address":"${out.from}","to_address":"${out.to}"}}],"sequence":"${seq}"}`
+      const respond = (code: number, log: string): [number, string] =>
+        json(200, { tx_response: { txhash: out.hash, code, raw_log: log } })
+      if (mode !== 127n || signature.length !== 1 || signature[0].length !== 64)
+        return respond(4, 'signature verification failed')
+      if (
+        !secp256k1.verify(signature[0], sha256(new TextEncoder().encode(doc)), key, {
+          prehash: false,
+          lowS: true
+        })
+      )
+        return respond(
+          4,
+          'signature verification failed; please verify account number (1425847) and chain-id'
+        )
+      if (seq !== sequence) return respond(32, 'account sequence mismatch')
+      if (Number(fee) < Number(gas) * chain.gasPrice) return respond(13, 'insufficient fee')
+      sequence++
+      sent.push(out)
+      return respond(0, '')
+    }
+    return json(404, { code: 5, message: 'not found' })
   }
   return { answer, sent }
 }

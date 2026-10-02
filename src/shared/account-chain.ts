@@ -79,7 +79,10 @@ export interface AccountChain {
   decimals: number
   /** the symbol its price is kept under (prices.ts) */
   priced: string
-  networks: [string, string]
+  /** its own network's name, and its test network's if maki's app knows one */
+  networks: [string, string | null]
+  /** the chain's ID on each network, for an app that serves more than one chain (Cosmos's) */
+  appChain?: [string, string | null]
   /** what an address looks like, as a hint where one goes */
   hint: string
   /** a payment's other field, where the chain has one people need (XRP's destination tag) */

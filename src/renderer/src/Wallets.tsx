@@ -4,6 +4,7 @@ import { CURRENCIES, type Currency } from '@shared/prices'
 import {
   BITCOIN_APP,
   BITCOINCASH_APP,
+  COSMOS_APP,
   DOGECOIN_APP,
   ETHEREUM_APP,
   LITECOIN_APP,
@@ -15,6 +16,7 @@ import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
 import { APTOS } from '@shared/coins/aptos'
 import { CARDANO } from '@shared/coins/cardano'
+import { CosmosCard } from './CosmosWallet'
 import { KASPA } from '@shared/coins/kaspa'
 import { NEAR } from '@shared/coins/near'
 import { STELLAR } from '@shared/coins/stellar'
@@ -146,6 +148,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'cardano',
     line: 'ADA and its tokens, the account Eternl, Lace, Yoroi and Ledger make.',
     Card: (p) => <AccountCard {...p} chain={CARDANO} />
+  },
+  {
+    app: COSMOS_APP,
+    name: 'Cosmos',
+    glyph: 'cosmos',
+    line: 'ATOM, and OSMO, TIA, USDC on Noble and the other chains that share its keys, the account Keplr and Ledger make.',
+    Card: CosmosCard
   }
 ]
 

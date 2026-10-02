@@ -4,18 +4,27 @@ import { money, PRICE_IDS, pricesUrl, readPrices, worth } from './prices'
 describe('prices', () => {
   it('asks about every coin and token maki knows, whatever is held', () => {
     expect(PRICE_IDS).toEqual([
+      'akash-network',
       'aptos',
+      'axelar',
+      'babylon',
       'bitcoin',
       'bitcoin-cash',
       'cardano',
+      'celestia',
+      'cosmos',
       'dai',
       'dogecoin',
+      'dydx-chain',
       'ethereum',
       'euro-coin',
+      'juno-network',
       'kaspa',
       'litecoin',
       'monero',
       'near',
+      'neutron-3',
+      'osmosis',
       'paypal-usd',
       'polygon-ecosystem-token',
       'ripple',
@@ -29,7 +38,7 @@ describe('prices', () => {
       'wrapped-bitcoin'
     ])
     expect(pricesUrl('eur')).toBe(
-      'https://api.coingecko.com/api/v3/simple/price?ids=aptos,bitcoin,bitcoin-cash,cardano,dai,dogecoin,ethereum,euro-coin,kaspa,litecoin,monero,near,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
+      'https://api.coingecko.com/api/v3/simple/price?ids=akash-network,aptos,axelar,babylon,bitcoin,bitcoin-cash,cardano,celestia,cosmos,dai,dogecoin,dydx-chain,ethereum,euro-coin,juno-network,kaspa,litecoin,monero,near,neutron-3,osmosis,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
     )
   })
 

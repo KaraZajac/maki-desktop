@@ -1,6 +1,6 @@
 /**
  * The Wallets page's account coins, end to end: the real app, offscreen, linked to the fake maki
- * running maki's XRP, Stellar, Tron, Kaspa, Aptos, NEAR and Cardano apps (the test phrase's accounts), each network stood in for
+ * running maki's XRP, Stellar, Tron, Kaspa, Aptos, NEAR, Cardano and Cosmos apps (the test phrase's accounts), each network stood in for
  * on this computer (coin-stand-ins.ts). For each, it adds the account from maki, sees what it holds,
  * and sends a token from it, pressing what a person would: the app makes the payment, maki's app
  * reads it and signs, and the stand-in takes it only if the signature checks out, by the account's
@@ -21,6 +21,9 @@ import {
   ADA_THEM,
   cardanoStandIn,
   APT_ME,
+  atomOf,
+  atomThem,
+  cosmosStandIn,
   APT_THEM,
   APT_USDC,
   aptosStandIn,
@@ -64,7 +67,7 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
   beforeAll(async () => {
     build()
     fake = await startFake(
-      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos', 'near', 'cardano'].flatMap((a) => [
+      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos', 'near', 'cardano', 'cosmos'].flatMap((a) => [
         '--app',
         join(APP_FIXTURES, `${a}.maki`)
       ])
@@ -303,6 +306,77 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
         ],
         witnesses: 1
       })
+    ])
+  }, 180_000)
+
+  it('adds the Cosmos Hub account and sends ATOM with a memo: maki signs the sign doc the chain rebuilds, it takes it', async () => {
+    const hub = cosmosStandIn({
+      id: 'cosmoshub-4',
+      prefix: 'cosmos',
+      denom: 'uatom',
+      gasPrice: 0.005
+    })
+    const server = await serve(hub.answer)
+    try {
+      const said = await drive(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--click', 'Cosmos Hub › Add from maki', '--until', 'as of'],
+          ...['--click', 'Cosmos Hub › Send', '--fill', `cosmos1…=${atomThem('cosmos')}`],
+          ...['--fill', '0.00=1.5', '--fill', 'if the recipient asked for one=thanks <3 & more'],
+          ...['--click', 'Cosmos Hub › Review on maki', '--until', 'Sent 1.5 ATOM']
+        ],
+        { MAKI_COIN_SERVER: server.url }
+      )
+      expect(said).toContain('Sent 1.5 ATOM')
+      expect(said).toMatch(/25[\s\S]*ATOM/)
+    } finally {
+      server.close()
+    }
+    expect(hub.sent).toEqual([
+      expect.objectContaining({
+        from: atomOf('cosmos'),
+        to: atomThem('cosmos'),
+        amount: 1_500_000n,
+        denom: 'uatom',
+        memo: 'thanks <3 & more'
+      })
+    ])
+  }, 180_000)
+
+  it('chooses Osmosis, has maki share the account on it, and sends OSMO', async () => {
+    const osmosis = cosmosStandIn({
+      id: 'osmosis-1',
+      prefix: 'osmo',
+      denom: 'uosmo',
+      gasPrice: 0.03
+    })
+    const server = await serve(osmosis.answer)
+    try {
+      const said = await drive(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--choose', 'osmosis', '--click', 'Osmosis › Add from maki'],
+          ...[
+            '--until',
+            'as of',
+            '--click',
+            'Osmosis › Send',
+            '--fill',
+            `osmo1…=${atomThem('osmo')}`
+          ],
+          ...['--fill', '0.00=2', '--click', 'Osmosis › Review on maki', '--until', 'Sent 2 OSMO']
+        ],
+        { MAKI_COIN_SERVER: server.url }
+      )
+      expect(said).toContain('Sent 2 OSMO')
+    } finally {
+      server.close()
+    }
+    expect(osmosis.sent).toEqual([
+      expect.objectContaining({ from: atomOf('osmo'), amount: 2_000_000n, denom: 'uosmo' })
     ])
   }, 180_000)
 })

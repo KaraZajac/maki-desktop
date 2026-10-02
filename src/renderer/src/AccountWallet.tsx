@@ -47,14 +47,19 @@ function savedNetwork(chain: AccountChain): 0 | 1 {
 export function AccountCard({
   link,
   apps,
-  chain
+  chain,
+  choose
 }: {
   link: Link
   apps: Apps
   chain: AccountChain
+  /** beside the network: a way to choose among the chains one app serves */
+  choose?: React.ReactNode
 }): React.JSX.Element {
   const linked = link.state.linked
-  const [network, setNetwork] = useState<0 | 1>(() => savedNetwork(chain))
+  const [chosen, setNetwork] = useState<0 | 1>(() => savedNetwork(chain))
+  // a chain without a test network maki's app knows is on its own
+  const network = chain.networks[1] === null ? 0 : chosen
   const [all, setAll] = useState<SharedAccount[] | null>(null)
   const [adding, setAdding] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -75,7 +80,7 @@ export function AccountCard({
     setProblem(null)
     try {
       link.note(`sharing the ${chain.name} account: approve on maki`)
-      const r = await link.accountApp(chain.app, chain.name).account(network, 0)
+      const r = await link.accountApp(chain.app, chain.name, chain.appChain).account(network, 0)
       if (r.approval !== 'approved') {
         setProblem(
           r.approval === 'no match'
@@ -108,23 +113,28 @@ export function AccountCard({
     <Card className="p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Label>{chain.name}</Label>
-        <Segmented
-          label="Network"
-          value={network}
-          options={[
-            [0, chain.networks[0]],
-            [1, chain.networks[1]]
-          ]}
-          onChange={(v) => {
-            setNetwork(v)
-            setProblem(null)
-            try {
-              localStorage.setItem(`maki.${chain.id}Network`, String(v))
-            } catch {
-              // remembered for this session only
-            }
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          {choose}
+          {chain.networks[1] !== null && (
+            <Segmented
+              label="Network"
+              value={network}
+              options={[
+                [0, chain.networks[0]],
+                [1, chain.networks[1]]
+              ]}
+              onChange={(v) => {
+                setNetwork(v)
+                setProblem(null)
+                try {
+                  localStorage.setItem(`maki.${chain.id}Network`, String(v))
+                } catch {
+                  // remembered for this session only
+                }
+              }}
+            />
+          )}
+        </div>
       </div>
       <WalletAppNeeded link={link} apps={apps} id={chain.app} name={chain.name} />
 
@@ -416,7 +426,9 @@ function Receive({
     setChecked(null)
     try {
       link.note(`the ${chain.name} address is on maki's screen: compare it`)
-      const r = await link.accountApp(chain.app, chain.name).address(account.network, account.index)
+      const r = await link
+        .accountApp(chain.app, chain.name, chain.appChain)
+        .address(account.network, account.index)
       setChecked({ approval: r.approval, same: r.address === '' || r.address === address })
     } catch (e) {
       link.note(`couldn't check the address: ${(e as Error).message}`)
@@ -569,7 +581,7 @@ function Send({
       setStage('maki')
       link.note(`${chain.name} payment sent: go through it on maki`)
       const r = await link
-        .accountApp(chain.app, chain.name)
+        .accountApp(chain.app, chain.name, chain.appChain)
         .sign(network, account.index, payment.payload)
       if (!r.signature) {
         link.note(`${chain.name} payment: ${r.approval}`)
