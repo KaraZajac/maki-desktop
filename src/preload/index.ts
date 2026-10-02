@@ -1,11 +1,29 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { BrowserFamily, BrowsersView } from '../shared/bridge-types'
+import type { WalletId } from '../shared/wallets'
+
+/**
+ * A save of what's kept for one of maki's wallets, which names the wallet it's for: main turns it
+ * down, saying why, unless that's still the wallet in use (maki may have opened another
+ * meanwhile). Thrown here.
+ */
+async function kept(save: Promise<string | null>): Promise<void> {
+  const refused = await save
+  if (refused) throw new Error(refused)
+}
 
 const api = {
   relay: (host: string, port: number, packet: Uint8Array): Promise<Uint8Array> =>
     ipcRenderer.invoke('roughtime:relay', host, port, packet),
   reportLink: (report: { linked: boolean; via: string | null; timeState: number | null }): void =>
     ipcRenderer.send('link:report', report),
+  wallets: {
+    /**
+     * Which of maki's wallets what's kept is read and written for, from now on: a passphrase
+     * wallet's fingerprint, or null for the phrase's own (shared/wallets.ts).
+     */
+    use: (wallet: WalletId): Promise<void> => ipcRenderer.invoke('wallet:use', wallet)
+  },
   onTraySync: (listener: () => void): (() => void) => {
     const handler = (): void => listener()
     ipcRenderer.on('tray:sync', handler)
@@ -104,7 +122,7 @@ const api = {
       if ('error' in r) throw new Error(r.error)
       return r
     },
-    /** the accounts maki shared, by coin, kept */
+    /** the accounts maki shared, by coin, kept for the wallet in use */
     load: (): Promise<
       Partial<
         Record<
@@ -113,14 +131,16 @@ const api = {
         >
       >
     > => ipcRenderer.invoke('acct:load'),
+    /** kept for `wallet`, while it's the one in use */
     save: (
-      kept: Partial<
+      accounts: Partial<
         Record<
           import('../shared/coin-servers').CoinId,
           import('../shared/coin-servers').SharedAccount[]
         >
-      >
-    ): Promise<void> => ipcRenderer.invoke('acct:save', kept)
+      >,
+      wallet: WalletId
+    ): Promise<void> => kept(ipcRenderer.invoke('acct:save', accounts, wallet))
   },
   bitcoin: {
     /** Esplora (mempool.space, litecoinspace.org): a path under the network's API; with a body, a broadcast */
@@ -134,13 +154,15 @@ const api = {
       if ('error' in r) throw new Error(r.error)
       return r.text
     },
-    /** the accounts' descriptors maki shared, kept: Bitcoin's, or Litecoin's */
+    /** the accounts' descriptors maki shared, kept for the wallet in use: each chain's its own */
     load: (chain: import('../shared/btc-wallet').BtcChain = 'bitcoin'): Promise<string[]> =>
       ipcRenderer.invoke('btc:load', chain),
+    /** kept for `wallet`, while it's the one in use */
     save: (
       descriptors: string[],
-      chain: import('../shared/btc-wallet').BtcChain = 'bitcoin'
-    ): Promise<void> => ipcRenderer.invoke('btc:save', descriptors, chain),
+      chain: import('../shared/btc-wallet').BtcChain,
+      wallet: WalletId
+    ): Promise<void> => kept(ipcRenderer.invoke('btc:save', descriptors, chain, wallet)),
     /** an open dialog for a multisig wallet's file (a descriptor, or Coldcard's multisig file); its text, or null */
     openWallet: (): Promise<{ path: string; text: string } | null> =>
       ipcRenderer.invoke('btc:openWallet'),
@@ -149,9 +171,14 @@ const api = {
       ipcRenderer.invoke('btc:saveText', name, text)
   },
   monero: {
-    /** what maki desktop keeps of the Monero wallet (its view key, and its own wallet's state) */
+    /**
+     * what maki desktop keeps of the Monero wallet (its view key, and its own wallet's state), for
+     * the wallet in use
+     */
     load: (): Promise<unknown> => ipcRenderer.invoke('xmr:load'),
-    save: (state: unknown): Promise<void> => ipcRenderer.invoke('xmr:save', state),
+    /** kept for `wallet`, while it's the one in use */
+    save: (state: unknown, wallet: WalletId): Promise<void> =>
+      kept(ipcRenderer.invoke('xmr:save', state, wallet)),
     /** POST to a Monero node's path; the answer's bytes */
     node: (url: string, path: string, body: Uint8Array | string): Promise<Uint8Array> =>
       ipcRenderer.invoke('xmr:node', url, path, body),
@@ -248,9 +275,11 @@ const api = {
       params: unknown[]
     ): Promise<{ result?: unknown; error?: { code: number; message: string } }> =>
       ipcRenderer.invoke('eth:rpc', url, method, params),
+    /** the sites connected, for the wallet in use */
     load: (): Promise<import('../shared/ethereum').EthState> => ipcRenderer.invoke('eth:load'),
-    save: (state: import('../shared/ethereum').EthState): Promise<void> =>
-      ipcRenderer.invoke('eth:save', state)
+    /** kept for `wallet`, while it's the one in use */
+    save: (state: import('../shared/ethereum').EthState, wallet: WalletId): Promise<void> =>
+      kept(ipcRenderer.invoke('eth:save', state, wallet))
   },
   solana: {
     rpc: (
@@ -259,9 +288,11 @@ const api = {
       params: unknown[]
     ): Promise<{ result?: unknown; error?: { code: number; message: string } }> =>
       ipcRenderer.invoke('sol:rpc', url, method, params),
+    /** the sites connected, for the wallet in use */
     load: (): Promise<import('../shared/solana').SolState> => ipcRenderer.invoke('sol:load'),
-    save: (state: import('../shared/solana').SolState): Promise<void> =>
-      ipcRenderer.invoke('sol:save', state)
+    /** kept for `wallet`, while it's the one in use */
+    save: (state: import('../shared/solana').SolState, wallet: WalletId): Promise<void> =>
+      kept(ipcRenderer.invoke('sol:save', state, wallet))
   },
   app: {
     /** maki desktop's version, as its package.json says */

@@ -40,40 +40,44 @@ function savedPage(): Page {
 
 export default function App(): React.JSX.Element {
   const link = useLink(
-    useMemo(
-      () =>
-        new Link(
-          window.maki.relay,
-          undefined,
-          {
-            save: (data) => window.maki.backups.save(data),
-            latest: () => window.maki.backups.latest()
+    useMemo(() => {
+      const made = new Link(
+        window.maki.relay,
+        undefined,
+        {
+          save: (data) => window.maki.backups.save(data),
+          latest: () => window.maki.backups.latest()
+        },
+        {
+          rpc: async (url, method, params) => {
+            const r = await window.maki.ethereum.rpc(url, method, params)
+            if (r.error) throw new ProviderError(r.error.code, r.error.message)
+            return r.result
           },
-          {
-            rpc: async (url, method, params) => {
-              const r = await window.maki.ethereum.rpc(url, method, params)
-              if (r.error) throw new ProviderError(r.error.code, r.error.message)
-              return r.result
-            },
-            store: {
-              load: () => window.maki.ethereum.load(),
-              save: (s) => window.maki.ethereum.save(s)
-            }
-          },
-          {
-            rpc: async (url, method, params) => {
-              const r = await window.maki.solana.rpc(url, method, params)
-              if (r.error) throw new ProviderError(r.error.code, r.error.message)
-              return r.result
-            },
-            store: {
-              load: () => window.maki.solana.load(),
-              save: (s) => window.maki.solana.save(s)
-            }
+          store: {
+            load: () => window.maki.ethereum.load(),
+            save: (s, wallet) => window.maki.ethereum.save(s, wallet)
           }
-        ),
-      []
-    )
+        },
+        {
+          rpc: async (url, method, params) => {
+            const r = await window.maki.solana.rpc(url, method, params)
+            if (r.error) throw new ProviderError(r.error.code, r.error.message)
+            return r.result
+          },
+          store: {
+            load: () => window.maki.solana.load(),
+            save: (s, wallet) => window.maki.solana.save(s, wallet)
+          }
+        }
+      )
+      // which wallet's files main reads and writes, in step with the link's from the start: told
+      // the moment the link hears of another, before anything reads for it (messages to main go in
+      // order)
+      void window.maki.wallets.use(made.wallet)
+      made.onWallet = (wallet) => void window.maki.wallets.use(wallet)
+      return made
+    }, [])
   )
   const apps = useApps(link)
   const bunker = useBunker(link)

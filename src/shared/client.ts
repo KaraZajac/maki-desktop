@@ -56,6 +56,15 @@ export interface Status {
   tzOffsetS: number
 }
 
+/**
+ * Which wallet maki's wallet apps have (WALLET_STATUS): none while maki is locked or has no
+ * recovery phrase yet; the phrase's own ('standard'); or a passphrase wallet, one its owner opened
+ * on maki with a BIP39 passphrase typed there (the passphrase never crosses the link). With a
+ * wallet, its master key's fingerprint as wallets write it: eight lowercase hex digits, `73c5da0a`.
+ */
+export type WalletStatus =
+  { kind: 'none'; fingerprint: null } | { kind: 'standard' | 'passphrase'; fingerprint: string }
+
 export interface Challenge {
   id: number
   host: string
@@ -157,6 +166,39 @@ export class MakiClient {
     const status = { timeState: r.u8() as TimeStateValue, utcMs: r.u64(), tzOffsetS: r.i32() }
     r.end()
     return status
+  }
+
+  /**
+   * Which wallet maki's wallet apps have; null from firmware that doesn't know the question (from
+   * before passphrase wallets: its wallet apps have only the phrase's own wallet, and it doesn't
+   * say which). An answer that isn't exactly as PROTOCOL.md has it is refused: a kind it doesn't
+   * name, a fingerprint with no wallet, a byte too many or too few.
+   */
+  async walletStatus(): Promise<WalletStatus | null> {
+    let body: Uint8Array
+    try {
+      body = (await this.request(Kind.WALLET_STATUS)).body
+    } catch (e) {
+      if (e instanceof MakiError && ErrorCode[e.code] === 'unknown kind') return null
+      throw e
+    }
+    const r = new Reader(body)
+    const kind = r.u8()
+    const fingerprint = r.u32()
+    r.end()
+    if (kind === 0) {
+      if (fingerprint !== 0)
+        throw new Error('maki said its wallet apps have no wallet, and gave a fingerprint')
+      return { kind: 'none', fingerprint: null }
+    }
+    if (kind !== 1 && kind !== 2)
+      throw new Error(
+        `maki said its wallet apps have a kind of wallet maki desktop doesn’t know (${kind})`
+      )
+    return {
+      kind: kind === 1 ? 'standard' : 'passphrase',
+      fingerprint: fingerprint.toString(16).padStart(8, '0')
+    }
   }
 
   async timeChallenge(): Promise<Challenge[]> {

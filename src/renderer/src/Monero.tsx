@@ -35,6 +35,8 @@ export function Monero({ link, apps }: { link: Link; apps: Apps }): React.JSX.El
   const [problem, setProblem] = useState<string | null>(null)
   const [kept, setKept] = useState<KeptMonero | null>(null)
   const [watching, setWatching] = useState(false)
+  // the wallet this card is (the page starts it again for another): what it keeps is that one's
+  const [wallet] = useState(() => link.wallet)
 
   useEffect(() => {
     void window.maki.monero.load().then((v) => setKept(readKept(v)))
@@ -52,7 +54,7 @@ export function Monero({ link, apps }: { link: Link; apps: Apps }): React.JSX.El
   latest.current = kept
   const keep = async (next: KeptMonero): Promise<void> => {
     latest.current = next
-    await window.maki.monero.save(next)
+    await window.maki.monero.save(next, wallet)
     setKept(next)
   }
 

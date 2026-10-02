@@ -217,6 +217,8 @@ export function Wallets({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
   const inUse = installed ?? remembered ?? FIRST
   const cards = WALLETS.filter((w) => inUse.includes(w.app))
   const others = WALLETS.filter((w) => !inUse.includes(w.app))
+  // the cards are the wallet in use's: when maki opens another, they start again, reading its
+  const wallet = link.wallet
 
   return (
     <div className="rise space-y-6">
@@ -245,9 +247,10 @@ export function Wallets({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
           </label>
         }
       />
+      {wallet !== null && <PassphraseWallet link={link} wallet={wallet} />}
       <PricesContext.Provider value={{ currency, prices }}>
         {cards.map(({ app, Card: WalletCard }) => (
-          <WalletCard key={app} link={link} apps={apps} />
+          <WalletCard key={`${app} ${wallet ?? 'phrase'}`} link={link} apps={apps} />
         ))}
       </PricesContext.Provider>
       {others.length > 0 && (
@@ -264,6 +267,32 @@ export function Wallets({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
           </ul>
         </Card>
       )}
+    </div>
+  )
+}
+
+/**
+ * Which wallet the page is, when it's a passphrase wallet's: one maki's owner opened on maki with a
+ * BIP39 passphrase typed there. maki's wallet apps answer for the wallet open on maki, and maki
+ * desktop keeps each one's accounts apart.
+ */
+function PassphraseWallet({ link, wallet }: { link: Link; wallet: string }): React.JSX.Element {
+  const s = link.state
+  const said = s.linked ? s.wallet : null
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-lavender/30 bg-lavender/[0.05] p-4">
+      <Glyph name="key" className="mt-0.5 h-4 w-4 text-lavender" />
+      <p className="min-w-0 flex-1 text-sm leading-relaxed text-subtext0">
+        <span className="font-semibold text-fg">
+          {said?.kind === 'passphrase'
+            ? `maki has passphrase wallet ${wallet} open:`
+            : said?.kind === 'none'
+              ? `maki is locked. These are passphrase wallet ${wallet}’s accounts,`
+              : `These are passphrase wallet ${wallet}’s accounts,`}
+        </span>{' '}
+        {said?.kind === 'passphrase' ? 'these are its accounts.' : 'the wallet maki had open last.'}{' '}
+        The phrase’s own wallet’s are kept for when it’s open again.
+      </p>
     </div>
   )
 }

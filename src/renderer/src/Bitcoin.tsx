@@ -67,9 +67,11 @@ export function Bitcoin({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
   const [descriptors, setDescriptors] = useState<string[] | null>(null)
   const [adding, setAdding] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // the wallet this card is (the page starts it again for another): what it keeps is that one's
+  const [wallet] = useState(() => link.wallet)
 
   useEffect(() => {
-    void window.maki.bitcoin.load().then(setDescriptors)
+    void window.maki.bitcoin.load('bitcoin').then(setDescriptors)
   }, [])
 
   const net = network === Network.TESTNET ? 'test' : 'bitcoin'
@@ -80,7 +82,7 @@ export function Bitcoin({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
   )
 
   const keep = async (list: string[]): Promise<void> => {
-    await window.maki.bitcoin.save(list)
+    await window.maki.bitcoin.save(list, 'bitcoin', wallet)
     setDescriptors(list)
   }
 

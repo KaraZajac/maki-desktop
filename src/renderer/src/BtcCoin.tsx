@@ -100,6 +100,8 @@ export function BtcCoin({
   const [descriptors, setDescriptors] = useState<string[] | null>(null)
   const [adding, setAdding] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // the wallet this card is (the page starts it again for another): what it keeps is that one's
+  const [wallet] = useState(() => link.wallet)
 
   useEffect(() => {
     void window.maki.bitcoin.load(chain).then(setDescriptors)
@@ -122,7 +124,7 @@ export function BtcCoin({
   const which = k === 'taproot' ? 'taproot' : k === 'segwit' ? 'native SegWit' : ''
 
   const keep = async (list: string[]): Promise<void> => {
-    await window.maki.bitcoin.save(list, chain)
+    await window.maki.bitcoin.save(list, chain, wallet)
     setDescriptors(list)
   }
 

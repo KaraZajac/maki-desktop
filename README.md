@@ -228,7 +228,8 @@ MAKI_AGE=/path/to/age npm test     # age-plugin-maki with the real age (or age o
 MAKI_E2E=1 npx vitest run src/e2e
                      # the app itself, offscreen, pressed through: the Wallets page sends from
                      # each account (and speeds one up; Solana's USDC through LiteSVM), and
-                     # offers the Bitcoin app to a maki without it; the Apps page installs and
+                     # offers the Bitcoin app to a maki without it, and keeps a passphrase
+                     # wallet's accounts apart from the phrase's own; the Apps page installs and
                      # removes
 MAKI_REGTEST=1 npm test
                      # Monero against a private chain: scripts/regtest.sh starts monerod and
@@ -279,7 +280,10 @@ To look at the UI without a window appearing: `npm run build && npx electron scr
 out.png [--fake] [--size WxH] [--click [SECTION › ]TEXT | --fill PLACEHOLDER=TEXT | --wait MS | --until TEXT]...
 [--scroll TEXT] [--dump FILE]`, e.g. `--fake --click Wallets --click "Add from maki" --until BTC`,
 or `--fake --click Apps --size 1080x1500` for the whole Apps page. The steps run in order; the
-script's header says what each does. The end-to-end tests drive the app with it.
+script's header says what each does. The end-to-end tests drive the app with it. Its settings and
+anything else it keeps go in a throwaway folder; `MAKI_OFFSCREEN_DATA=FOLDER` puts them in FOLDER
+instead, and leaves them, to run the app again over them (the passphrase wallets' end-to-end test
+does).
 
 ## Layout
 
@@ -293,6 +297,10 @@ src/shared/ethereum.ts   the EIP-1193 methods sites call, answered from maki and
 src/shared/btc-wallet.ts the Bitcoin wallet: descriptors, the gap-limit scan, PSBTs maki reads
 src/shared/eth-wallet.ts the Ethereum wallet: holdings on each network, sends through maki
 src/shared/wallet-apps.ts maki's wallet apps, Bitcoin, Ethereum and Monero: their messages, over APP_MESSAGE
+src/shared/wallets.ts    which of maki's wallets (the phrase's own, a passphrase wallet) what wallet
+                         apps shared is kept for, and the files each one's go in
+src/main/wallet-files.ts the wallet in use, as the window says, and its files; a save for another is
+                         turned down
 src/shared/monero/       Monero: keys and addresses with the view key (xmr.ts), transactions and
                          blocks, the node's RPC (node.ts, epee.ts), scanning, decoys as wallet2 picks
                          them, the wallet (wallet.ts) and paying (send.ts, the request maki signs);

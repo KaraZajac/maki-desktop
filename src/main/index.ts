@@ -39,6 +39,7 @@ import { allowed, COIN_SERVERS, type CoinId, type CoinResponse } from '../shared
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { writeAtomic } from './atomic'
+import { loadDescriptors, saveDescriptors, WalletFiles } from './wallet-files'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import {
   addCustomBrowser,
@@ -100,13 +101,15 @@ const startHidden = process.argv.includes('--hidden')
 // MAKI_OFFSCREEN=1 renders without ever showing a window: scripts/screenshot.cjs, UI tests
 const offscreen = process.env['MAKI_OFFSCREEN'] === '1'
 // screenshots and UI tests keep their settings and backups out of the real app data, and leave
-// nothing behind (MAKI_OFFSCREEN_KEEP=1 keeps them, to look at)
+// nothing behind (MAKI_OFFSCREEN_KEEP=1 keeps them, to look at; MAKI_OFFSCREEN_DATA=FOLDER keeps
+// them in a folder of the caller's, for tests that start the app again over what it kept)
 if (offscreen) {
-  const scratch = join(tmpdir(), `maki-offscreen-${process.pid}`)
+  const own = process.env['MAKI_OFFSCREEN_DATA']
+  const scratch = own || join(tmpdir(), `maki-offscreen-${process.pid}`)
   app.setPath('userData', scratch)
   // Chromium writes the last of it as it shuts down, after this process's own exit handlers: a
   // watcher sweeps it up once the process is gone, crashed or not
-  if (process.env['MAKI_OFFSCREEN_KEEP'] !== '1' && process.platform !== 'win32') {
+  if (!own && process.env['MAKI_OFFSCREEN_KEEP'] !== '1' && process.platform !== 'win32') {
     spawn(
       'sh',
       ['-c', `while kill -0 ${process.pid} 2>/dev/null; do sleep 0.5; done; rm -rf "$0"`, scratch],
@@ -526,8 +529,15 @@ function ipc(): void {
     if (typeof url === 'string' && /^https:\/\/[^\s]+$/.test(url)) return shell.openExternal(url)
   })
 
+  // which of maki's wallets what wallet apps shared, and what sites were given, is kept for
+  // (wallet-files.ts): the window says, the moment its link hears maki has another; the phrase's
+  // own until it does. Each save below names the wallet it's for, and is kept only while that's
+  // the one in use (the reason it isn't goes back, for the window to show)
+  const wallets = new WalletFiles(() => app.getPath('userData'))
+  ipcMain.handle('wallet:use', (_e, wallet: unknown) => wallets.use(wallet))
+
   // Ethereum: which sites are connected, and each site's network; and the networks' servers
-  const ethFile = (): string => join(app.getPath('userData'), 'ethereum.json')
+  const ethFile = (): string => wallets.path('ethereum')
   const ethState = (v: unknown): EthState | null => {
     const o = v as EthState | null
     const strings = (r: unknown): boolean =>
@@ -545,9 +555,12 @@ function ipc(): void {
       return { connected: {}, chains: {} }
     }
   })
-  ipcMain.handle('eth:save', async (_e, state: unknown) => {
+  ipcMain.handle('eth:save', async (_e, state: unknown, wallet: unknown) => {
+    const refused = wallets.refuses(wallet)
+    if (refused) return refused
     const s = ethState(state)
     if (s) await writeAtomic(ethFile(), JSON.stringify(s))
+    return null
   })
   ipcMain.handle('eth:rpc', async (_e, url: string, method: string, params: unknown[]) => {
     // only the networks maki desktop knows: the renderer can't send this process anywhere else
@@ -587,7 +600,7 @@ function ipc(): void {
     return { error: { code: -32603, message: `the network is unreachable: ${unreachable}` } }
   })
   // Solana: which sites are connected; and the networks' servers, as for Ethereum
-  const solFile = (): string => join(app.getPath('userData'), 'solana.json')
+  const solFile = (): string => wallets.path('solana')
   const solState = (v: unknown): SolState | null => {
     const c = (v as SolState | null)?.connected
     return typeof c === 'object' &&
@@ -603,9 +616,12 @@ function ipc(): void {
       return { connected: {} }
     }
   })
-  ipcMain.handle('sol:save', async (_e, state: unknown) => {
+  ipcMain.handle('sol:save', async (_e, state: unknown, wallet: unknown) => {
+    const refused = wallets.refuses(wallet)
+    if (refused) return refused
     const s = solState(state)
     if (s) await writeAtomic(solFile(), JSON.stringify(s))
+    return null
   })
   ipcMain.handle('sol:rpc', async (_e, url: string, method: string, params: unknown[]) => {
     // only the networks maki desktop knows; MAKI_SOL_RPC (tests) is a server to use instead
@@ -819,7 +835,7 @@ function ipc(): void {
     }
   )
   // the accounts maki shared with maki desktop, by coin, so they show without asking maki again
-  const accountsFile = (): string => join(app.getPath('userData'), 'accounts.json')
+  const accountsFile = (): string => wallets.path('accounts')
   ipcMain.handle('acct:load', async () => {
     try {
       const kept = JSON.parse(await readFile(accountsFile(), 'utf8')) as unknown
@@ -828,10 +844,13 @@ function ipc(): void {
       return {}
     }
   })
-  ipcMain.handle('acct:save', async (_e, kept: unknown) => {
+  ipcMain.handle('acct:save', async (_e, kept: unknown, wallet: unknown) => {
+    const refused = wallets.refuses(wallet)
+    if (refused) return refused
     const text = JSON.stringify(kept)
     if (text.length > 64 * 1024) throw new Error('too much to keep')
     await writeAtomic(accountsFile(), text)
+    return null
   })
   // what the coins are worth, if the owner asks to see it: CoinGecko, the same question for
   // everyone (every coin and token maki knows), at most once a minute a currency
@@ -961,7 +980,7 @@ function ipc(): void {
 
   // Monero: the view key maki shared (for this computer to watch the wallet, and to read and write
   // the Monero GUI's files), and maki desktop's own wallet's state; readable by this user alone
-  const xmrFile = (): string => join(app.getPath('userData'), 'monero.json')
+  const xmrFile = (): string => wallets.path('monero')
   ipcMain.handle('xmr:load', async () => {
     try {
       return JSON.parse(await readFile(xmrFile(), 'utf8')) as unknown
@@ -969,11 +988,14 @@ function ipc(): void {
       return null
     }
   })
-  ipcMain.handle('xmr:save', async (_e, state: unknown) => {
+  ipcMain.handle('xmr:save', async (_e, state: unknown, wallet: unknown) => {
+    const refused = wallets.refuses(wallet)
+    if (refused) return refused
     const text = JSON.stringify(state)
     if (typeof state !== 'object' || state === null || text.length > 64 * 1024 * 1024)
       throw new Error('not a Monero wallet state')
     await writeAtomic(xmrFile(), text)
+    return null
   })
   // a Monero node, as maki desktop's wallet asks it (the page can't reach one itself): POST to
   // one of its paths, the answer's bytes; http for your own node, https or http for others
@@ -1034,25 +1056,12 @@ function ipc(): void {
     if (text.length > 256 * 1024) throw new Error('too much to keep')
     await writeAtomic(nostrFile(), text)
   })
-  // each chain's in a file of its own: a test network's descriptor (coin type 1) is every chain's
-  const btcFile = (chain: unknown): string =>
-    join(app.getPath('userData'), chain === 'litecoin' ? 'litecoin.json' : 'bitcoin.json')
-  ipcMain.handle('btc:load', async (_e, chain: unknown) => {
-    try {
-      const kept = JSON.parse(await readFile(btcFile(chain), 'utf8')) as { descriptors?: unknown }
-      return Array.isArray(kept.descriptors)
-        ? kept.descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300)
-        : []
-    } catch {
-      return []
-    }
-  })
-  ipcMain.handle('btc:save', async (_e, descriptors: unknown, chain: unknown) => {
-    const list = Array.isArray(descriptors)
-      ? descriptors.filter((d): d is string => typeof d === 'string' && d.length < 300)
-      : []
-    await writeAtomic(btcFile(chain), JSON.stringify({ descriptors: list.slice(0, 8) }))
-  })
+  // the accounts' descriptors maki shared, each chain's in a file of its own (wallet-files.ts): a
+  // test network's descriptor (coin type 1) is every chain's
+  ipcMain.handle('btc:load', (_e, chain: unknown) => loadDescriptors(wallets, chain))
+  ipcMain.handle('btc:save', (_e, descriptors: unknown, chain: unknown, wallet: unknown) =>
+    saveDescriptors(wallets, chain, descriptors, wallet)
+  )
 
   // the maki store: where it is, its files (only those), and what this side keeps of it between
   // runs (the newest root it took, and the newest index's version)

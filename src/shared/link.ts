@@ -14,10 +14,11 @@ import {
   type Relay,
   type Status,
   type SyncReport,
-  type Transport
+  type Transport,
+  type WalletStatus
 } from './client'
 import { readBundle } from './bundle'
-import { Ethereum, memoryStore, ProviderError, type EthStore, type Rpc } from './ethereum'
+import { Ethereum, memoryStore, ProviderError, type EthState, type Rpc } from './ethereum'
 import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
@@ -42,9 +43,10 @@ import {
 } from './wallet-apps'
 import type { BtcChain } from './btc-wallet'
 import type { MultisigWallet } from './multisig'
-import { memorySolStore, Solana, type SolRpc, type SolStore } from './solana'
+import { memorySolStore, Solana, type SolRpc, type SolState } from './solana'
 import { SolWallet } from './sol-wallet'
 import type { Store, StoreApp } from './store'
+import { ANOTHER_WALLET, type WalletId } from './wallets'
 
 /** maki drops the link after 25 s of silence (PROTOCOL.md, "Link"). */
 export const HEARTBEAT_MS = 10_000
@@ -65,10 +67,32 @@ export interface BackupStore {
   latest(): Promise<Uint8Array | null>
 }
 
+/**
+ * Where what's kept for each of maki's wallets goes (the sites connected to its Ethereum and
+ * Solana accounts): what's read is the wallet in use's; what's saved names the wallet it's for,
+ * and is turned down (thrown) unless that's still the one in use. Files of each wallet's own, in
+ * the app (main's wallet-files.ts); memory, in tests.
+ */
+export interface WalletStore<S> {
+  load(): Promise<S>
+  save(state: S, wallet: WalletId): Promise<void>
+}
+
 export type Via = 'USB' | 'fake maki'
 
 export type LinkState =
-  { linked: false } | { linked: true; via: Via; hello: Hello; status: Status & { at: number } }
+  | { linked: false }
+  | {
+      linked: true
+      via: Via
+      hello: Hello
+      status: Status & { at: number }
+      /**
+       * which wallet maki's wallet apps have, as maki last said; null if it hasn't said (firmware
+       * from before passphrase wallets, whose apps have the phrase's own)
+       */
+      wallet: WalletStatus | null
+    }
 
 export class Link {
   state: LinkState = { linked: false }
@@ -94,6 +118,34 @@ export class Link {
   /** whether this link's maki has what the store has (it can't take anything while locked) */
   private storeHanded = false
   private storeBusy = false
+
+  /**
+   * Which of maki's wallets what wallet apps share is kept and shown for (wallets.ts): a passphrase
+   * wallet's fingerprint, or null for the recovery phrase's own; the phrase's own until maki has
+   * said. maki says when it links and with each heartbeat.
+   *
+   * While maki is locked or away, the last wallet it had stays in use. Being locked says nothing of
+   * which wallet maki will have next (a passphrase wallet closes as maki locks, and opens again as
+   * its owner unlocks it, if they've set that up), and what's on screen, and what's still being
+   * kept as maki goes (a Monero scan, a site's connection), is that wallet's. Falling back to the
+   * phrase's own would show its accounts in the passphrase wallet's place, and keep what's under
+   * way under the wrong wallet.
+   */
+  wallet: WalletId = null
+  /**
+   * Called the moment the wallet in use changes, before anything hears of it: the window tells
+   * main here, so everything read after is the new wallet's.
+   */
+  onWallet: ((wallet: WalletId) => void) | null = null
+  /** whether this link's maki says which wallet it has (firmware from before passphrase wallets doesn't) */
+  private walletSays = false
+  /** asks of which wallet sent, and the latest whose answer was taken: one that comes late is no news */
+  private walletAsked = 0
+  private walletTaken = 0
+  /** when maki last said, by this computer's clock */
+  private walletAt = 0
+  /** whether the last ask went wrong, which is noted once until one goes right */
+  private walletTrouble = false
 
   private client: MakiClient | null = null
   private heartbeat: ReturnType<typeof setInterval> | null = null
@@ -128,33 +180,72 @@ export class Link {
     private relay: Relay,
     private now: () => Date = () => new Date(),
     private backups: BackupStore | null = null,
-    eth: { rpc: Rpc; store: EthStore } = {
+    eth: { rpc: Rpc; store: WalletStore<EthState> } = {
       rpc: async () => Promise.reject(new ProviderError(4900, 'no network')),
       store: memoryStore()
     },
-    sol: { rpc: SolRpc; store: SolStore } = {
+    sol: { rpc: SolRpc; store: WalletStore<SolState> } = {
       rpc: async () => Promise.reject(new ProviderError(4900, 'no network')),
       store: memorySolStore()
     }
   ) {
     const send = (app: string, message: Uint8Array, timeoutMs?: number) =>
       this.appMessage(app, message, timeoutMs)
-    this.bitcoin = new BitcoinApp(send)
-    this.litecoin = new BitcoinApp(send, LITECOIN_APP, 'Litecoin')
-    this.dogecoin = new BitcoinApp(send, DOGECOIN_APP, 'Dogecoin')
-    this.bitcoincash = new BitcoinApp(send, BITCOINCASH_APP, 'Bitcoin Cash')
-    this.ethereumApp = new EthereumApp(send)
-    this.monero = new MoneroApp(send)
+    const wallets = this.walletSend
+    this.bitcoin = new BitcoinApp(wallets)
+    this.litecoin = new BitcoinApp(wallets, LITECOIN_APP, 'Litecoin')
+    this.dogecoin = new BitcoinApp(wallets, DOGECOIN_APP, 'Dogecoin')
+    this.bitcoincash = new BitcoinApp(wallets, BITCOINCASH_APP, 'Bitcoin Cash')
+    this.ethereumApp = new EthereumApp(wallets)
+    this.monero = new MoneroApp(wallets)
     this.ethereum = new Ethereum(
       () => (this.state.linked ? this.ethereumApp : null),
       eth.rpc,
-      eth.store
+      this.byWallet(eth.store)
     )
     this.ethWallet = new EthWallet(this.ethereum, eth.rpc)
     this.nostr = new Nostr(send)
-    this.solanaApp = new SolanaApp(send)
-    this.solana = new Solana(() => (this.state.linked ? this.solanaApp : null), sol.rpc, sol.store)
+    this.solanaApp = new SolanaApp(wallets)
+    this.solana = new Solana(
+      () => (this.state.linked ? this.solanaApp : null),
+      sol.rpc,
+      this.byWallet(sol.store)
+    )
     this.solWallet = new SolWallet(this.solana, sol.rpc)
+  }
+
+  /**
+   * A message for one of maki's wallet apps, which answer for the wallet maki has open: it goes
+   * only while that's still the wallet in use here, maki having been asked again first (unless it
+   * said in the last second), so nothing meant for one wallet is asked of another, nor another's
+   * answer kept as this one's. The heartbeat asks only every ten seconds; the owner may have opened
+   * a passphrase wallet on maki since, or gone back to the phrase's own.
+   */
+  private walletSend: AppMessage = async (app, message, timeoutMs) => {
+    const wallet = this.wallet
+    if ((await this.walletNow(1000)) !== wallet) throw new Error(ANOTHER_WALLET)
+    return this.appMessage(app, message, timeoutMs)
+  }
+
+  /**
+   * `store` as the Ethereum and Solana objects use it: what's read is the wallet in use's, and
+   * what's saved goes back named for the wallet it was read under (a site's connection finished
+   * after maki opened another wallet isn't kept as the new one's: main turns it down).
+   */
+  private byWallet<S extends object>(
+    store: WalletStore<S>
+  ): { load(): Promise<S>; save(state: S): Promise<void> } {
+    const readFor = new WeakMap<S, WalletId>()
+    return {
+      load: async () => {
+        const wallet = this.wallet
+        const state = await store.load()
+        readFor.set(state, wallet)
+        return state
+      },
+      save: (state) =>
+        store.save(state, readFor.has(state) ? (readFor.get(state) as WalletId) : this.wallet)
+    }
   }
 
   subscribe(listener: () => void): () => void {
@@ -199,14 +290,28 @@ export class Link {
     transport.onClose(() => {
       if (this.client === client) this.drop('maki disconnected')
     })
+    let wallet: WalletStatus | null | undefined
     try {
       const status = await client.status()
-      this.state = { linked: true, via, hello, status: { ...status, at: Date.now() } }
+      // which wallet its wallet apps have, before anything is shown or kept for one
+      this.walletSays = true
+      this.walletTrouble = false
+      wallet = await this.askWallet(client)
+      // unplugged while it was asked: the link is gone already
+      if (this.client !== client) return false
+      this.state = {
+        linked: true,
+        via,
+        hello,
+        status: { ...status, at: Date.now() },
+        wallet: wallet ?? null
+      }
     } catch (e) {
       this.drop(`maki stopped answering: ${(e as Error).message}`)
       return false
     }
     this.note(`linked to ${hello.name} ${hello.version} over ${via}`)
+    if (wallet !== undefined) this.takeWallet(wallet)
     this.storeHanded = false
     this.heartbeat = setInterval(() => void this.beat(), HEARTBEAT_MS)
     this.resync = setInterval(() => {
@@ -290,13 +395,75 @@ export class Link {
     if (!client || !this.state.linked) return
     try {
       const status = await client.status()
+      // and which wallet: the owner may have opened a passphrase wallet on maki since, or locked it
+      const wallet = this.walletSays ? await this.askWallet(client) : undefined
       if (this.client === client && this.state.linked) {
         this.state = { ...this.state, status: { ...status, at: Date.now() } }
+        if (wallet !== undefined) this.takeWallet(wallet)
         this.emit()
       }
     } catch (e) {
       if (this.client === client) this.drop(`maki stopped answering: ${(e as Error).message}`)
     }
+  }
+
+  /**
+   * Asks maki which wallet its wallet apps have, now (if it's linked and says), and switches to it
+   * if it's another: the wallet in use, after. An answer from the last `withinMs` will do instead.
+   */
+  async walletNow(withinMs = 0): Promise<WalletId> {
+    const client = this.client
+    if (client && this.state.linked && this.walletSays && Date.now() - this.walletAt >= withinMs) {
+      const wallet = await this.askWallet(client)
+      if (wallet !== undefined && this.client === client && this.state.linked) {
+        this.takeWallet(wallet)
+        this.emit()
+      }
+    }
+    return this.wallet
+  }
+
+  /**
+   * maki's answer to which wallet its wallet apps have: null from firmware that doesn't know the
+   * question (it isn't asked again on this link), or undefined for no news (no answer that makes
+   * sense, or a later ask's came first). Never throws: a heartbeat goes on without it.
+   */
+  private async askWallet(client: MakiClient): Promise<WalletStatus | null | undefined> {
+    const ask = ++this.walletAsked
+    try {
+      const wallet = await client.walletStatus()
+      if (this.client !== client || ask < this.walletTaken) return undefined
+      if (wallet === null) this.walletSays = false
+      this.walletTaken = ask
+      this.walletAt = Date.now()
+      this.walletTrouble = false
+      return wallet
+    } catch (e) {
+      if (this.client === client && !this.walletTrouble) {
+        this.walletTrouble = true
+        this.note(`couldn’t tell which wallet maki has: ${(e as Error).message}`)
+      }
+      return undefined
+    }
+  }
+
+  /**
+   * What maki said of its wallet, taken in: kept in the link's state, and the wallet in use switched
+   * if it's another (main first, through `onWallet`, then a line in the log, which everything hears).
+   * None (maki locked, or without a phrase yet) leaves the last one in use, as `wallet` says why.
+   */
+  private takeWallet(said: WalletStatus | null): void {
+    if (this.state.linked) this.state = { ...this.state, wallet: said }
+    if (said?.kind === 'none') return
+    const next: WalletId = said?.kind === 'passphrase' ? said.fingerprint : null
+    if (next === this.wallet) return
+    this.wallet = next
+    this.onWallet?.(next)
+    this.note(
+      next === null
+        ? 'maki’s wallet apps have the phrase’s own wallet again'
+        : `maki’s wallet apps have passphrase wallet ${next}`
+    )
   }
 
   async syncNow(): Promise<SyncReport | null> {
@@ -452,7 +619,7 @@ export class Link {
     const key = chains ? `${id}|${chains[0]}` : id
     let app = this.accountApps.get(key)
     if (!app) {
-      const send: AppMessage = (a, message, timeoutMs) => this.appMessage(a, message, timeoutMs)
+      const send = this.walletSend
       // Kaspa's app speaks the same messages with fields of its own
       app =
         id === KASPA_APP
@@ -768,6 +935,9 @@ export class Link {
     const asks = Link.ETH_ASKS[method]
     if (asks) this.note(`${site} ${asks}: approve on maki`)
     try {
+      // the sites connected are the wallet's maki has open: if that's another since the heartbeat,
+      // this one is read as its
+      if (asks) await this.walletNow()
       const result = await this.ethereum.request(site, method, params)
       if (asks)
         this.note(
@@ -803,6 +973,8 @@ export class Link {
     const asks = quiet ? undefined : Link.SOL_ASKS[method]
     if (asks) this.note(`${site} ${asks}: approve on maki`)
     try {
+      // as for Ethereum: the connections read are the wallet's maki has open
+      if (asks) await this.walletNow()
       const result = await this.solana.request(site, method, params)
       if (asks)
         this.note(

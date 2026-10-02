@@ -16,6 +16,8 @@ export const Kind = {
   TIME_UNVERIFIED: 0x05,
   /** restart maki into its boot stage's update mode, once the owner says yes on maki */
   UPDATE_MODE: 0x06,
+  /** which wallet maki's wallet apps have: none, the phrase's own, or a passphrase wallet */
+  WALLET_STATUS: 0x07,
   /** answered only after the owner approves on maki */
   GET_LOGIN: 0x10,
   GET_TOTP: 0x11,

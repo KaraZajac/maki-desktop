@@ -63,6 +63,8 @@ export function AccountCard({
   const [all, setAll] = useState<SharedAccount[] | null>(null)
   const [adding, setAdding] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // the wallet this card is (the page starts it again for another): what it keeps is that one's
+  const [wallet] = useState(() => link.wallet)
 
   useEffect(() => {
     void window.maki.coins.load().then((k) => setAll(k[chain.id] ?? []))
@@ -71,7 +73,7 @@ export function AccountCard({
 
   const keep = async (list: SharedAccount[]): Promise<void> => {
     const k = await window.maki.coins.load()
-    await window.maki.coins.save({ ...k, [chain.id]: list })
+    await window.maki.coins.save({ ...k, [chain.id]: list }, wallet)
     setAll(list)
   }
 
