@@ -35,6 +35,7 @@ import {
 } from '../shared/btc-wallet'
 import { cashChain, electrumEsplora } from '../shared/electrum-esplora'
 import { Electrum } from './electrum'
+import { allowed, COIN_SERVERS, type CoinId, type CoinResponse } from '../shared/coin-servers'
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { writeAtomic } from './atomic'
@@ -733,6 +734,87 @@ function ipc(): void {
     } catch (e) {
       return { error: (e as Error).message }
     }
+  })
+  // the account wallets' coins (Tron, XRP, Stellar, ...): each coin's own servers, the requests
+  // its wallet makes and no others, paced to what each allows; MAKI_COIN_SERVER (tests) is a server
+  // to use instead, for every coin
+  const ownCoinServer = process.env['MAKI_COIN_SERVER']
+  const pacedCoins = new Map<CoinId, ReturnType<typeof polite>>()
+  ipcMain.handle(
+    'coin:fetch',
+    async (
+      _e,
+      coin: unknown,
+      network: unknown,
+      method: unknown,
+      path: unknown,
+      body?: unknown
+    ): Promise<CoinResponse> => {
+      try {
+        const servers =
+          typeof coin === 'string' && Object.hasOwn(COIN_SERVERS, coin)
+            ? COIN_SERVERS[coin as CoinId]
+            : undefined
+        if (!servers) throw new Error('which coin?')
+        if (network !== 0 && network !== 1) throw new Error('which network?')
+        if (
+          (method !== 'GET' && method !== 'POST') ||
+          typeof path !== 'string' ||
+          !allowed(servers, method, path) ||
+          (body !== undefined && (typeof body !== 'string' || body.length > 256 * 1024))
+        )
+          throw new Error('not something the wallet asks')
+        let paced = pacedCoins.get(coin as CoinId)
+        if (!paced) {
+          paced = polite(
+            (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(20_000) }),
+            {
+              atOnce: 2,
+              perSecond: servers.perSecond,
+              wait: 5000
+            }
+          )
+          pacedCoins.set(coin as CoinId, paced)
+        }
+        const bases = ownCoinServer ? [ownCoinServer] : network === 0 ? servers.main : servers.test
+        let unreachable = ''
+        for (const base of bases) {
+          try {
+            const res = await paced(`${base}${path}`, {
+              method,
+              body: body as string | undefined,
+              headers: body === undefined ? undefined : { 'content-type': 'application/json' }
+            })
+            // a server that's down or turning this computer away: the next, if there is one
+            if (res.status === 429 || res.status >= 500) {
+              unreachable = `${new URL(base).host} answered ${res.status}`
+              continue
+            }
+            return { status: res.status, text: await res.text() }
+          } catch (e) {
+            unreachable = `${new URL(base).host}: ${(e as Error).message}`
+          }
+        }
+        throw new Error(`the network’s servers can’t be reached (${unreachable})`)
+      } catch (e) {
+        return { error: (e as Error).message }
+      }
+    }
+  )
+  // the accounts maki shared with maki desktop, by coin, so they show without asking maki again
+  const accountsFile = (): string => join(app.getPath('userData'), 'accounts.json')
+  ipcMain.handle('acct:load', async () => {
+    try {
+      const kept = JSON.parse(await readFile(accountsFile(), 'utf8')) as unknown
+      return typeof kept === 'object' && kept !== null ? kept : {}
+    } catch {
+      return {}
+    }
+  })
+  ipcMain.handle('acct:save', async (_e, kept: unknown) => {
+    const text = JSON.stringify(kept)
+    if (text.length > 64 * 1024) throw new Error('too much to keep')
+    await writeAtomic(accountsFile(), text)
   })
   // what the coins are worth, if the owner asks to see it: CoinGecko, the same question for
   // everyone (every coin and token maki knows), at most once a minute a currency

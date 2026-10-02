@@ -14,6 +14,7 @@ const IDS: Record<string, string> = {
   LTC: 'litecoin',
   DOGE: 'dogecoin',
   BCH: 'bitcoin-cash',
+  XRP: 'ripple',
   ETH: 'ethereum',
   POL: 'polygon-ecosystem-token',
   USDC: 'usd-coin',

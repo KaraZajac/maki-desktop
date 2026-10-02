@@ -82,6 +82,44 @@ const api = {
       ipcRenderer.invoke('store:save', kept)
   },
   copy: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:write', text),
+  coins: {
+    /** a request to a coin's servers (the ones maki desktop knows, for what its wallet asks) */
+    fetch: async (
+      coin: import('../shared/coin-servers').CoinId,
+      network: 0 | 1,
+      method: 'GET' | 'POST',
+      path: string,
+      body?: string
+    ): Promise<{ status: number; text: string }> => {
+      const r = (await ipcRenderer.invoke(
+        'coin:fetch',
+        coin,
+        network,
+        method,
+        path,
+        body
+      )) as import('../shared/coin-servers').CoinResponse
+      if ('error' in r) throw new Error(r.error)
+      return r
+    },
+    /** the accounts maki shared, by coin, kept */
+    load: (): Promise<
+      Partial<
+        Record<
+          import('../shared/coin-servers').CoinId,
+          import('../shared/coin-servers').SharedAccount[]
+        >
+      >
+    > => ipcRenderer.invoke('acct:load'),
+    save: (
+      kept: Partial<
+        Record<
+          import('../shared/coin-servers').CoinId,
+          import('../shared/coin-servers').SharedAccount[]
+        >
+      >
+    ): Promise<void> => ipcRenderer.invoke('acct:save', kept)
+  },
   bitcoin: {
     /** Esplora (mempool.space, litecoinspace.org): a path under the network's API; with a body, a broadcast */
     esplora: async (

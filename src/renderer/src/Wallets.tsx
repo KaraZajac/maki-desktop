@@ -13,6 +13,8 @@ import {
 import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
+import { XRP } from '@shared/coins/xrp'
+import { AccountCard } from './AccountWallet'
 import { BitcoinCash, Dogecoin, Litecoin } from './BtcCoin'
 import { Monero } from './Monero'
 import { Solana } from './Solana'
@@ -89,6 +91,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'solana',
     line: 'SOL and tokens, as Phantom and Solflare have the account.',
     Card: Solana
+  },
+  {
+    app: XRP.app,
+    name: 'XRP',
+    glyph: 'xrp',
+    line: 'XRP and its tokens, the account Ledger and Trust Wallet make.',
+    Card: (p) => <AccountCard {...p} chain={XRP} />
   }
 ]
 

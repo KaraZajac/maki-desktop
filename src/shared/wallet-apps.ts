@@ -637,3 +637,72 @@ export class SolanaApp extends WalletApp {
     return this.signature(0x4d, site, message, index)
   }
 }
+
+/**
+ * maki's wallet apps for chains of accounts (Tron, XRP, Stellar and the others since): one
+ * protocol for all, each coin's own bytes inside it. Each message is a letter, then the network (0
+ * the coin's own, 1 its usual test network) and the account (u32): `A`, the account's public key
+ * and address, once the owner agrees to share them; `D`, the address on maki's screen to compare
+ * with this computer's; `T` and the transaction as the coin's tooling makes it, unsigned, which
+ * the app reads, shows and signs on a yes, answering with the signature in the coin's own form.
+ */
+export class AccountApp extends WalletApp {
+  private static head(kind: number, network: 0 | 1, index: number): Uint8Array {
+    return new Writer().u8(kind).u8(network).u32(index).finish()
+  }
+
+  /** The account's public key (as the coin's transactions carry it) and its address. */
+  async account(
+    network: 0 | 1,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; reason: string; publicKey: Uint8Array; address: string }> {
+    const a = await this.ask(AccountApp.head(0x41, network, index), SIGN_TIMEOUT_MS)
+    const none = { publicKey: new Uint8Array(), address: '' }
+    if (typeof a === 'string') return { approval: a, reason: '', ...none }
+    if (a.approval !== 'approved') return { approval: a.approval, reason: a.reason(), ...none }
+    try {
+      const publicKey = a.fixed(a.fixed(1)[0])
+      return { approval: a.approval, reason: '', publicKey, address: a.text() }
+    } catch {
+      return { approval: 'unavailable', reason: '', ...none }
+    }
+  }
+
+  /**
+   * The address on maki's screen for the owner to compare with this computer's: 'approved' if
+   * they said it matches, 'denied' if it doesn't. `address` is maki's, either way.
+   */
+  async address(network: 0 | 1, index = 0): Promise<{ approval: ApprovalValue; address: string }> {
+    const a = await this.ask(AccountApp.head(0x44, network, index), SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '' }
+    let address = ''
+    try {
+      address = a.text()
+    } catch {
+      // locked, or no answer: nothing shown
+    }
+    return { approval: a.approval, address }
+  }
+
+  /**
+   * A transaction (the coin's own bytes, unsigned) signed once the owner has gone through it on
+   * maki: the signature as the coin carries it; or why not.
+   */
+  async sign(
+    network: 0 | 1,
+    index: number,
+    payload: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    const m = Uint8Array.from([...AccountApp.head(0x54, network, index), ...payload])
+    if (payload.length === 0 || m.length > MAX_APP_MESSAGE)
+      return { approval: 'refused', reason: 'bigger than maki takes', signature: null }
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', signature: null }
+    if (a.approval !== 'approved')
+      return { approval: a.approval, reason: a.reason(), signature: null }
+    const signature = a.rest()
+    return signature.length > 0
+      ? { approval: a.approval, reason: '', signature }
+      : { approval: 'unavailable', reason: '', signature: null }
+  }
+}

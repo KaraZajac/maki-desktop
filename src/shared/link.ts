@@ -22,6 +22,7 @@ import { EthWallet } from './eth-wallet'
 import { Nostr } from './nostr'
 import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue } from './protocol'
 import {
+  AccountApp,
   BitcoinApp,
   EthereumApp,
   BITCOINCASH_APP,
@@ -109,6 +110,8 @@ export class Link {
   /** Nostr for sites, through maki's Nostr app */
   readonly nostr: Nostr
   readonly solanaApp: SolanaApp
+  /** maki's apps for chains of accounts (Tron, XRP, Stellar, ...), made as they're first asked for */
+  private accountApps = new Map<string, AccountApp>()
   /** the Solana account, for sites through the browser extension */
   readonly solana: Solana
   /** the same account as a wallet in maki desktop */
@@ -434,6 +437,20 @@ export class Link {
   /** maki's app for a coin of Bitcoin's kind: its Bitcoin, Litecoin, Dogecoin or Bitcoin Cash app. */
   private btcApp(chain: BtcChain): BitcoinApp {
     return this[chain]
+  }
+
+  /** maki's app for a chain of accounts, by its ID: its messages (`AccountApp`). */
+  accountApp(id: string, name: string): AccountApp {
+    let app = this.accountApps.get(id)
+    if (!app) {
+      app = new AccountApp(
+        (a, message, timeoutMs) => this.appMessage(a, message, timeoutMs),
+        id,
+        name
+      )
+      this.accountApps.set(id, app)
+    }
+    return app
   }
 
   /** A Bitcoin (or Litecoin) account for wallet software, once the owner agrees on maki. */
