@@ -20,7 +20,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { BtcWallet, LITECOIN, parseDescriptor } from '../shared/btc-wallet'
+import { BITCOINCASH, BtcWallet, DOGECOIN, LITECOIN, parseDescriptor } from '../shared/btc-wallet'
+import { cashChain } from '../shared/electrum-esplora'
 import { MakiClient } from '../shared/client'
 import { transferData } from '../shared/eth-wallet'
 import { BtcAccount, Network } from '../shared/protocol'
@@ -269,6 +270,111 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, Litecoin', () => {
       true
     )
     expect(btc.p2wpkh(pub, LITECOIN).address).toBe('ltc1qjmxnz78nmc8nq77wuxh25n2es7rzm5c2rkk4wh')
+  }, 180_000)
+})
+
+describe.skipIf(!E2E || !FAKE_BUILT)('the Wallets page, Dogecoin and Bitcoin Cash', () => {
+  let fake: { port: number; proc: ChildProcess }
+  const homes: string[] = []
+  const home = (): string => {
+    const h = mkdtempSync(join(tmpdir(), 'maki-e2e-'))
+    homes.push(h)
+    return h
+  }
+  const CASH = cashChain('bitcoincash', BITCOINCASH)
+
+  beforeAll(async () => {
+    build()
+    fake = await startFake([
+      ...['--app', join(APP_FIXTURES, 'dogecoin.maki')],
+      ...['--app', join(APP_FIXTURES, 'bitcoincash.maki'), '--clock-verified']
+    ])
+  }, 180_000)
+  afterAll(() => {
+    fake?.proc.kill()
+    for (const h of homes) rmSync(h, { recursive: true, force: true })
+  })
+
+  /** The one input's signature and key, from its script (<signature> <key>, as before SegWit). */
+  const scriptSig = (tx: btc.Transaction): Uint8Array[] =>
+    btc.Script.decode(tx.getInput(0).finalScriptSig!) as Uint8Array[]
+
+  it('adds the Dogecoin account, shows its coin, and sends from it: maki signs the old digest, the chain gets it', async () => {
+    // the account's first receiving address (BIP44's, Trezor's) holds 123.45678 DOGE
+    const receive = 'DBus3bamQjgJULBJtYXpEzDWQRwF5iwxgC'
+    const payee = 'DL54i6msdfchWaR7NHFA41HxSiYciTwhqW'
+    const chain = pretendChain(receive, 12_345_678_000, DOGECOIN)
+    const esplora = await serveEsplora(chain.esplora)
+    let said = ''
+    try {
+      said = await driveApp(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--click', 'Dogecoin › Add from maki', '--until', '123.45678'],
+          ...['--click', 'Dogecoin › Send', '--fill', `D…=${payee}`, '--fill', '0.00=10'],
+          ...['--until', 'back to you', '--click', 'Dogecoin › Review on maki'],
+          ...['--until', 'Sent 10 DOGE']
+        ],
+        { MAKI_ESPLORA: esplora.url }
+      )
+    } finally {
+      esplora.close()
+    }
+    expect(said).toMatch(/Sent 10 DOGE/)
+    expect(chain.broadcast).toHaveLength(1)
+    const tx = btc.Transaction.fromRaw(hex.decode(chain.broadcast[0]), { allowUnknownInputs: true })
+    expect(hex.encode(tx.getInput(0).txid!)).toBe(chain.txid)
+    expect(btc.Address(DOGECOIN).encode(btc.OutScript.decode(tx.getOutput(0).script!))).toBe(payee)
+    expect(tx.getOutput(0).amount).toBe(1_000_000_000n)
+    // signed by the account's key over the transaction as it was before SegWit, SIGHASH_ALL
+    const [sig, pub] = scriptSig(tx)
+    expect(btc.p2pkh(pub, DOGECOIN).address).toBe(receive)
+    expect(sig[sig.length - 1]).toBe(btc.SigHash.ALL)
+    const legacy = tx as unknown as {
+      preimageLegacy(i: number, script: Uint8Array, hashType: number): Uint8Array
+    }
+    const digest = legacy.preimageLegacy(0, btc.p2pkh(pub, DOGECOIN).script, btc.SigHash.ALL)
+    expect(secp256k1.verify(sig.slice(0, -1), digest, pub, { prehash: false, format: 'der' })).toBe(
+      true
+    )
+  }, 180_000)
+
+  it('adds the Bitcoin Cash account, shows its coin, and sends from it: maki signs with its fork ID, the chain gets it', async () => {
+    // the account's first receiving address (BIP44's, Electron Cash's) holds 0.12345678 BCH
+    const receive = 'bitcoincash:qqyx49mu0kkn9ftfj6hje6g2wfer34yfnq5tahq3q6'
+    const payee = 'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a'
+    const chain = pretendChain(receive, 12_345_678, BITCOINCASH, CASH)
+    const esplora = await serveEsplora(chain.esplora)
+    let said = ''
+    try {
+      said = await driveApp(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--click', 'Bitcoin Cash › Add from maki'],
+          ...['--until', '0.12345678', '--click', 'Bitcoin Cash › Send'],
+          ...['--fill', `bitcoincash:q…=${payee}`, '--fill', '0.00=0.03', '--until', 'back to you'],
+          ...['--click', 'Bitcoin Cash › Review on maki', '--until', 'Sent 0.03 BCH']
+        ],
+        { MAKI_ESPLORA: esplora.url }
+      )
+    } finally {
+      esplora.close()
+    }
+    expect(said).toMatch(/Sent 0\.03 BCH/)
+    expect(chain.broadcast).toHaveLength(1)
+    const tx = btc.Transaction.fromRaw(hex.decode(chain.broadcast[0]), { allowUnknownInputs: true })
+    expect(CASH.address(tx.getOutput(0).script!)).toBe(payee)
+    expect(tx.getOutput(0).amount).toBe(3_000_000n)
+    // BIP143's digest with SIGHASH_ALL | SIGHASH_FORKID, by the account's key for that coin
+    const [sig, pub] = scriptSig(tx)
+    expect(CASH.address(btc.p2pkh(pub).script)).toBe(receive)
+    expect(sig[sig.length - 1]).toBe(0x41)
+    const digest = tx.preimageWitnessV0(0, btc.p2pkh(pub).script, 0x41, 12_345_678n)
+    expect(secp256k1.verify(sig.slice(0, -1), digest, pub, { prehash: false, format: 'der' })).toBe(
+      true
+    )
   }, 180_000)
 })
 
