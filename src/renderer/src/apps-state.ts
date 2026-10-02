@@ -76,3 +76,33 @@ export function useApps(link: Link): Apps {
 
   return { status, apps, space, keys, problem, refresh }
 }
+
+/** What maki last said it has, while it's away: its apps' IDs. */
+function rememberedApps(): string[] {
+  try {
+    const kept = JSON.parse(localStorage.getItem('maki.apps') ?? 'null') as unknown
+    return Array.isArray(kept) ? kept.filter((a): a is string => typeof a === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The IDs of the apps maki has, once it says; while it doesn't (unplugged, or locked), what it last
+ * said, so the pages of its apps stay where they were.
+ */
+export function useKnownApps(apps: Apps): string[] {
+  const [known, setKnown] = useState(rememberedApps)
+  const said = apps.status === 'approved' && apps.apps ? apps.apps.map((a) => a.id).join(' ') : null
+  useEffect(() => {
+    if (said === null) return
+    const ids = said === '' ? [] : said.split(' ')
+    setKnown(ids)
+    try {
+      localStorage.setItem('maki.apps', JSON.stringify(ids))
+    } catch {
+      // remembered for this session only
+    }
+  }, [said])
+  return known
+}

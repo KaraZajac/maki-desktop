@@ -14,7 +14,7 @@ import {
 } from '@shared/confirm'
 import type { Link } from '@shared/link'
 import type { Apps } from './apps-state'
-import type { Page } from './Overview'
+import type { Page } from './pages'
 import { Badge, Button, Card, Glyph, Label } from './ui'
 
 /**

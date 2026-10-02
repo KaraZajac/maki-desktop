@@ -20,8 +20,8 @@ import {
 } from '@shared/passwords'
 import { SIGN_TIMEOUT_MS } from '@shared/wallet-apps'
 import type { Apps } from './apps-state'
-import type { Page } from './Overview'
-import { Button, Card, Field, Glyph, Label, Segmented, Toggle } from './ui'
+import type { Page } from './pages'
+import { Button, Card, Field, Glyph, Label, PageHeader, Segmented, Toggle } from './ui'
 
 /** What the form holds: numbers as typed, until they're sent. */
 interface Draft {
@@ -297,5 +297,28 @@ export function Passwords({
         </div>
       </div>
     </Card>
+  )
+}
+
+/** Password Maker's page. */
+export function PasswordMakerPage({
+  link,
+  apps,
+  go
+}: {
+  link: Link
+  apps: Apps
+  go: (page: Page) => void
+}): React.JSX.Element {
+  return (
+    <div className="rise space-y-6">
+      <PageHeader
+        label="on maki"
+        title="Password Maker"
+        lede="Passwords maki makes from your recovery phrase and types for you, the same on any maki with your phrase: none is stored anywhere, so restoring maki restores them all."
+      />
+
+      <Passwords link={link} apps={apps} go={go} />
+    </div>
   )
 }

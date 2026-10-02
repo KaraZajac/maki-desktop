@@ -80,11 +80,20 @@ app.whenReady().then(async () => {
     } else if (step === '--click') {
       // "Solana › Send": the button in the section whose heading says Solana
       const [scope, text] = arg.includes(' › ') ? arg.split(' › ') : [null, arg]
-      await run(`(() => {
-        const within = ${JSON.stringify(scope)} === null ? document : [...document.querySelectorAll('h2')].find((h) => h.textContent.includes(${JSON.stringify(scope)}))?.closest('section')
-        if (!within) return
-        ;[...within.querySelectorAll('button')].find((b) => b.textContent.includes(${JSON.stringify(text)}) || (b.getAttribute('aria-label') ?? '').includes(${JSON.stringify(text)}))?.click()
-      })()`)
+      // the button may not be there yet (an app's page shows in the sidebar once maki has said it
+      // has the app): looked for again, for up to 20 seconds
+      for (let tries = 0; tries < 40; tries++) {
+        const clicked = await run(`(() => {
+          const within = ${JSON.stringify(scope)} === null ? document : [...document.querySelectorAll('h2')].find((h) => h.textContent.includes(${JSON.stringify(scope)}))?.closest('section')
+          if (!within) return false
+          const b = [...within.querySelectorAll('button')].find((b) => b.textContent.includes(${JSON.stringify(text)}) || (b.getAttribute('aria-label') ?? '').includes(${JSON.stringify(text)}))
+          if (!b) return false
+          b.click()
+          return true
+        })()`)
+        if (clicked) break
+        await wait(500)
+      }
       await wait(2500) // the fake approves after a moment
     } else {
       const [placeholder, ...text] = arg.split('=')

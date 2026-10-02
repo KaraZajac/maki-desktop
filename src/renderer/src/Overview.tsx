@@ -6,8 +6,7 @@ import { StorageChart } from './StorageChart'
 import { ago, Badge, Button, bytes, Dot, Glyph, Label, MakiMark, PageHeader, Toggle } from './ui'
 import { Updates } from './Updates'
 import { disconnect } from './usb'
-
-export type Page = 'overview' | 'apps' | 'wallets' | 'connections' | 'backups'
+import type { Page } from './pages'
 
 function formatClock(utcMs: number, tzOffsetS: number): string {
   return new Date(utcMs + tzOffsetS * 1000).toISOString().slice(11, 19)

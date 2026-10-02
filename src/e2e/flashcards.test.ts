@@ -61,7 +61,7 @@ describe.skipIf(!E2E || !FAKE_BUILT || !APP_FIXTURES_THERE)('Flashcards, end to 
     ]
     // before it's sent: the cards as maki will have them, what's changed and what's left out
     const said = await drive(home, fake.port, [
-      ...['--click', 'Connections', '--until', 'No decks on maki yet'],
+      ...['--click', 'Flashcards', '--until', 'No decks on maki yet'],
       ...['--fill', `${FIELD}=${deck.join('\n')}`, '--fill', 'Spanish=Spanish'],
       ...['--until', '303 cards for maki, as it will show them'],
       ...['--until', 'Changed to what maki’s fonts draw'],
@@ -75,7 +75,7 @@ describe.skipIf(!E2E || !FAKE_BUILT || !APP_FIXTURES_THERE)('Flashcards, end to 
 
     // on the page, as maki lists it; then removed
     const after = await drive(home, fake.port, [
-      ...['--click', 'Connections', '--until', '303 cards · 20 for today · 303 new'],
+      ...['--click', 'Flashcards', '--until', '303 cards · 20 for today · 303 new'],
       ...['--click', 'flashcards › Remove Spanish', '--until', 'Spanish removed from maki.']
     ])
     expect(after).toContain('No decks on maki yet')

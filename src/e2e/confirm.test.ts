@@ -51,7 +51,7 @@ describe.skipIf(!E2E || !FAKE_BUILT || !APP_FIXTURES_THERE)('maki-confirm, end t
 
   it('shows Confirm’s key as maki does, and tests it: a yes signed with that key', async () => {
     const said = await drive(home(), fake.port, [
-      ...['--click', 'Connections', '--until', keyHex(key)[3]],
+      ...['--click', 'sudo & Confirm', '--until', keyHex(key)[3]],
       ...['--click', 'confirm › Test it', '--until', 'maki said yes, signed with the key above']
     ])
     for (const line of keyHex(key)) expect(said).toContain(line)
@@ -63,7 +63,7 @@ describe.skipIf(!E2E || !FAKE_BUILT || !APP_FIXTURES_THERE)('maki-confirm, end t
     const h = home()
     // the app, linked and left running while maki-confirm asks it
     const running = drive(h, fake.port, [
-      ...['--click', 'Connections', '--until', keyHex(key)[3], '--wait', '45000']
+      ...['--click', 'sudo & Confirm', '--until', keyHex(key)[3], '--wait', '45000']
     ])
     /** maki-confirm, as the script maki desktop puts on the PATH starts it. */
     const confirm = (args: string[]): Promise<{ code: number; out: string; err: string }> =>

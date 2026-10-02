@@ -40,7 +40,7 @@ describe.skipIf(!E2E || !FAKE_BUILT || !APP_FIXTURES_THERE)('Show QR, end to end
   it('turns down what maki’s screen can’t show, with why, and shows a link on maki', async () => {
     const link = 'https://maki.netslum.io/docs/showqr'
     const said = await drive(home, fake.port, [
-      ...['--click', 'Connections', '--until', 'it keeps the last five'],
+      ...['--click', 'Show QR', '--until', 'it keeps the last five'],
       ...['--fill', `${FIELD}=${'a'.repeat(300)}`, '--until', '300 bytes, where it holds 192'],
       ...['--fill', `${FIELD}=${link}`, '--until', 'a version 3 QR code, 3 pixels a module'],
       ...['--click', 'show qr › Show on maki', '--until', 'On maki now, in Show QR']

@@ -2,15 +2,26 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { ProviderError } from '@shared/ethereum'
 import { Link } from '@shared/link'
 import { Store } from '@shared/store'
+import { About } from './About'
 import { Activity } from './Activity'
-import { useApps } from './apps-state'
+import { useApps, useKnownApps } from './apps-state'
 import { useBunker } from './bunker-state'
 import { AppsPage } from './AppsPage'
 import { Backups } from './Backups'
-import { Connections } from './Connections'
+import { BrowsersPage } from './Browsers'
+import { ContactsPage } from './Contacts'
 import { ErrorBoundary } from './ErrorBoundary'
-import { Overview, type Page } from './Overview'
-import { PAGES, Sidebar } from './Sidebar'
+import { FlashcardsPage } from './Flashcards'
+import { KeysPage } from './Keys'
+import { MacroPadPage } from './MacroPad'
+import { NostrPage } from './Nostr'
+import { NotesPage } from './Notes'
+import { Overview } from './Overview'
+import { PAGES, shown, type Page } from './pages'
+import { PasswordMakerPage } from './Passwords'
+import { ShowQrPage } from './ShowQr'
+import { Sidebar } from './Sidebar'
+import { SudoPage } from './Sudo'
 import { DevTransport } from './transports'
 import { chooseUsb, watchUsb } from './usb'
 import { Wallets } from './Wallets'
@@ -80,8 +91,16 @@ export default function App(): React.JSX.Element {
     }, [])
   )
   const apps = useApps(link)
+  const known = useKnownApps(apps)
   const bunker = useBunker(link)
-  const [page, setPage] = useState<Page>(savedPage)
+  const [chosen, setPage] = useState<Page>(savedPage)
+  // an app's page that's gone from the sidebar (maki hasn't the app any more): the overview
+  const page = shown(
+    PAGES.find((p) => p.id === chosen)!,
+    known
+  )
+    ? chosen
+    : 'overview'
   const go = (p: Page): void => {
     setPage(p)
     try {
@@ -145,7 +164,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="flex h-full text-fg">
-      <Sidebar link={link} page={page} go={go} updates={updates} />
+      <Sidebar link={link} page={page} go={go} updates={updates} known={known} />
       <div className="glow flex min-w-0 flex-1 flex-col">
         <main className="flex-1 overflow-y-auto">
           <div key={page} className="mx-auto max-w-5xl px-10 pt-10 pb-12">
@@ -169,11 +188,19 @@ export default function App(): React.JSX.Element {
                   storePrivate={storePrivate}
                 />
               )}
-              {page === 'wallets' && <Wallets link={link} apps={apps} />}
-              {page === 'connections' && (
-                <Connections link={link} apps={apps} go={go} bunker={bunker} />
-              )}
               {page === 'backups' && <Backups link={link} backup={backup} />}
+              {page === 'wallets' && <Wallets link={link} apps={apps} />}
+              {page === 'macropad' && <MacroPadPage link={link} apps={apps} go={go} />}
+              {page === 'flashcards' && <FlashcardsPage link={link} apps={apps} go={go} />}
+              {page === 'notes' && <NotesPage link={link} apps={apps} go={go} />}
+              {page === 'contacts' && <ContactsPage link={link} apps={apps} go={go} />}
+              {page === 'passwordmaker' && <PasswordMakerPage link={link} apps={apps} go={go} />}
+              {page === 'showqr' && <ShowQrPage link={link} apps={apps} go={go} />}
+              {page === 'browsers' && <BrowsersPage link={link} />}
+              {page === 'keys' && <KeysPage link={link} apps={apps} go={go} />}
+              {page === 'sudo' && <SudoPage link={link} apps={apps} go={go} />}
+              {page === 'nostr' && <NostrPage apps={apps} go={go} bunker={bunker} />}
+              {page === 'about' && <About link={link} updates={updates} go={go} />}
             </ErrorBoundary>
           </div>
         </main>

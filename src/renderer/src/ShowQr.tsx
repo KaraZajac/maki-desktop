@@ -2,8 +2,8 @@ import { useState } from 'react'
 import type { Link } from '@shared/link'
 import { showCheck, showMessage, showSays, SHOWQR_APP } from '@shared/showqr'
 import type { Apps } from './apps-state'
-import type { Page } from './Overview'
-import { Button, Card, Field, Glyph, Label } from './ui'
+import type { Page } from './pages'
+import { Button, Card, Field, Glyph, Label, PageHeader } from './ui'
 
 /** Show QR: text from here on maki's screen as a QR code, for a phone to scan. */
 export function ShowQr({
@@ -111,5 +111,28 @@ export function ShowQr({
         </div>
       </div>
     </Card>
+  )
+}
+
+/** Show QR's page. */
+export function ShowQrPage({
+  link,
+  apps,
+  go
+}: {
+  link: Link
+  apps: Apps
+  go: (page: Page) => void
+}): React.JSX.Element {
+  return (
+    <div className="rise space-y-6">
+      <PageHeader
+        label="on maki"
+        title="Show QR"
+        lede="Anything you send from here, shown on maki’s screen as a QR code for a phone to read: a link, a Wi-Fi network, an address, a short text."
+      />
+
+      <ShowQr link={link} apps={apps} go={go} />
+    </div>
   )
 }

@@ -26,8 +26,8 @@ import {
   type Separator
 } from '@shared/flashcards'
 import type { Apps } from './apps-state'
-import type { Page } from './Overview'
-import { Button, Card, Field, Glyph, Label, Segmented, Toggle } from './ui'
+import type { Page } from './pages'
+import { Button, Card, Field, Glyph, Label, PageHeader, Segmented, Toggle } from './ui'
 
 /** How many cards the preview shows, and how many of those left out it names. */
 const PREVIEW = 5
@@ -499,5 +499,28 @@ export function Flashcards({
         </div>
       </div>
     </Card>
+  )
+}
+
+/** Flashcards's page. */
+export function FlashcardsPage({
+  link,
+  apps,
+  go
+}: {
+  link: Link
+  apps: Apps
+  go: (page: Page) => void
+}): React.JSX.Element {
+  return (
+    <div className="rise space-y-6">
+      <PageHeader
+        label="on maki"
+        title="Flashcards"
+        lede="Decks you send from here, studied on maki a card at a time: the cards you don’t know come back sooner than those you do."
+      />
+
+      <Flashcards link={link} apps={apps} go={go} />
+    </div>
   )
 }

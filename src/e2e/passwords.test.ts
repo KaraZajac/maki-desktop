@@ -42,7 +42,7 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Password Maker card, end to end', () =
 
   it('adds a site’s password on maki, then removes it', async () => {
     const said = await driveApp(home, fake.port, [
-      ...['--click', 'Connections', '--until', 'None on maki yet'],
+      ...['--click', 'Password Maker', '--until', 'None on maki yet'],
       ...['--fill', 'github.com=github.com', '--fill', 'you@example.com=kara'],
       ...['--click', 'Add to maki', '--until', 'github.com added on maki.']
     ])
@@ -61,7 +61,7 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the Password Maker card, end to end', () =
 
     // the next suggests the next number; then the first goes
     const after = await driveApp(home, fake.port, [
-      ...['--click', 'Connections', '--until', 'github.com'],
+      ...['--click', 'Password Maker', '--until', 'github.com'],
       ...['--click', 'Remove github.com', '--until', 'github.com removed from maki.']
     ])
     expect(after).toMatch(/None on maki yet/)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { BrowserFamily, BrowserStatus, BrowsersView } from '@shared/bridge-types'
 import type { Link } from '@shared/link'
-import { Badge, Button, Card, Field, Glyph, Label, Segmented } from './ui'
+import { Badge, Button, Card, Field, Glyph, Label, PageHeader, Segmented } from './ui'
 
 /** What a browser's row says under its name. */
 function detail(b: BrowserStatus): string {
@@ -205,5 +205,20 @@ export function BrowsersCard({ link }: { link: Link }): React.JSX.Element {
         </div>
       </div>
     </Card>
+  )
+}
+
+/** Browsers's page. */
+export function BrowsersPage({ link }: { link: Link }): React.JSX.Element {
+  return (
+    <div className="rise space-y-6">
+      <PageHeader
+        label="computer"
+        title="Browsers"
+        lede="The maki extension fills your logins and codes once you say yes on maki, and lets sites use maki’s passkeys and wallets: it talks to maki through maki desktop, which has to be running."
+      />
+
+      <BrowsersCard link={link} />
+    </div>
   )
 }

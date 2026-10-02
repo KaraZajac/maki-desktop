@@ -1150,11 +1150,33 @@ function ipc(): void {
     }
   )
   ipcMain.handle('app:version', () => app.getVersion())
-  // the notices beside the packaged app (electron-builder.yml), or the ones the build wrote
+  // the About page: what maki desktop runs on, its license, and where it keeps its files
+  ipcMain.handle('app:about', () => ({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    platform: `${process.platform} ${process.arch}`,
+    data: app.getPath('userData')
+  }))
+  ipcMain.handle('app:license', () =>
+    readFile(
+      app.isPackaged
+        ? join(process.resourcesPath, 'LICENSE')
+        : join(__dirname, '..', '..', 'LICENSE'),
+      'utf8'
+    )
+  )
+  ipcMain.handle('app:openData', async () => {
+    const failed = await shell.openPath(app.getPath('userData'))
+    if (failed) throw new Error(failed)
+  })
+  // the notices beside the packaged app (electron-builder.yml), or the ones the build wrote (out/,
+  // beside this file's out/main: found from here, however the app was started)
   ipcMain.handle('app:notices', async () => {
     const notices = app.isPackaged
       ? join(process.resourcesPath, 'THIRD-PARTY-NOTICES.md')
-      : join(app.getAppPath(), 'out', 'THIRD-PARTY-NOTICES.md')
+      : join(__dirname, '..', 'THIRD-PARTY-NOTICES.md')
     const failed = await shell.openPath(notices)
     if (failed) throw new Error(failed)
   })

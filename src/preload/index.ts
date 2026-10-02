@@ -298,7 +298,20 @@ const api = {
     /** maki desktop's version, as its package.json says */
     version: (): Promise<string> => ipcRenderer.invoke('app:version'),
     /** open the notices of the code of others it carries (THIRD-PARTY-NOTICES.md) */
-    notices: (): Promise<void> => ipcRenderer.invoke('app:notices')
+    notices: (): Promise<void> => ipcRenderer.invoke('app:notices'),
+    /** for the About page: its version, what it runs on, and where it keeps its files */
+    about: (): Promise<{
+      version: string
+      electron: string
+      chrome: string
+      node: string
+      platform: string
+      data: string
+    }> => ipcRenderer.invoke('app:about'),
+    /** maki desktop's license, as it ships beside the app */
+    license: (): Promise<string> => ipcRenderer.invoke('app:license'),
+    /** open the folder maki desktop keeps its files in */
+    openData: (): Promise<void> => ipcRenderer.invoke('app:openData')
   },
   updates: {
     /** maki desktop's version, what it runs on, and what it can update by itself here */
