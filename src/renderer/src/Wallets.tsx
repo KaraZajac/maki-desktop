@@ -18,6 +18,7 @@ import { APTOS } from '@shared/coins/aptos'
 import { CARDANO } from '@shared/coins/cardano'
 import { CosmosCard } from './CosmosWallet'
 import { KASPA } from '@shared/coins/kaspa'
+import { SUI } from '@shared/coins/sui'
 import { NEAR } from '@shared/coins/near'
 import { STELLAR } from '@shared/coins/stellar'
 import { TRON } from '@shared/coins/tron'
@@ -155,6 +156,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'cosmos',
     line: 'ATOM, and OSMO, TIA, USDC on Noble and the other chains that share its keys, the account Keplr and Ledger make.',
     Card: CosmosCard
+  },
+  {
+    app: SUI.app,
+    name: 'Sui',
+    glyph: 'sui',
+    line: 'SUI, USDC and the other coins maki knows, the account Slush and Ledger make.',
+    Card: (p) => <AccountCard {...p} chain={SUI} />
   }
 ]
 

@@ -21,6 +21,7 @@ const IDS: Record<string, string> = {
   NEAR: 'near',
   ADA: 'cardano',
   ATOM: 'cosmos',
+  SUI: 'sui',
   OSMO: 'osmosis',
   TIA: 'celestia',
   DYDX: 'dydx-chain',

@@ -146,6 +146,15 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
     post: /^\/(account_info|account_utxos|account_txs\?order=block_height\.desc&limit=16|tx_info|submittx)$/,
     perSecond: 5,
     binary: 'application/cbor'
+  },
+  // Sui's GraphQL API (Mysten Labs'; the public fullnodes' JSON-RPC is gone): balances, coins,
+  // history, the epoch and its gas price, simulating and executing
+  sui: {
+    main: ['https://graphql.mainnet.sui.io'],
+    test: ['https://graphql.testnet.sui.io'],
+    get: /$^/,
+    post: /^\/graphql$/,
+    perSecond: 3
   }
 }
 

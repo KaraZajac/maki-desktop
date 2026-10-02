@@ -1,6 +1,6 @@
 /**
  * The Wallets page's account coins, end to end: the real app, offscreen, linked to the fake maki
- * running maki's XRP, Stellar, Tron, Kaspa, Aptos, NEAR, Cardano and Cosmos apps (the test phrase's accounts), each network stood in for
+ * running maki's XRP, Stellar, Tron, Kaspa, Aptos, NEAR, Cardano, Cosmos and Sui apps (the test phrase's accounts), each network stood in for
  * on this computer (coin-stand-ins.ts). For each, it adds the account from maki, sees what it holds,
  * and sends a token from it, pressing what a person would: the app makes the payment, maki's app
  * reads it and signs, and the stand-in takes it only if the signature checks out, by the account's
@@ -36,6 +36,9 @@ import {
   NEAR_USDC,
   nearStandIn,
   stellarStandIn,
+  SUI_THEM,
+  SUI_USDC,
+  suiStandIn,
   tronStandIn,
   TRX_ME,
   TRX_THEM,
@@ -67,10 +70,9 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
   beforeAll(async () => {
     build()
     fake = await startFake(
-      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos', 'near', 'cardano', 'cosmos'].flatMap((a) => [
-        '--app',
-        join(APP_FIXTURES, `${a}.maki`)
-      ])
+      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos', 'near', 'cardano', 'cosmos', 'sui'].flatMap(
+        (a) => ['--app', join(APP_FIXTURES, `${a}.maki`)]
+      )
     )
   }, 180_000)
   afterAll(() => {
@@ -379,4 +381,48 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
       expect.objectContaining({ from: atomOf('osmo'), amount: 2_000_000n, denom: 'uosmo' })
     ])
   }, 180_000)
+
+  for (const [what, amount, choose, sent] of [
+    ['SUI from its coins', '1.25', [], { to: SUI_THEM, amount: 1_250_000_000n, gas: 'coins' }],
+    [
+      'USDC from its address balance',
+      '7.5',
+      ['--choose', SUI_USDC],
+      { to: SUI_THEM, amount: 7_500_000n, gas: 'coins' }
+    ]
+  ] as const)
+    it(`adds the Sui account and sends ${what}: maki signs the transaction data, Sui takes it`, async () => {
+      const sui = suiStandIn()
+      const server = await serve(sui.answer)
+      const unit = what.split(' ')[0]
+      try {
+        const said = await drive(
+          home(),
+          fake.port,
+          [
+            ...['--click', 'Wallets', '--click', 'Sui › Add from maki', '--until', 'as of'],
+            ...[
+              '--click',
+              'Sui › Send',
+              ...choose,
+              '--fill',
+              `0x…=${SUI_THEM}`,
+              '--fill',
+              `0.00=${amount}`
+            ],
+            ...['--click', 'Sui › Review on maki', '--until', `Sent ${amount} ${unit}`]
+          ],
+          { MAKI_COIN_SERVER: server.url }
+        )
+        expect(said).toContain(`Sent ${amount} ${unit}`)
+      } finally {
+        server.close()
+      }
+      expect(sui.sent).toEqual([
+        expect.objectContaining({
+          payments: [expect.objectContaining({ to: sent.to, amount: sent.amount })],
+          gas: sent.gas
+        })
+      ])
+    }, 180_000)
 })

@@ -1,7 +1,7 @@
 /**
  * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon,
- * Tron's TronGrid, api.kaspa.org, Aptos Labs' API, NEAR's RPC (with NearBlocks), Koios and a Cosmos
- * chain's REST API, each answering what maki desktop's wallet asks of it, for the test phrase's
+ * Tron's TronGrid, api.kaspa.org, Aptos Labs' API, NEAR's RPC (with NearBlocks), Koios, a Cosmos
+ * chain's REST API and Sui's GraphQL API, each answering what maki desktop's wallet asks of it, for the test phrase's
  * account holding some of the coin and of a token. What each is sent is read back here byte by byte,
  * apart from maki desktop's own encoding, and taken only if its signature checks out over the hash
  * the network has signed, by the account's own key, as the network would check it; each keeps what
@@ -1493,6 +1493,357 @@ export function cosmosStandIn(chain: {
       return respond(0, '')
     }
     return json(404, { code: 5, message: 'not found' })
+  }
+  return { answer, sent }
+}
+
+// ---- Sui ----
+
+/** The test phrase's Sui account (Slush's first), and someone to pay. */
+export const SUI_ME = '0x5e93a736d04fbb25737aa40bee40171ef79f65fae833749e3c089fe7cc2161f1'
+export const SUI_THEM = '0x29dfbf688abce7ab43bb8e70cae158ae961196e721440f515482f8ba1684390f'
+export const SUI_USDC =
+  '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC'
+const SUI_COIN = '0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI'
+const SUI_CHAIN = '4btiuiMPvEENsttpZC7CZ53DruC3MAgfznDbASZ7DR6S'
+
+/** What a Sui stand-in took: each payment the transaction makes, and how its fee was paid. */
+export interface SuiSent {
+  digest: string
+  payments: { to: string; amount: bigint; type: string }[]
+  gas: 'coins' | 'address balance'
+  budget: bigint
+}
+
+/**
+ * Sui's GraphQL API, answering maki desktop's wallet: the account holds 3 SUI in two coins and 1 SUI
+ * in its address balance, and 20 USDC in its address balance; the epoch is 1268 and gas 100 MIST.
+ * A transaction is read here (BCS) and each coin followed through its commands, to see what it
+ * pays whom; it's taken if its gas coins are the account's as they are now (or, with none, it's
+ * good this epoch and the next on this chain only), the objects it uses are too, and its signature
+ * (Sui's: the scheme's 0, the signature, the key) is Ed25519's over the hash of Sui's intent and the
+ * transaction, by the key whose address is the sender.
+ */
+export function suiStandIn({ withCoins = true } = {}): { answer: Answer; sent: SuiSent[] } {
+  const sent: SuiSent[] = []
+  const coins = new Map<
+    string,
+    { type: string; balance: bigint; version: bigint; digest: Uint8Array }
+  >([
+    [
+      `0x${'31'.repeat(32)}`,
+      {
+        type: SUI_COIN,
+        balance: 2_500_000_000n,
+        version: 1017n,
+        digest: new Uint8Array(32).fill(0x31)
+      }
+    ],
+    [
+      `0x${'32'.repeat(32)}`,
+      {
+        type: SUI_COIN,
+        balance: 500_000_000n,
+        version: 1018n,
+        digest: new Uint8Array(32).fill(0x32)
+      }
+    ]
+  ])
+  if (!withCoins) coins.clear()
+  const data = (d: unknown): [number, string] => [200, JSON.stringify({ data: d })]
+  const error = (message: string): [number, string] => [
+    200,
+    JSON.stringify({ data: null, errors: [{ message }] })
+  ]
+
+  /** A transaction, read: its inputs, what it pays whom, its gas and expiry; or why not. */
+  const read = (b: Uint8Array) => {
+    let at = 0
+    const take = (n: number): Uint8Array => {
+      if (at + n > b.length) throw new Error('short')
+      return b.slice(at, (at += n))
+    }
+    const uleb = (): number => {
+      let v = 0
+      for (let shift = 0; ; shift += 7) {
+        const x = take(1)[0]
+        v += (x & 0x7f) * 2 ** shift
+        if (!(x & 0x80)) return v
+      }
+    }
+    const int = (n: number): bigint => [...take(n)].reduceRight((v, x) => (v << 8n) | BigInt(x), 0n)
+    const address = (): string => `0x${hex.encode(take(32))}`
+    const str = (): string => new TextDecoder().decode(take(uleb()))
+    const typeTag = (): string => {
+      if (uleb() !== 7) throw new Error('a type the stand-in doesn’t read')
+      const t = `${address()}::${str()}::${str()}`
+      if (uleb() !== 0) throw new Error('type arguments')
+      return t
+    }
+    const ref = () => ({ id: address(), version: int(8), digest: take(uleb()) })
+    if (uleb() !== 0 || uleb() !== 0) throw new Error('not a programmable transaction')
+    type In =
+      | { pure: Uint8Array }
+      | { owned: ReturnType<typeof ref> }
+      | { withdraw: { amount: bigint; type: string } }
+    const inputs: In[] = Array.from({ length: uleb() }, () => {
+      const k = uleb()
+      if (k === 0) return { pure: take(uleb()) }
+      if (k === 1 && uleb() === 0) return { owned: ref() }
+      if (k === 2) {
+        if (uleb() !== 0) throw new Error('a withdrawal of another kind')
+        const amount = int(8)
+        if (uleb() !== 0) throw new Error('a withdrawal of another kind')
+        const type = typeTag()
+        if (uleb() !== 0) throw new Error('a withdrawal from someone else')
+        return { withdraw: { amount, type } }
+      }
+      throw new Error('an input the stand-in doesn’t read')
+    })
+    type Arg = { k: number; a: number; b: number }
+    const arg = (): Arg => {
+      const k = uleb()
+      return k === 0
+        ? { k, a: 0, b: 0 }
+        : k === 3
+          ? { k, a: Number(int(2)), b: Number(int(2)) }
+          : { k, a: Number(int(2)), b: 0 }
+    }
+    type Cmd =
+      | { call: string; types: string[]; args: Arg[] }
+      | { transfer: Arg[]; to: Arg }
+      | { split: Arg; amounts: Arg[] }
+      | { merge: Arg; from: Arg[] }
+    const commands: Cmd[] = Array.from({ length: uleb() }, () => {
+      const k = uleb()
+      if (k === 0) {
+        const call = `${address()}::${str()}::${str()}`
+        const types = Array.from({ length: uleb() }, typeTag)
+        return { call, types, args: Array.from({ length: uleb() }, arg) }
+      }
+      if (k === 1) {
+        const objects = Array.from({ length: uleb() }, arg)
+        return { transfer: objects, to: arg() }
+      }
+      if (k === 2) {
+        const coin = arg()
+        return { split: coin, amounts: Array.from({ length: uleb() }, arg) }
+      }
+      if (k === 3) {
+        const into = arg()
+        return { merge: into, from: Array.from({ length: uleb() }, arg) }
+      }
+      throw new Error('a command the stand-in doesn’t read')
+    })
+    const sender = address()
+    const payment = Array.from({ length: uleb() }, ref)
+    const owner = address()
+    const price = int(8)
+    const budget = int(8)
+    const kind = uleb()
+    let expiry: { min: bigint; max: bigint; chain: Uint8Array } | null = null
+    if (kind === 2) {
+      const opt = (): bigint | null => (take(1)[0] ? int(8) : null)
+      const min = opt()
+      const max = opt()
+      if (opt() !== null || opt() !== null || min === null || max === null)
+        throw new Error('an expiry by the clock')
+      expiry = { min, max, chain: take(uleb()) }
+      int(4)
+    } else if (kind !== 0) throw new Error('an expiry the stand-in doesn’t read')
+    if (at !== b.length) throw new Error('bytes after the transaction')
+    // each coin, followed: what a command's result holds
+    const pureAddress = (a: Arg): string =>
+      `0x${hex.encode((inputs[a.a] as { pure: Uint8Array }).pure)}`
+    const pureU64 = (a: Arg): bigint =>
+      (inputs[a.a] as { pure: Uint8Array }).pure.reduceRight((v, x) => (v << 8n) | BigInt(x), 0n)
+    const results = new Map<string, { amount: bigint; type: string }>()
+    const typeOf = (a: Arg): string => {
+      if (a.k === 0) return SUI_COIN
+      if (a.k === 1) {
+        const i = inputs[a.a]
+        if ('owned' in i) return coins.get(i.owned.id)?.type ?? 'unknown'
+        throw new Error('not a coin')
+      }
+      return results.get(`${a.a}`)?.type ?? results.get(`${a.a}.${a.b}`)?.type ?? 'unknown'
+    }
+    const payments: SuiSent['payments'] = []
+    commands.forEach((c, n) => {
+      if ('split' in c)
+        c.amounts.forEach((x, i) =>
+          results.set(`${n}.${i}`, { amount: pureU64(x), type: typeOf(c.split) })
+        )
+      else if ('call' in c && c.call.endsWith('::coin::redeem_funds'))
+        results.set(`${n}`, { amount: 0n, type: fullSui(c.types[0]) })
+      else if ('call' in c && c.call.endsWith('::coin::send_funds')) {
+        const to = pureAddress(c.args[1])
+        const coin = c.args[0]
+        const r = results.get(`${coin.a}.${coin.b}`)
+        if (to !== sender && r) payments.push({ to, amount: r.amount, type: fullSui(c.types[0]) })
+      } else if ('transfer' in c)
+        for (const o of c.transfer) {
+          const r = results.get(`${o.a}.${o.b}`) ?? results.get(`${o.a}.0`)
+          if (r) payments.push({ to: pureAddress(c.to), amount: r.amount, type: r.type })
+        }
+    })
+    return { inputs, sender, owner, payment, price, budget, expiry, payments }
+  }
+  const fullSui = (t: string): string => {
+    const [a, ...rest] = t.split('::')
+    return [`0x${a.replace(/^0x/, '').padStart(64, '0')}`, ...rest].join('::')
+  }
+
+  const answer: Answer = async (method, path, body) => {
+    if (method !== 'POST' || path !== '/graphql') return [404, '{}']
+    const { query, variables } = JSON.parse(body) as {
+      query: string
+      variables: Record<string, unknown>
+    }
+    if (query.includes('balances(first'))
+      return data({
+        address: {
+          balances: {
+            nodes: [
+              {
+                coinType: { repr: SUI_COIN },
+                totalBalance: withCoins ? '4000000000' : '1000000000',
+                coinBalance: withCoins ? '3000000000' : '0',
+                addressBalance: '1000000000'
+              },
+              {
+                coinType: { repr: fullSui(SUI_USDC) },
+                totalBalance: '20000000',
+                coinBalance: '0',
+                addressBalance: '20000000'
+              }
+            ]
+          }
+        }
+      })
+    if (query.includes('objects(filter')) {
+      const type = String(variables.t)
+      return data({
+        address: {
+          objects: {
+            nodes: [...coins.entries()]
+              .filter(([, c]) => type === `0x2::coin::Coin<0x2::sui::SUI>` && c.type === SUI_COIN)
+              .map(([id, c]) => ({
+                address: id,
+                version: Number(c.version),
+                digest: base58.encode(c.digest),
+                contents: { json: { id, balance: c.balance.toString() } }
+              }))
+          }
+        }
+      })
+    }
+    if (query.includes('epoch {'))
+      return data({
+        epoch: { epochId: 1268, referenceGasPrice: '100' },
+        chainIdentifier: SUI_CHAIN
+      })
+    if (query.includes('transactions(last'))
+      return data({
+        transactions: {
+          nodes: [
+            {
+              digest: 'Bwv9BCnhoWDUoXjf1Nj4VXR4vFdAGjsWxBNG1pnxmtvZ',
+              effects: {
+                status: 'SUCCESS',
+                timestamp: '2026-09-30T12:00:00Z',
+                balanceChanges: {
+                  nodes: [
+                    {
+                      owner: { address: SUI_ME },
+                      amount: '4000000000',
+                      coinType: { repr: SUI_COIN }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      })
+    const check = (bytes: Uint8Array): string | ReturnType<typeof read> => {
+      let t: ReturnType<typeof read>
+      try {
+        t = read(bytes)
+      } catch (e) {
+        return (e as Error).message
+      }
+      if (t.sender !== SUI_ME || t.owner !== SUI_ME) return 'not this account’s'
+      if (t.price < 100n) return 'gas price under the reference price'
+      for (const r of [...t.payment, ...t.inputs.flatMap((i) => ('owned' in i ? [i.owned] : []))]) {
+        const c = coins.get(r.id)
+        if (!c || c.version !== r.version || hex.encode(c.digest) !== hex.encode(r.digest))
+          return `object ${r.id} isn’t the account’s as it is now`
+      }
+      if (t.payment.length === 0) {
+        if (
+          !t.expiry ||
+          t.expiry.min !== 1268n ||
+          t.expiry.max > 1269n ||
+          base58.encode(t.expiry.chain) !== SUI_CHAIN
+        )
+          return 'no gas coin, and good for longer, or elsewhere'
+      }
+      return t
+    }
+    if (query.includes('simulateTransaction')) {
+      const t = check(base64.decode((variables.t as { bcs: { value: string } }).bcs.value))
+      if (typeof t === 'string') return error(t)
+      return data({
+        simulateTransaction: {
+          effects: {
+            status: 'SUCCESS',
+            executionError: null,
+            gasEffects: {
+              gasSummary: {
+                computationCost: '1000000',
+                storageCost: '1976000',
+                storageRebate: '978120'
+              }
+            }
+          }
+        }
+      })
+    }
+    if (query.includes('executeTransaction')) {
+      const bytes = base64.decode(String(variables.t))
+      const t = check(bytes)
+      if (typeof t === 'string') return error(t)
+      const [signature] = variables.s as string[]
+      const s = base64.decode(signature)
+      const key = s.subarray(65)
+      const owner = `0x${hex.encode(blake2b(Uint8Array.of(0, ...key), { dkLen: 32 }))}`
+      if (s.length !== 97 || s[0] !== 0 || owner !== SUI_ME)
+        return error('a signature by another key')
+      if (
+        !ed25519.verify(
+          s.subarray(1, 65),
+          blake2b(Uint8Array.of(0, 0, 0, ...bytes), { dkLen: 32 }),
+          key
+        )
+      )
+        return error('a signature that doesn’t check out')
+      const digest = base58.encode(
+        blake2b(Uint8Array.from([...new TextEncoder().encode('TransactionData::'), ...bytes]), {
+          dkLen: 32
+        })
+      )
+      for (const r of t.payment) coins.delete(r.id)
+      sent.push({
+        digest,
+        payments: t.payments,
+        gas: t.payment.length ? 'coins' : 'address balance',
+        budget: t.budget
+      })
+      return data({
+        executeTransaction: { effects: { status: 'SUCCESS', digest, executionError: null } }
+      })
+    }
+    return error('a query the stand-in doesn’t answer')
   }
   return { answer, sent }
 }

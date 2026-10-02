@@ -30,6 +30,7 @@ describe('prices', () => {
       'ripple',
       'solana',
       'stellar',
+      'sui',
       'tether',
       'tron',
       'usd-coin',
@@ -38,7 +39,7 @@ describe('prices', () => {
       'wrapped-bitcoin'
     ])
     expect(pricesUrl('eur')).toBe(
-      'https://api.coingecko.com/api/v3/simple/price?ids=akash-network,aptos,axelar,babylon,bitcoin,bitcoin-cash,cardano,celestia,cosmos,dai,dogecoin,dydx-chain,ethereum,euro-coin,juno-network,kaspa,litecoin,monero,near,neutron-3,osmosis,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
+      'https://api.coingecko.com/api/v3/simple/price?ids=akash-network,aptos,axelar,babylon,bitcoin,bitcoin-cash,cardano,celestia,cosmos,dai,dogecoin,dydx-chain,ethereum,euro-coin,juno-network,kaspa,litecoin,monero,near,neutron-3,osmosis,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,sui,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
     )
   })
 
