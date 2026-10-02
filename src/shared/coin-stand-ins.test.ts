@@ -5,12 +5,16 @@
  */
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { secp256k1 } from '@noble/curves/secp256k1.js'
-import { hmac } from '@noble/hashes/hmac.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
+import { sha3_256 } from '@noble/hashes/sha3.js'
 import { base64, hex } from '@scure/base'
 import { HDKey } from '@scure/bip32'
 import { describe, expect, it } from 'vitest'
 import {
+  APT_ME,
+  APT_THEM,
+  aptosStandIn,
+  slip10,
   stellarStandIn,
   tronStandIn,
   TRX_ME,
@@ -23,6 +27,7 @@ import {
   xrpStandIn
 } from './coin-stand-ins'
 import { envelope, PASSPHRASE, transactionXdr, type StellarPayment } from './coins/stellar'
+import { rawTransaction, signedTransaction as aptosSigned } from './coins/aptos'
 import { rawData, signedTransaction } from './coins/tron'
 import { encodePayment, type XrpPayment } from './coins/xrp'
 
@@ -87,12 +92,7 @@ describe('the XRP stand-in', () => {
 
 describe('the Stellar stand-in', () => {
   // SLIP-10 on Ed25519, SEP-5's path m/44'/148'/0'
-  let node = hmac(sha512, new TextEncoder().encode('ed25519 seed'), SEED)
-  for (const i of [44, 148, 0]) {
-    const index = Uint8Array.of(0x80 | (i >>> 24), (i >>> 16) & 0xff, (i >>> 8) & 0xff, i & 0xff)
-    node = hmac(sha512, node.slice(32), Uint8Array.of(0, ...node.slice(0, 32), ...index))
-  }
-  const secret = node.slice(0, 32)
+  const secret = slip10(SEED, [44, 148, 0])
   const payment: StellarPayment = {
     source: XLM_ME,
     fee: 100,
@@ -188,5 +188,42 @@ describe('the Tron stand-in', () => {
     expect(await submit(signedTransaction(raw, sign(raw, secp256k1.utils.randomSecretKey())))).toBe(
       false
     )
+  })
+})
+
+describe('the Aptos stand-in', () => {
+  const secret = slip10(SEED, [44, 637, 0, 0, 0])
+  const key = ed25519.getPublicKey(secret)
+  const raw = rawTransaction({
+    sender: APT_ME,
+    sequence: 16n,
+    call: { function: 'transfer', to: APT_THEM, amount: 1_000_000n },
+    maxGas: 28n,
+    gasPrice: 100n,
+    expiration: BigInt(Math.floor(Date.now() / 1000) + 600),
+    network: 0
+  })
+  const sign = (r: Uint8Array, by: Uint8Array): Uint8Array =>
+    ed25519.sign(
+      Uint8Array.from([...sha3_256(new TextEncoder().encode('APTOS::RawTransaction')), ...r]),
+      by
+    )
+  const submit = async (signed: Uint8Array, aptos = aptosStandIn()): Promise<number> =>
+    (await aptos.answer('POST', '/v1/transactions', '', signed))[0]
+
+  it('takes the account’s transaction, signed by its key', async () => {
+    const aptos = aptosStandIn()
+    expect(await submit(aptosSigned(raw, key, sign(raw, secret)), aptos)).toBe(202)
+    expect(aptos.sent).toEqual([
+      expect.objectContaining({ sender: APT_ME, function: '0x1::aptos_account::transfer' })
+    ])
+  })
+
+  it('turns away one changed after signing, or signed by another key', async () => {
+    const changed = raw.slice()
+    changed[changed.length - 2] ^= 1
+    expect(await submit(aptosSigned(changed, key, sign(raw, secret)))).toBe(400)
+    const other = ed25519.utils.randomSecretKey()
+    expect(await submit(aptosSigned(raw, ed25519.getPublicKey(other), sign(raw, other)))).toBe(400)
   })
 })

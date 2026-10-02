@@ -1,6 +1,6 @@
 /**
  * The Wallets page's account coins, end to end: the real app, offscreen, linked to the fake maki
- * running maki's XRP, Stellar, Tron and Kaspa apps (the test phrase's accounts), each network stood in for
+ * running maki's XRP, Stellar, Tron, Kaspa and Aptos apps (the test phrase's accounts), each network stood in for
  * on this computer (coin-stand-ins.ts). For each, it adds the account from maki, sees what it holds,
  * and sends a token from it, pressing what a person would: the app makes the payment, maki's app
  * reads it and signs, and the stand-in takes it only if the signature checks out, by the account's
@@ -16,6 +16,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
+  APT_ME,
+  APT_THEM,
+  APT_USDC,
+  aptosStandIn,
   KAS_ME,
   KAS_NEXT_CHANGE,
   KAS_THEM,
@@ -52,7 +56,10 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
   beforeAll(async () => {
     build()
     fake = await startFake(
-      ['xrp', 'stellar', 'tron', 'kaspa'].flatMap((a) => ['--app', join(APP_FIXTURES, `${a}.maki`)])
+      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos'].flatMap((a) => [
+        '--app',
+        join(APP_FIXTURES, `${a}.maki`)
+      ])
     )
   }, 180_000)
   afterAll(() => {
@@ -191,5 +198,36 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
       })
     ])
     expect(KAS_ME).toMatch(/^kaspa:qqd6e65y/)
+  }, 180_000)
+
+  it('adds the Aptos account, shows its APT and USDC, and sends USDC: its gas simulated, maki signs, Aptos takes it', async () => {
+    const aptos = aptosStandIn()
+    const server = await serve(aptos.answer)
+    try {
+      const said = await drive(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--click', 'Aptos › Add from maki', '--until', 'as of'],
+          ...['--click', 'Aptos › Send', '--choose', APT_USDC],
+          ...['--fill', `0x…=${APT_THEM}`, '--fill', '0.00=7.25'],
+          ...['--click', 'Aptos › Review on maki', '--until', 'Sent 7.25 USDC']
+        ],
+        { MAKI_COIN_SERVER: server.url }
+      )
+      expect(said).toContain('Sent 7.25 USDC')
+      expect(said).toMatch(/2\.5[\s\S]*APT[\s\S]*USDC\s*40/)
+    } finally {
+      server.close()
+    }
+    expect(aptos.sent).toEqual([
+      expect.objectContaining({
+        sender: APT_ME,
+        function: '0x1::aptos_account::transfer_fungible_assets',
+        args: [APT_USDC.slice(2), APT_THEM.slice(2), '50a06e0000000000'],
+        maxGas: 28n,
+        gasPrice: 100n
+      })
+    ])
   }, 180_000)
 })

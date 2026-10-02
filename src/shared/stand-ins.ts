@@ -327,15 +327,24 @@ export function ethStandIn(): { rpc: Rpc; sent: [string, string, unknown[]][] } 
   }
 }
 
-/** A server on a free local port, answering with `answer`; its address, and a way to stop it. */
+/**
+ * A server on a free local port, answering with `answer` (the body as text, and as the bytes it
+ * came as, for a coin that sends some); its address, and a way to stop it.
+ */
 export async function serve(
-  answer: (method: string, path: string, body: string) => Promise<[number, string]>
+  answer: (
+    method: string,
+    path: string,
+    body: string,
+    bytes: Uint8Array
+  ) => Promise<[number, string]>
 ): Promise<{ url: string; close: () => void }> {
   const server = createServer((req, res) => {
-    let body = ''
-    req.on('data', (d: Buffer) => (body += d.toString()))
+    const chunks: Buffer[] = []
+    req.on('data', (d: Buffer) => chunks.push(d))
     req.on('end', () => {
-      answer(req.method ?? 'GET', req.url ?? '/', body).then(
+      const bytes = new Uint8Array(Buffer.concat(chunks))
+      answer(req.method ?? 'GET', req.url ?? '/', Buffer.from(bytes).toString(), bytes).then(
         ([status, text]) => res.writeHead(status, { 'content-type': 'text/plain' }).end(text),
         (e: Error) => res.writeHead(500).end(e.message)
       )

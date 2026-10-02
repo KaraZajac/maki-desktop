@@ -89,7 +89,8 @@ const api = {
       network: 0 | 1,
       method: 'GET' | 'POST',
       path: string,
-      body?: string
+      body?: string,
+      binary?: boolean
     ): Promise<{ status: number; text: string }> => {
       const r = (await ipcRenderer.invoke(
         'coin:fetch',
@@ -97,7 +98,8 @@ const api = {
         network,
         method,
         path,
-        body
+        body,
+        binary
       )) as import('../shared/coin-servers').CoinResponse
       if ('error' in r) throw new Error(r.error)
       return r

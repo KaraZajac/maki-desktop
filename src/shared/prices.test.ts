@@ -4,6 +4,7 @@ import { money, PRICE_IDS, pricesUrl, readPrices, worth } from './prices'
 describe('prices', () => {
   it('asks about every coin and token maki knows, whatever is held', () => {
     expect(PRICE_IDS).toEqual([
+      'aptos',
       'bitcoin',
       'bitcoin-cash',
       'dai',
@@ -26,7 +27,7 @@ describe('prices', () => {
       'wrapped-bitcoin'
     ])
     expect(pricesUrl('eur')).toBe(
-      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,bitcoin-cash,dai,dogecoin,ethereum,euro-coin,kaspa,litecoin,monero,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
+      'https://api.coingecko.com/api/v3/simple/price?ids=aptos,bitcoin,bitcoin-cash,dai,dogecoin,ethereum,euro-coin,kaspa,litecoin,monero,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
     )
   })
 

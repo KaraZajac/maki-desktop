@@ -13,6 +13,7 @@ import {
 import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
+import { APTOS } from '@shared/coins/aptos'
 import { KASPA } from '@shared/coins/kaspa'
 import { STELLAR } from '@shared/coins/stellar'
 import { TRON } from '@shared/coins/tron'
@@ -122,6 +123,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'tron',
     line: 'TRX and USDT, the account TronLink and Ledger make.',
     Card: (p) => <AccountCard {...p} chain={TRON} />
+  },
+  {
+    app: APTOS.app,
+    name: 'Aptos',
+    glyph: 'aptos',
+    line: 'APT, USDC and USDT, the account Petra and Ledger make.',
+    Card: (p) => <AccountCard {...p} chain={APTOS} />
   }
 ]
 

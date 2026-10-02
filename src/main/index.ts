@@ -748,7 +748,8 @@ function ipc(): void {
       network: unknown,
       method: unknown,
       path: unknown,
-      body?: unknown
+      body?: unknown,
+      binary?: unknown
     ): Promise<CoinResponse> => {
       try {
         const servers =
@@ -761,7 +762,12 @@ function ipc(): void {
           (method !== 'GET' && method !== 'POST') ||
           typeof path !== 'string' ||
           !allowed(servers, method, path) ||
-          (body !== undefined && (typeof body !== 'string' || body.length > 256 * 1024))
+          (body !== undefined && (typeof body !== 'string' || body.length > 256 * 1024)) ||
+          (binary !== undefined &&
+            (binary !== true ||
+              !servers.binary ||
+              typeof body !== 'string' ||
+              !/^(?:[0-9a-f]{2})+$/.test(body)))
         )
           throw new Error('not something the wallet asks')
         let paced = pacedCoins.get(coin as CoinId)
@@ -782,8 +788,11 @@ function ipc(): void {
           try {
             const res = await paced(`${base}${path}`, {
               method,
-              body: body as string | undefined,
-              headers: body === undefined ? undefined : { 'content-type': 'application/json' }
+              body: binary ? Buffer.from(body as string, 'hex') : (body as string | undefined),
+              headers:
+                body === undefined
+                  ? undefined
+                  : { 'content-type': binary ? servers.binary! : 'application/json' }
             })
             // a server that's down or turning this computer away: the next, if there is one
             if (res.status === 429 || res.status >= 500) {

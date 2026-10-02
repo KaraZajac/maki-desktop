@@ -1,6 +1,6 @@
 /**
  * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon,
- * Tron's TronGrid and api.kaspa.org, each answering what maki desktop's wallet asks of it, for the test phrase's
+ * Tron's TronGrid, api.kaspa.org and Aptos Labs' API, each answering what maki desktop's wallet asks of it, for the test phrase's
  * account holding some of the coin and of a token. What each is sent is read back here byte by byte,
  * apart from maki desktop's own encoding, and taken only if its signature checks out over the hash
  * the network has signed, by the account's own key, as the network would check it; each keeps what
@@ -9,9 +9,10 @@
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js'
 import { blake2b } from '@noble/hashes/blake2.js'
+import { hmac } from '@noble/hashes/hmac.js'
 import { ripemd160 } from '@noble/hashes/legacy.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
-import { keccak_256 } from '@noble/hashes/sha3.js'
+import { keccak_256, sha3_256 } from '@noble/hashes/sha3.js'
 import { hex } from '@scure/base'
 import { HDKey } from '@scure/bip32'
 import { addressAt, addressOfScript, transactionId } from './coins/kaspa'
@@ -19,7 +20,22 @@ import { accountAddress, PASSPHRASE } from './coins/stellar'
 import { addressText } from './coins/tron'
 import { classicAddress } from './coins/xrp'
 
-type Answer = (method: string, path: string, body: string) => Promise<[number, string]>
+type Answer = (
+  method: string,
+  path: string,
+  body: string,
+  bytes?: Uint8Array
+) => Promise<[number, string]>
+
+/** An Ed25519 key by SLIP-10 (every step hardened), as Stellar's, Aptos's and Solana's wallets make them. */
+export function slip10(seed: Uint8Array, path: number[]): Uint8Array {
+  let node = hmac(sha512, new TextEncoder().encode('ed25519 seed'), seed)
+  for (const i of path) {
+    const index = Uint8Array.of(0x80 | (i >>> 24), (i >>> 16) & 0xff, (i >>> 8) & 0xff, i & 0xff)
+    node = hmac(sha512, node.slice(32), Uint8Array.of(0, ...node.slice(0, 32), ...index))
+  }
+  return node.slice(0, 32)
+}
 
 /** The test phrase's seed: "abandon" eleven times, then "about" (BIP 39's). */
 export const TEST_SEED = hex.decode(
@@ -805,6 +821,165 @@ export function kaspaStandIn(): { answer: Answer; sent: KasSent[] } {
       return json(200, { transactionId: id })
     }
     return json(404, { detail: 'Not Found' })
+  }
+  return { answer, sent }
+}
+
+// ---- Aptos ----
+
+/** The test phrase's Aptos account (Petra's first), its key, and someone to pay. */
+export const APT_ME = '0xeb663b681209e7087d681c5d3eed12aaa8e1915e7c87794542c3f96e94b3d3bf'
+export const APT_THEM = '0xf867372dfec13fb6c0740d4b574363685e10e6f243e9554ffa8f6e698e940efa'
+/** Circle's USDC on Aptos: its metadata's address. */
+export const APT_USDC = '0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b'
+
+/** A transaction the Aptos stand-in took. */
+export interface AptSent {
+  hash: string
+  sender: string
+  sequence: bigint
+  /** `module::function`, its type arguments and its arguments (each as BCS) */
+  function: string
+  types: string[]
+  args: string[]
+  maxGas: bigint
+  gasPrice: bigint
+}
+
+/** A RawTransaction read back (BCS), as far as an entry function goes; null if it's anything else. */
+function aptosRaw(raw: Uint8Array) {
+  let at = 0
+  const take = (n: number): Uint8Array => {
+    if (at + n > raw.length) throw new Error('short')
+    return raw.slice(at, (at += n))
+  }
+  const u64 = (): bigint => new DataView(take(8).buffer).getBigUint64(0, true)
+  const uleb = (): number => {
+    let v = 0
+    for (let shift = 0; ; shift += 7) {
+      const b = take(1)[0]
+      v += (b & 0x7f) * 2 ** shift
+      if (!(b & 0x80)) return v
+    }
+  }
+  const str = (): string => new TextDecoder().decode(take(uleb()))
+  const address = (): string => `0x${hex.encode(take(32))}`
+  const sender = address()
+  const sequence = u64()
+  if (uleb() !== 2) return null
+  const fn = `${address()}::${str()}::${str()}`
+  const types: string[] = []
+  for (let n = uleb(); n > 0; n--) {
+    if (uleb() !== 7) return null
+    types.push(`${address()}::${str()}::${str()}`)
+    if (uleb() !== 0) return null
+  }
+  const args: string[] = []
+  for (let n = uleb(); n > 0; n--) args.push(hex.encode(take(uleb())))
+  const maxGas = u64()
+  const gasPrice = u64()
+  const expiration = u64()
+  const chain = take(1)[0]
+  if (at !== raw.length) return null
+  return { sender, sequence, fn, types, args, maxGas, gasPrice, expiration, chain }
+}
+
+/**
+ * Aptos Labs' API, answering maki desktop's wallet: the account (sequence 16, its own key) holds 2.5
+ * APT and 40 USDC; gas is 100 octas a unit and a transfer uses 12 units. A simulation must carry no
+ * signature (Aptos's simulations refuse a real one); a transaction sent must be signed: Ed25519
+ * over SHA3-256("APTOS::RawTransaction") and the transaction, by the key whose SHA3-256 (with the
+ * scheme's 0) is the sender's address, at the account's sequence, on the main network's chain, not
+ * expired.
+ */
+export function aptosStandIn(): { answer: Answer; sent: AptSent[] } {
+  const sent: AptSent[] = []
+  let sequence = 16n
+  const json = (status: number, body: unknown): [number, string] => [status, JSON.stringify(body)]
+  /** a signed transaction: the raw one, then an Ed25519 authenticator (99 bytes) */
+  const split = (b: Uint8Array) => {
+    const auth = b.subarray(b.length - 99)
+    if (auth[0] !== 0 || auth[1] !== 32 || auth[34] !== 64) return null
+    return {
+      raw: b.subarray(0, b.length - 99),
+      key: auth.subarray(2, 34),
+      signature: auth.subarray(35)
+    }
+  }
+  const answer: Answer = async (method, path, _body, bytes = new Uint8Array()) => {
+    if (method === 'GET' && path === `/v1/accounts/${APT_ME}`)
+      return json(200, { sequence_number: sequence.toString(), authentication_key: APT_ME })
+    if (method === 'GET' && path === `/v1/accounts/${APT_ME}/balance/0x1::aptos_coin::AptosCoin`)
+      return json(200, 250_000_000)
+    if (method === 'GET' && path === `/v1/accounts/${APT_ME}/balance/${APT_USDC}`)
+      return json(200, 40_000_000)
+    if (method === 'GET' && path.startsWith(`/v1/accounts/${APT_ME}/balance/`)) return json(200, 0)
+    if (method === 'GET' && path === '/v1/estimate_gas_price')
+      return json(200, {
+        deprioritized_gas_estimate: 100,
+        gas_estimate: 100,
+        prioritized_gas_estimate: 150
+      })
+    if (method === 'POST' && path === '/v1/graphql')
+      return json(200, {
+        data: {
+          account_transactions: [
+            {
+              transaction_version: 3_000_000_123,
+              fungible_asset_activities: [
+                {
+                  amount: 250_000_000,
+                  type: '0x1::fungible_asset::Deposit',
+                  asset_type: '0x000000000000000000000000000000000000000000000000000000000000000a',
+                  is_transaction_success: true,
+                  transaction_timestamp: '2026-09-30T12:00:00.000000',
+                  is_gas_fee: false
+                }
+              ]
+            }
+          ]
+        }
+      })
+    if (method === 'POST' && path.startsWith('/v1/transactions')) {
+      const signed = split(bytes)
+      const tx = signed && aptosRaw(signed.raw)
+      if (!signed || !tx)
+        return json(400, { message: 'not a signed transaction maki desktop makes' })
+      if (path.startsWith('/v1/transactions/simulate')) {
+        if (signed.signature.some((b) => b !== 0))
+          return json(400, { message: 'a simulation is not signed' })
+        return json(200, [{ success: true, vm_status: 'Executed successfully', gas_used: '12' }])
+      }
+      const message = Uint8Array.from([
+        ...sha3_256(new TextEncoder().encode('APTOS::RawTransaction')),
+        ...signed.raw
+      ])
+      const owner = `0x${hex.encode(sha3_256(Uint8Array.from([...signed.key, 0])))}`
+      if (
+        owner !== tx.sender ||
+        tx.sender !== APT_ME ||
+        !ed25519.verify(signed.signature, message, signed.key)
+      )
+        return json(400, { message: 'Invalid transaction: INVALID_SIGNATURE' })
+      if (tx.sequence !== sequence) return json(400, { message: 'SEQUENCE_NUMBER_TOO_OLD' })
+      if (tx.chain !== 1) return json(400, { message: 'BAD_CHAIN_ID' })
+      if (tx.expiration * 1000n < BigInt(Date.now()))
+        return json(400, { message: 'TRANSACTION_EXPIRED' })
+      const hash = `0x${hex.encode(sha3_256(Uint8Array.from([...sha3_256(new TextEncoder().encode('APTOS::Transaction')), 0, ...bytes])))}`
+      sequence++
+      sent.push({
+        hash,
+        sender: tx.sender,
+        sequence: tx.sequence,
+        function: tx.fn.replace(/^0x0+1::/, '0x1::'),
+        types: tx.types,
+        args: tx.args,
+        maxGas: tx.maxGas,
+        gasPrice: tx.gasPrice
+      })
+      return json(202, { hash })
+    }
+    return json(404, { message: 'not found' })
   }
   return { answer, sent }
 }

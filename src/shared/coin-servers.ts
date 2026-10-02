@@ -21,6 +21,8 @@ export interface CoinServers {
   post: RegExp
   /** the most requests a second (the servers' own limits, with room) */
   perSecond: number
+  /** the type of the bytes it takes in a POST's body, for a coin that sends some (they cross as hex) */
+  binary?: string
 }
 
 /** Each coin's servers; a coin's entry comes with its wallet. */
@@ -59,18 +61,33 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
     get: /^\/(addresses\/kaspa(test)?:[02-9ac-hj-np-z]{61,63}\/full-transactions\?limit=20&resolve_previous_outpoints=light|info\/fee-estimate|info\/blockdag)$/,
     post: /^\/(addresses\/(active|utxos)|transactions)$/,
     perSecond: 4
+  },
+  // Aptos Labs' API (keyless, its per-IP limits low): the account, its balances by coin type or
+  // asset, what it sent, gas prices, simulating and sending a transaction (as BCS); and history
+  // from its indexer (GraphQL)
+  aptos: {
+    main: ['https://api.mainnet.aptoslabs.com'],
+    test: ['https://api.testnet.aptoslabs.com'],
+    get: /^\/v1\/(accounts\/0x[0-9a-f]{64}(\/balance\/0x[0-9a-f]{1,64}(::[A-Za-z0-9_]{1,128}::[A-Za-z0-9_]{1,128})?|\/transactions\?limit=20)?|estimate_gas_price)$/,
+    post: /^\/v1\/(transactions(\/simulate\?estimate_max_gas_amount=true&estimate_gas_unit_price=true)?|graphql)$/,
+    perSecond: 2,
+    binary: 'application/x.aptos.signed_transaction+bcs'
   }
 }
 
 /** What the main process answers a wallet's request with: the server's status and its body. */
 export type CoinResponse = { status: number; text: string } | { error: string }
 
-/** A wallet's way to its coin's servers (the main process's `coin:fetch`). */
+/**
+ * A wallet's way to its coin's servers (the main process's `coin:fetch`): a body is JSON, or with
+ * `binary` the hex of bytes of the coin's own `binary` type.
+ */
 export type CoinFetch = (
   network: 0 | 1,
   method: 'GET' | 'POST',
   path: string,
-  body?: string
+  body?: string,
+  binary?: boolean
 ) => Promise<{ status: number; text: string }>
 
 /** Whether a request is one the coin's wallet makes. */

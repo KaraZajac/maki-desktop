@@ -21,8 +21,8 @@ const keyOf = (chain: AccountChain, a: SharedAccount): string =>
   `${chain.id} ${a.network} ${a.address}`
 const fetcher =
   (chain: AccountChain): CoinFetch =>
-  (network, method, path, body) =>
-    window.maki.coins.fetch(chain.id, network, method, path, body)
+  (network, method, path, body, binary) =>
+    window.maki.coins.fetch(chain.id, network, method, path, body, binary)
 
 /** What a token's called here: its symbol if it's known, else its ID, shortened. */
 const tokenName = (chain: AccountChain, network: 0 | 1, t: ChainToken | null): string =>
