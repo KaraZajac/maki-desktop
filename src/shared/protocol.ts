@@ -89,7 +89,8 @@ export const MAX_STORE_RECORD = 64 * 1024
 export const Network = { BITCOIN: 0, TESTNET: 1 } as const
 export type NetworkValue = (typeof Network)[keyof typeof Network]
 /** The Bitcoin app's accounts: native SegWit (BIP84) and taproot (BIP86). */
-export const BtcAccount = { SEGWIT: 0, TAPROOT: 1 } as const
+/** A Bitcoin-kind account: native SegWit, taproot, or pay-to-key-hash (BIP44: Dogecoin's, Bitcoin Cash's). */
+export const BtcAccount = { SEGWIT: 0, TAPROOT: 1, LEGACY: 2 } as const
 export type BtcAccountValue = (typeof BtcAccount)[keyof typeof BtcAccount]
 export type ApprovalValue = (typeof Approval)[number]
 

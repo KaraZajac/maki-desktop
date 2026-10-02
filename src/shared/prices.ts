@@ -12,6 +12,8 @@ export type Currency = (typeof CURRENCIES)[number]
 const IDS: Record<string, string> = {
   BTC: 'bitcoin',
   LTC: 'litecoin',
+  DOGE: 'dogecoin',
+  BCH: 'bitcoin-cash',
   ETH: 'ethereum',
   POL: 'polygon-ecosystem-token',
   USDC: 'usd-coin',

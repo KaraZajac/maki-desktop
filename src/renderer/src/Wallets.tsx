@@ -3,6 +3,8 @@ import type { Link } from '@shared/link'
 import { CURRENCIES, type Currency } from '@shared/prices'
 import {
   BITCOIN_APP,
+  BITCOINCASH_APP,
+  DOGECOIN_APP,
   ETHEREUM_APP,
   LITECOIN_APP,
   MONERO_APP,
@@ -11,7 +13,7 @@ import {
 import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
-import { Litecoin } from './Litecoin'
+import { BitcoinCash, Dogecoin, Litecoin } from './BtcCoin'
 import { Monero } from './Monero'
 import { Solana } from './Solana'
 import { PricesContext, useFreshPrices } from './prices-state'
@@ -52,6 +54,20 @@ const WALLETS: WalletKind[] = [
     glyph: 'litecoin',
     line: 'The accounts Litecoin Core, Electrum-LTC and Ledger make from the phrase.',
     Card: Litecoin
+  },
+  {
+    app: DOGECOIN_APP,
+    name: 'Dogecoin',
+    glyph: 'dogecoin',
+    line: 'The account Trezor, Ledger and the other BIP44 wallets make from the phrase.',
+    Card: Dogecoin
+  },
+  {
+    app: BITCOINCASH_APP,
+    name: 'Bitcoin Cash',
+    glyph: 'bitcoincash',
+    line: 'The account Electron Cash and Ledger make, through its Electrum servers.',
+    Card: BitcoinCash
   },
   {
     app: ETHEREUM_APP,

@@ -24,6 +24,8 @@ import { BtcAccount, type ApprovalValue, type BtcAccountValue, type NetworkValue
 import {
   BitcoinApp,
   EthereumApp,
+  BITCOINCASH_APP,
+  DOGECOIN_APP,
   LITECOIN_APP,
   MoneroApp,
   SolanaApp,
@@ -96,6 +98,8 @@ export class Link {
   /** maki's wallets: apps from the maki store, which maki keeps the keys for */
   readonly bitcoin: BitcoinApp
   readonly litecoin: BitcoinApp
+  readonly dogecoin: BitcoinApp
+  readonly bitcoincash: BitcoinApp
   readonly ethereumApp: EthereumApp
   readonly monero: MoneroApp
   /** the Ethereum account, for sites through the browser extension */
@@ -127,6 +131,8 @@ export class Link {
       this.appMessage(app, message, timeoutMs)
     this.bitcoin = new BitcoinApp(send)
     this.litecoin = new BitcoinApp(send, LITECOIN_APP, 'Litecoin')
+    this.dogecoin = new BitcoinApp(send, DOGECOIN_APP, 'Dogecoin')
+    this.bitcoincash = new BitcoinApp(send, BITCOINCASH_APP, 'Bitcoin Cash')
     this.ethereumApp = new EthereumApp(send)
     this.monero = new MoneroApp(send)
     this.ethereum = new Ethereum(
@@ -425,9 +431,9 @@ export class Link {
     return r
   }
 
-  /** maki's app for a coin of Bitcoin's kind: its Bitcoin app, or its Litecoin app. */
+  /** maki's app for a coin of Bitcoin's kind: its Bitcoin, Litecoin, Dogecoin or Bitcoin Cash app. */
   private btcApp(chain: BtcChain): BitcoinApp {
-    return chain === 'litecoin' ? this.litecoin : this.bitcoin
+    return this[chain]
   }
 
   /** A Bitcoin (or Litecoin) account for wallet software, once the owner agrees on maki. */
@@ -470,7 +476,7 @@ export class Link {
   ): Promise<{ approval: ApprovalValue; address: string }> {
     this.linkedClient()
     const app = this.btcApp(chain)
-    const which = `${chain === 'litecoin' ? 'Litecoin ' : ''}${account === BtcAccount.TAPROOT ? 'taproot ' : ''}${change ? 'change' : 'receive'} address #${index}`
+    const which = `${chain === 'bitcoin' ? '' : `${app.name} `}${account === BtcAccount.TAPROOT ? 'taproot ' : ''}${change ? 'change' : 'receive'} address #${index}`
     this.note(`${which} is on maki's screen: compare it`)
     const r = await app.address(network, change, index, account)
     this.note(
@@ -620,7 +626,7 @@ export class Link {
   ): Promise<{ approval: ApprovalValue; reason: string; signed: Uint8Array | null }> {
     this.linkedClient()
     const app = this.btcApp(chain)
-    this.note(`${chain === 'litecoin' ? 'Litecoin ' : ''}transaction sent: go through it on maki`)
+    this.note(`${chain === 'bitcoin' ? '' : `${app.name} `}transaction sent: go through it on maki`)
     const r = await app.sign(network, psbt)
     this.note(
       r.approval === 'approved'

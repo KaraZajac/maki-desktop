@@ -23,8 +23,13 @@ import type { MultisigWallet } from './multisig'
 import { base58 } from '@scure/base'
 
 export const BITCOIN_APP = 'com.leviathan.maki.bitcoin'
-/** Litecoin's app speaks the Bitcoin app's messages (it's Bitcoin's wallet code on Litecoin's networks). */
+/**
+ * Litecoin's, Dogecoin's and Bitcoin Cash's apps speak the Bitcoin app's messages (each is
+ * Bitcoin's wallet code on its own networks; Dogecoin's and Bitcoin Cash's accounts are kind 2).
+ */
 export const LITECOIN_APP = 'com.leviathan.maki.litecoin'
+export const DOGECOIN_APP = 'com.leviathan.maki.dogecoin'
+export const BITCOINCASH_APP = 'com.leviathan.maki.bitcoincash'
 export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
 export const MONERO_APP = 'com.leviathan.maki.monero'
 export const SOLANA_APP = 'com.leviathan.maki.solana'
@@ -180,7 +185,7 @@ const SIGNED = 0x47
 
 /** maki's Bitcoin app: native SegWit (BIP84) and taproot (BIP86) accounts. */
 export class BitcoinApp extends WalletApp {
-  /** maki's Bitcoin app; or its Litecoin app, which takes the same messages but multisig's. */
+  /** maki's Bitcoin app; or its Litecoin, Dogecoin or Bitcoin Cash app, which take the same messages but multisig's. */
   constructor(send: AppMessage, id = BITCOIN_APP, name = 'Bitcoin') {
     super(send, id, name)
   }

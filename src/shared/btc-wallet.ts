@@ -1,6 +1,6 @@
 /**
- * maki's Bitcoin and Litecoin accounts as a wallet in maki desktop: their balance and activity, a
- * fresh address to receive at, and sending, which maki shows and signs.
+ * maki's Bitcoin, Litecoin, Dogecoin and Bitcoin Cash accounts as a wallet in maki desktop: their
+ * balance and activity, a fresh address to receive at, and sending, which maki shows and signs.
  *
  * maki desktop has only what maki shares for wallet software, the account's descriptor (its
  * master key's fingerprint, its path and its xpub): enough to work out every address, never to
@@ -9,17 +9,33 @@
  * made the way maki reads them (the whole previous transaction of each native SegWit coin, each
  * key's derivation, and change marked as change), and maki goes through every output and the fee
  * with its owner before it signs. Litecoin's transactions, signatures and PSBTs are Bitcoin's: only
- * its addresses, its coin type and its servers differ.
+ * its addresses, its coin type and its servers differ. Dogecoin's and Bitcoin Cash's are Bitcoin's
+ * from before SegWit: an account pays to its keys' hashes (BIP44), every coin comes with the whole
+ * transaction it spends (maki reads its amount there), and maki desktop finishes what maki signed
+ * itself (Bitcoin Cash's signatures carry its fork ID, which Bitcoin's tools don't take). Their
+ * chains come through the same Esplora calls, which the main process answers from their own
+ * servers (Bitcoin Cash's Electrum servers).
  */
 import { sha256 } from '@noble/hashes/sha2.js'
 import { HDKey } from '@scure/bip32'
 import { createBase58check, hex } from '@scure/base'
 import * as btc from '@scure/btc-signer'
+import { hash160 } from '@scure/btc-signer/utils.js'
+import { decodeCashAddr, encodeCashAddr } from './cashaddr'
 
-export type BtcNetwork = 'bitcoin' | 'test' | 'litecoin' | 'litecoin-test'
-export type BtcKind = 'segwit' | 'taproot'
-/** Which coin: maki's Bitcoin app's, or its Litecoin app's. */
-export type BtcChain = 'bitcoin' | 'litecoin'
+export type BtcNetwork =
+  | 'bitcoin'
+  | 'test'
+  | 'litecoin'
+  | 'litecoin-test'
+  | 'dogecoin'
+  | 'dogecoin-test'
+  | 'bitcoincash'
+  | 'bitcoincash-test'
+/** Native SegWit, taproot, or pay-to-key-hash (BIP44), the one kind before SegWit. */
+export type BtcKind = 'segwit' | 'taproot' | 'legacy'
+/** Which coin: maki's Bitcoin app's, its Litecoin app's, its Dogecoin app's or its Bitcoin Cash app's. */
+export type BtcChain = 'bitcoin' | 'litecoin' | 'dogecoin' | 'bitcoincash'
 
 /** An account, as its descriptor says. */
 export interface BtcAccountInfo {
@@ -54,16 +70,35 @@ const VERSIONS: Record<BtcNetwork, typeof MAIN_VERSIONS> = {
   bitcoin: MAIN_VERSIONS,
   test: TEST_VERSIONS,
   litecoin: MAIN_VERSIONS,
-  'litecoin-test': TEST_VERSIONS
+  'litecoin-test': TEST_VERSIONS,
+  dogecoin: MAIN_VERSIONS,
+  'dogecoin-test': TEST_VERSIONS,
+  bitcoincash: MAIN_VERSIONS,
+  'bitcoincash-test': TEST_VERSIONS
 }
 /** Litecoin's addresses, as Litecoin Core's chainparams have them: `ltc1…`, `L…`, `M…`. */
 export const LITECOIN = { bech32: 'ltc', pubKeyHash: 0x30, scriptHash: 0x32, wif: 0xb0 }
 export const LITECOIN_TEST = { bech32: 'tltc', pubKeyHash: 0x6f, scriptHash: 0x3a, wif: 0xef }
+/** Dogecoin Core's: `D…` (no SegWit, so no bech32 prefix of its own; this one is never used). */
+export const DOGECOIN = { bech32: 'doge', pubKeyHash: 0x1e, scriptHash: 0x16, wif: 0x9e }
+export const DOGECOIN_TEST = { bech32: 'tdge', pubKeyHash: 0x71, scriptHash: 0xc4, wif: 0xf1 }
+/** Bitcoin Cash's base58 forms (`1…`, `3…`), which it takes beside CashAddr. */
+export const BITCOINCASH = { bech32: 'bch', pubKeyHash: 0x00, scriptHash: 0x05, wif: 0x80 }
+export const BITCOINCASH_TEST = { bech32: 'tbch', pubKeyHash: 0x6f, scriptHash: 0xc4, wif: 0xef }
 const NETWORKS: Record<BtcNetwork, typeof btc.NETWORK> = {
   bitcoin: btc.NETWORK,
   test: btc.TEST_NETWORK,
   litecoin: LITECOIN,
-  'litecoin-test': LITECOIN_TEST
+  'litecoin-test': LITECOIN_TEST,
+  dogecoin: DOGECOIN,
+  'dogecoin-test': DOGECOIN_TEST,
+  bitcoincash: BITCOINCASH,
+  'bitcoincash-test': BITCOINCASH_TEST
+}
+/** CashAddr's prefix, on Bitcoin Cash's networks. */
+export const CASHADDR: Partial<Record<BtcNetwork, string>> = {
+  bitcoincash: 'bitcoincash',
+  'bitcoincash-test': 'bchtest'
 }
 /**
  * The P2SH addresses Litecoin takes beside its own: Bitcoin's version bytes (`3…`, `2…`), which
@@ -79,38 +114,101 @@ export const EXPLORER: Record<BtcNetwork, string> = {
   bitcoin: 'https://mempool.space',
   test: 'https://mempool.space/testnet4',
   litecoin: 'https://litecoinspace.org',
-  'litecoin-test': 'https://litecoinspace.org/testnet'
+  'litecoin-test': 'https://litecoinspace.org/testnet',
+  dogecoin: 'https://dogechain.info',
+  'dogecoin-test': 'https://sochain.com/testnet/doge',
+  bitcoincash: 'https://explorer.bitcoinunlimited.info',
+  'bitcoincash-test': 'https://chipnet.bch.ninja'
 }
 /** The explorer's name, as a button says it. */
 export const EXPLORER_NAME: Record<BtcNetwork, string> = {
   bitcoin: 'mempool.space',
   test: 'mempool.space',
   litecoin: 'litecoinspace.org',
-  'litecoin-test': 'litecoinspace.org'
+  'litecoin-test': 'litecoinspace.org',
+  dogecoin: 'dogechain.info',
+  'dogecoin-test': 'sochain.com',
+  bitcoincash: 'bitcoinunlimited.info',
+  'bitcoincash-test': 'chipnet.bch.ninja'
 }
 /** The unit amounts are in: test coins marked as such. */
 export const UNIT: Record<BtcNetwork, string> = {
   bitcoin: 'BTC',
   test: 'tBTC',
   litecoin: 'LTC',
-  'litecoin-test': 'tLTC'
+  'litecoin-test': 'tLTC',
+  dogecoin: 'DOGE',
+  'dogecoin-test': 'tDOGE',
+  bitcoincash: 'BCH',
+  'bitcoincash-test': 'tBCH'
 }
 /** Which coin a network is, and whether it's a test network, whose coins are worth nothing. */
 export const CHAIN: Record<BtcNetwork, BtcChain> = {
   bitcoin: 'bitcoin',
   test: 'bitcoin',
   litecoin: 'litecoin',
-  'litecoin-test': 'litecoin'
+  'litecoin-test': 'litecoin',
+  dogecoin: 'dogecoin',
+  'dogecoin-test': 'dogecoin',
+  bitcoincash: 'bitcoincash',
+  'bitcoincash-test': 'bitcoincash'
 }
-export const isTest = (network: BtcNetwork): boolean =>
-  network === 'test' || network === 'litecoin-test'
+export const isTest = (network: BtcNetwork): boolean => NETWORKS_OF[CHAIN[network]][1] === network
 /** A chain's networks: its own, then its test network's. */
 export const NETWORKS_OF: Record<BtcChain, [BtcNetwork, BtcNetwork]> = {
   bitcoin: ['bitcoin', 'test'],
-  litecoin: ['litecoin', 'litecoin-test']
+  litecoin: ['litecoin', 'litecoin-test'],
+  dogecoin: ['dogecoin', 'dogecoin-test'],
+  bitcoincash: ['bitcoincash', 'bitcoincash-test']
 }
-/** The coin as a sentence says it, and in a payment request's URI (BIP21, and Litecoin's like it). */
-export const COIN_WORD: Record<BtcChain, string> = { bitcoin: 'bitcoin', litecoin: 'litecoin' }
+/** The coin as a sentence says it, and in a payment request's URI (BIP21, and the others' like it). */
+export const COIN_WORD: Record<BtcChain, string> = {
+  bitcoin: 'bitcoin',
+  litecoin: 'litecoin',
+  dogecoin: 'dogecoin',
+  bitcoincash: 'bitcoincash'
+}
+/** The coin's name, capitalised: in what's said about an address that isn't one. */
+export const COIN_NAME: Record<BtcChain, string> = {
+  bitcoin: 'Bitcoin',
+  litecoin: 'Litecoin',
+  dogecoin: 'Dogecoin',
+  bitcoincash: 'Bitcoin Cash'
+}
+/** Its own coin type (SLIP-44): its test network's is 1, every chain's. */
+const COIN_TYPE: Record<BtcChain, number> = {
+  bitcoin: 0,
+  litecoin: 2,
+  dogecoin: 3,
+  bitcoincash: 145
+}
+/** Whether a chain spends with SegWit and taproot, or pays to keys' hashes (BIP44). */
+export const LEGACY: Record<BtcChain, boolean> = {
+  bitcoin: false,
+  litecoin: false,
+  dogecoin: true,
+  bitcoincash: true
+}
+/**
+ * Change smaller than this isn't worth an output: it goes to the fee. Dogecoin Core takes outputs
+ * under 0.01 DOGE only with an extra fee each.
+ */
+export const DUST_OF: Record<BtcChain, bigint> = {
+  bitcoin: 546n,
+  litecoin: 546n,
+  dogecoin: 1_000_000n,
+  bitcoincash: 546n
+}
+/**
+ * Whether a waiting payment can be sent again with a higher fee (BIP125): not on Bitcoin Cash, whose
+ * nodes keep the first they see, nor on Dogecoin, whose nodes don't all replace.
+ */
+export const REPLACES: Record<BtcChain, boolean> = {
+  bitcoin: true,
+  litecoin: true,
+  dogecoin: false,
+  bitcoincash: false
+}
 
 /**
  * The account's key as wallet software takes it on its own: a zpub (vpub on the test network) for
@@ -135,18 +233,22 @@ export function walletKey(info: BtcAccountInfo): string {
  */
 export function parseDescriptor(descriptor: string, chain: BtcChain = 'bitcoin'): BtcAccountInfo {
   const m =
-    /^(wpkh|tr)\(\[([0-9a-f]{8})\/(\d+)h\/(\d+)h\/(\d+)h\]([1-9A-HJ-NP-Za-km-z]+)\/<0;1>\/\*\)(#[0-9a-z]{8})?$/.exec(
+    /^(wpkh|tr|pkh)\(\[([0-9a-f]{8})\/(\d+)h\/(\d+)h\/(\d+)h\]([1-9A-HJ-NP-Za-km-z]+)\/<0;1>\/\*\)(#[0-9a-z]{8})?$/.exec(
       descriptor.trim()
     )
   if (!m) throw new Error('not a descriptor of maki’s')
   const [, fn, fp, purpose, coin, account, xpub] = m
-  const kind: BtcKind = fn === 'wpkh' ? 'segwit' : 'taproot'
-  if ((kind === 'segwit' && purpose !== '84') || (kind === 'taproot' && purpose !== '86'))
+  const kind: BtcKind = fn === 'wpkh' ? 'segwit' : fn === 'tr' ? 'taproot' : 'legacy'
+  if (
+    (kind === 'segwit' && purpose !== '84') ||
+    (kind === 'taproot' && purpose !== '86') ||
+    (kind === 'legacy' && purpose !== '44') ||
+    (kind === 'legacy') !== LEGACY[chain]
+  )
     throw new Error('not a descriptor of maki’s')
   const [main, test] = NETWORKS_OF[chain]
-  const own = chain === 'bitcoin' ? '0' : '2'
-  if (coin !== own && coin !== '1')
-    throw new Error(`not a ${chain === 'bitcoin' ? 'Bitcoin' : 'Litecoin'} descriptor`)
+  const own = String(COIN_TYPE[chain])
+  if (coin !== own && coin !== '1') throw new Error(`not a ${COIN_NAME[chain]} descriptor`)
   return {
     kind,
     network: coin === own ? main : test,
@@ -187,8 +289,12 @@ export class BtcKeys {
     const pay =
       this.info.kind === 'segwit'
         ? btc.p2wpkh(publicKey, this.network)
-        : btc.p2tr(publicKey.slice(1), undefined, this.network)
-    const a = { chain, index, address: pay.address!, publicKey, script: pay.script }
+        : this.info.kind === 'taproot'
+          ? btc.p2tr(publicKey.slice(1), undefined, this.network)
+          : btc.p2pkh(publicKey, this.network)
+    const prefix = CASHADDR[this.info.network]
+    const address = prefix ? encodeCashAddr(prefix, 'p2pkh', hash160(publicKey)) : pay.address!
+    const a = { chain, index, address, publicKey, script: pay.script }
     this.cache.set(key, a)
     return a
   }
@@ -281,9 +387,9 @@ export interface BtcPlan {
   vbytes: number
 }
 
-/** Virtual bytes, as the network counts them. */
-const OVERHEAD_VB = 10.5
-const INPUT_VB = { segwit: 68, taproot: 57.5 }
+/** Virtual bytes, as the network counts them (without SegWit's marker before it). */
+const OVERHEAD_VB = { segwit: 10.5, taproot: 10.5, legacy: 10 }
+const INPUT_VB = { segwit: 68, taproot: 57.5, legacy: 148 }
 const outputVb = (script: Uint8Array): number => 9 + script.length
 
 export class BtcWallet {
@@ -405,6 +511,7 @@ export class BtcWallet {
             ours.has(i.prevout.scriptpubkey_address)
         )
         const replaceable =
+          REPLACES[CHAIN[this.keys.info.network]] &&
           !tx.status.confirmed &&
           tx.vin.length > 0 &&
           mine &&
@@ -440,6 +547,14 @@ export class BtcWallet {
 
   /** The output script `address` pays, on this network; null if it isn't one it takes. */
   script(address: string): Uint8Array | null {
+    const prefix = CASHADDR[this.keys.info.network]
+    if (prefix) {
+      const cash = decodeCashAddr(address, prefix)
+      if (cash)
+        return btc.OutScript.encode({ type: cash.kind === 'p2pkh' ? 'pkh' : 'sh', hash: cash.hash })
+      // Bitcoin Cash takes its base58 forms too, but never SegWit's
+      if (/^(bc|tb|bitcoincash|bchtest):?/i.test(address)) return null
+    }
     for (const network of [this.keys.network, OLD_P2SH[this.keys.info.network]]) {
       if (!network) continue
       try {
@@ -463,15 +578,16 @@ export class BtcWallet {
    */
   plan(state: BtcWalletState, address: string, amount: bigint | 'all', feeRate: number): BtcPlan {
     const to = this.script(address)
+    const network = this.keys.info.network
     if (!to) {
-      const network = this.keys.info.network
-      const coin = CHAIN[network] === 'bitcoin' ? 'Bitcoin' : 'Litecoin'
+      const coin = COIN_NAME[CHAIN[network]]
       throw new Error(`that isn’t a ${isTest(network) ? `${coin} test network` : coin} address`)
     }
     if (!(feeRate > 0)) throw new Error('the fee rate must be more than nothing')
     const kind = this.keys.info.kind
+    const DUST = DUST_OF[CHAIN[network]]
     const size = (inputs: number, change: boolean): number =>
-      OVERHEAD_VB +
+      OVERHEAD_VB[kind] +
       inputs * INPUT_VB[kind] +
       outputVb(to) +
       (change ? outputVb(state.change.script) : 0)
@@ -499,7 +615,10 @@ export class BtcWallet {
       total = coins.reduce((n, c) => n + c.value, 0n)
       sent = total - fee(chosen.length, false)
     } else {
-      if (amount < DUST) throw new Error(`send at least ${DUST} satoshis`)
+      if (amount < DUST)
+        throw new Error(
+          `send at least ${DUST} ${CHAIN[network] === 'dogecoin' ? 'koinu (0.01 DOGE)' : 'satoshis'}`
+        )
       for (const c of coins) {
         chosen.push(c)
         total += c.value
@@ -557,7 +676,19 @@ export class BtcWallet {
   ): Promise<void> {
     const a = c.address
     const der = this.keys.derivation(a)
-    if (this.keys.info.kind === 'segwit') {
+    // replaceable where the network replaces (BIP125); final, but for the lock time, elsewhere
+    const sequence = REPLACES[CHAIN[this.keys.info.network]] ? REPLACEABLE : 0xfffffffe
+    if (this.keys.info.kind === 'legacy') {
+      // the whole transaction the coin comes from, which maki reads its amount from
+      const raw = hex.decode((await this.get(`/tx/${c.txid}/hex`)).trim())
+      tx.addInput({
+        txid: c.txid,
+        index: c.vout,
+        sequence,
+        nonWitnessUtxo: btc.RawTx.decode(raw),
+        bip32Derivation: [[a.publicKey, der]]
+      })
+    } else if (this.keys.info.kind === 'segwit') {
       // maki takes no amount on a PSBT's word: the whole transaction the coin comes from
       const raw = hex.decode((await this.get(`/tx/${c.txid}/hex`)).trim())
       tx.addInput({
@@ -585,7 +716,7 @@ export class BtcWallet {
   private giveBack(tx: btc.Transaction, a: BtcAddress, amount: bigint): void {
     const der = this.keys.derivation(a)
     tx.addOutput(
-      this.keys.info.kind === 'segwit'
+      this.keys.info.kind !== 'taproot'
         ? { script: a.script, amount, bip32Derivation: [[a.publicKey, der]] }
         : {
             script: a.script,
@@ -606,6 +737,8 @@ export class BtcWallet {
     txid: string,
     feeRate: number
   ): Promise<{ psbt: Uint8Array; fee: bigint; was: bigint; change: bigint }> {
+    if (!REPLACES[CHAIN[this.keys.info.network]])
+      throw new Error('this network keeps the first payment it sees: one can’t be sped up')
     const tx = this.waiting.get(txid)
     if (!tx)
       throw new Error('only a payment of this account’s still waiting for a block can be sped up')
@@ -623,7 +756,7 @@ export class BtcWallet {
     const back = outputs.map((o) => o.ours?.chain === 1).lastIndexOf(true)
     if (back < 0) throw new Error('it has no change to pay a higher fee from')
     const size =
-      OVERHEAD_VB +
+      OVERHEAD_VB[this.keys.info.kind] +
       tx.vin.length * INPUT_VB[this.keys.info.kind] +
       outputs.reduce((n, o) => n + outputVb(o.script), 0)
     const was = BigInt(tx.fee)
@@ -632,7 +765,7 @@ export class BtcWallet {
     let change = outputs[back].value - (fee - was)
     if (change < 0n) throw new Error('its change isn’t enough for that fee')
     let paid = fee
-    if (change < DUST) {
+    if (change < DUST_OF[CHAIN[this.keys.info.network]]) {
       paid += change
       change = 0n
     }
@@ -655,8 +788,65 @@ export class BtcWallet {
 
   /** maki's signed PSBT, finished and broadcast; its transaction ID. */
   async broadcast(signed: Uint8Array): Promise<string> {
-    const tx = btc.Transaction.fromPSBT(signed)
-    tx.finalize()
-    return (await this.esplora(this.keys.info.network, '/tx', tx.hex)).trim()
+    const raw = this.keys.info.kind === 'legacy' ? finishLegacy(signed) : finish(signed)
+    return (await this.esplora(this.keys.info.network, '/tx', hex.encode(raw))).trim()
   }
+}
+
+/** A signed PSBT of SegWit's or taproot's kind, finished by btc-signer: its raw transaction. */
+function finish(signed: Uint8Array): Uint8Array {
+  const tx = btc.Transaction.fromPSBT(signed)
+  tx.finalize()
+  return tx.extract()
+}
+
+/** A PSBT's maps: its global one, then each input's and each output's, as key and value pairs. */
+function psbtMaps(psbt: Uint8Array): [Uint8Array, Uint8Array][][] {
+  let at = 5
+  const varint = (): number => {
+    const b = psbt[at++]
+    if (b < 0xfd) return b
+    const n = b === 0xfd ? 2 : b === 0xfe ? 4 : 8
+    let v = 0
+    for (let i = 0; i < n; i++) v += psbt[at + i] * 2 ** (8 * i)
+    at += n
+    return v
+  }
+  const take = (n: number): Uint8Array => {
+    if (at + n > psbt.length) throw new Error('maki’s PSBT is cut short')
+    const out = psbt.subarray(at, at + n)
+    at += n
+    return out
+  }
+  const maps: [Uint8Array, Uint8Array][][] = []
+  while (at < psbt.length) {
+    const map: [Uint8Array, Uint8Array][] = []
+    for (;;) {
+      const k = varint()
+      if (k === 0) break
+      const key = take(k)
+      map.push([key, take(varint())])
+    }
+    maps.push(map)
+  }
+  return maps
+}
+
+/**
+ * A signed PSBT of pay-to-key-hash inputs (Dogecoin's, Bitcoin Cash's), finished here: each
+ * input's script is its signature (with its hash type: SIGHASH_ALL, or Bitcoin Cash's with its fork
+ * ID, which btc-signer won't take) and its key. Its raw transaction, without SegWit's parts.
+ */
+export function finishLegacy(signed: Uint8Array): Uint8Array {
+  const maps = psbtMaps(signed)
+  const unsigned = maps[0].find(([k]) => k.length === 1 && k[0] === 0x00)?.[1]
+  if (!unsigned) throw new Error('maki’s PSBT has no transaction')
+  const tx = btc.RawTx.decode(unsigned)
+  const inputs = tx.inputs.map((input, i) => {
+    const sigs = (maps[1 + i] ?? []).filter(([k]) => k[0] === 0x02 && k.length === 34)
+    if (sigs.length !== 1) throw new Error(`maki didn’t sign input ${i}`)
+    const [[key, sig]] = sigs
+    return { ...input, finalScriptSig: btc.Script.encode([sig, key.subarray(1)]) }
+  })
+  return btc.RawTx.encode({ ...tx, inputs, segwitFlag: false, witnesses: undefined })
 }

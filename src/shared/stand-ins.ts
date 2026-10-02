@@ -12,6 +12,7 @@ import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Esplora } from './btc-wallet'
+import type { ElectrumChain } from './electrum-esplora'
 import { NETWORKS, ProviderError, type Rpc } from './ethereum'
 import { ENS_REGISTRY, namehash } from './eth-wallet'
 import { fromHex, toHex } from './rlp'
@@ -50,7 +51,11 @@ export class PretendChain {
   private entries = new Map<string, { tx: btc.Transaction; confirmed: boolean; time: number }>()
   readonly broadcast: string[] = []
 
-  constructor(private network = btc.NETWORK) {}
+  /** `codec`, for a chain whose addresses btc-signer doesn't write (Bitcoin Cash's CashAddr). */
+  constructor(
+    private network = btc.NETWORK,
+    private codec?: ElectrumChain
+  ) {}
 
   /** A transaction, in a block or waiting for one; its ID. */
   add(tx: btc.Transaction, confirmed: boolean, time = 1_790_000_000): string {
@@ -67,7 +72,9 @@ export class PretendChain {
       index: 0,
       finalScriptSig: new Uint8Array()
     })
-    funding.addOutputAddress(address, BigInt(value), this.network)
+    if (this.codec)
+      funding.addOutput({ script: this.codec.script(address)!, amount: BigInt(value) })
+    else funding.addOutputAddress(address, BigInt(value), this.network)
     return this.add(funding, confirmed)
   }
 
@@ -76,6 +83,7 @@ export class PretendChain {
   }
 
   private address(script: Uint8Array): string | undefined {
+    if (this.codec) return this.codec.address(script)
     try {
       return btc.Address(this.network).encode(btc.OutScript.decode(script))
     } catch {
@@ -208,8 +216,13 @@ export class PretendChain {
 }
 
 /** A chain that holds one coin: `value` satoshis to `address`, in a transaction of its own. */
-export function pretendChain(address: string, value: number, network = btc.NETWORK) {
-  const chain = new PretendChain(network)
+export function pretendChain(
+  address: string,
+  value: number,
+  network = btc.NETWORK,
+  codec?: ElectrumChain
+) {
+  const chain = new PretendChain(network, codec)
   const txid = chain.fund(address, value)
   return { chain, esplora: chain.esplora, broadcast: chain.broadcast, txid }
 }

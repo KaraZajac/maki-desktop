@@ -36,13 +36,22 @@ const walletFor = (info: BtcAccountInfo): BtcWallet => {
   return w
 }
 /** The symbol prices are kept under: the coin's, whichever network. */
-const PRICED: Record<BtcChain, string> = { bitcoin: 'BTC', litecoin: 'LTC' }
+const PRICED: Record<BtcChain, string> = {
+  bitcoin: 'BTC',
+  litecoin: 'LTC',
+  dogecoin: 'DOGE',
+  bitcoincash: 'BCH'
+}
 /** What an address of each network starts with, as a hint where one goes. */
 const STARTS: Record<BtcAccountInfo['network'], string> = {
   bitcoin: 'bc1…',
   test: 'tb1…',
   litecoin: 'ltc1…',
-  'litecoin-test': 'tltc1…'
+  'litecoin-test': 'tltc1…',
+  dogecoin: 'D…',
+  'dogecoin-test': 'n…',
+  bitcoincash: 'bitcoincash:q…',
+  'bitcoincash-test': 'bchtest:q…'
 }
 /** Older than this, it's looked up again. */
 const STALE_MS = 60_000
@@ -401,7 +410,8 @@ function Receive({
 
   return (
     <div className="rise mt-5 flex flex-wrap gap-6 rounded-xl border border-surface0 bg-crust/40 p-5">
-      <Qr text={`${COIN_WORD[chain]}:${address}`} />
+      {/* a payment request's URI (BIP21's kind); a CashAddr is one already, its prefix the scheme */}
+      <Qr text={address.includes(':') ? address : `${COIN_WORD[chain]}:${address}`} />
       <div className="min-w-0 flex-1">
         <div className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-overlay1">
           Your address · #{state.receive.index}

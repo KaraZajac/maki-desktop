@@ -25,7 +25,16 @@ import {
 } from '../shared/bridge-types'
 import { NETWORKS, type EthState } from '../shared/ethereum'
 import { SOL_NETWORKS, type SolState } from '../shared/solana'
-import { CHAIN as BTC_CHAIN, EXPLORER_NAME, type BtcNetwork } from '../shared/btc-wallet'
+import {
+  BITCOINCASH,
+  BITCOINCASH_TEST,
+  CHAIN as BTC_CHAIN,
+  COIN_NAME,
+  EXPLORER_NAME,
+  type BtcNetwork
+} from '../shared/btc-wallet'
+import { cashChain, electrumEsplora } from '../shared/electrum-esplora'
+import { Electrum } from './electrum'
 import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { writeAtomic } from './atomic'
@@ -633,14 +642,44 @@ function ipc(): void {
   // Bitcoin and Litecoin: mempool.space's Esplora API and litecoinspace.org's (mempool's, run for
   // Litecoin), for the wallets (only these paths, and a broadcast), and the accounts' descriptors
   // maki shared, kept so the balance shows without asking maki again
-  const ESPLORA: Record<BtcNetwork, string> = {
+  const ESPLORA: Partial<Record<BtcNetwork, string>> = {
     bitcoin: 'https://mempool.space/api',
     test: 'https://mempool.space/testnet4/api',
     litecoin: 'https://litecoinspace.org/api',
     'litecoin-test': 'https://litecoinspace.org/testnet/api'
   }
+  // Bitcoin Cash: Electrum servers (Fulcrum), the ones Electron Cash lists whose certificates check
+  // out; its test network is chipnet. The Esplora calls are answered from them.
+  const bchMain = new Electrum(
+    [
+      { host: 'bch.imaginary.cash', port: 50002 },
+      { host: 'electrum.imaginary.cash', port: 50002 },
+      { host: 'bch.soul-dev.com', port: 50002 },
+      { host: 'electron.jochen-hoenicke.de', port: 51002 },
+      { host: 'blackie.c3-soft.com', port: 50002 },
+      { host: 'bch0.kister.net', port: 50002 }
+    ],
+    'Bitcoin Cash'
+  )
+  const bchTest = new Electrum(
+    [
+      { host: 'chipnet.imaginary.cash', port: 50002 },
+      { host: 'chipnet.bch.ninja', port: 50002 }
+    ],
+    'Bitcoin Cash chipnet'
+  )
+  const bitcoinCash = {
+    bitcoincash: electrumEsplora(
+      (m, p) => bchMain.call(m, p),
+      cashChain('bitcoincash', BITCOINCASH)
+    ),
+    'bitcoincash-test': electrumEsplora(
+      (m, p) => bchTest.call(m, p),
+      cashChain('bchtest', BITCOINCASH_TEST)
+    )
+  }
   const ESPLORA_PATH =
-    /^\/(address\/[a-zA-Z0-9]{14,90}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
+    /^\/(address\/[a-zA-Z0-9:]{14,110}(\/utxo|\/txs)?|tx\/[0-9a-f]{64}\/hex|v1\/fees\/recommended)$/
   // a wallet's first look can be a hundred requests, and mempool.space turns away bursts (and
   // then stops answering for a while): two a second to each server, and a long wait when it asks
   // for one. MAKI_ESPLORA (tests, your own server) is an Esplora API to use instead, for every
@@ -654,20 +693,27 @@ function ipc(): void {
   const esploras = { bitcoin: politeEsplora(), litecoin: politeEsplora() }
   ipcMain.handle('btc:esplora', async (_e, network: unknown, path: unknown, body?: unknown) => {
     try {
-      if (typeof network !== 'string' || !Object.hasOwn(ESPLORA, network))
+      if (typeof network !== 'string' || !Object.hasOwn(BTC_CHAIN, network))
         throw new Error('which network?')
       const net = network as BtcNetwork
       const host = ownEsplora ? 'the Esplora server' : EXPLORER_NAME[net]
       const post = path === '/tx' && typeof body === 'string' && /^[0-9a-f]{20,800000}$/.test(body)
       if (!post && (typeof path !== 'string' || !ESPLORA_PATH.test(path)))
         throw new Error('not something the wallet asks')
+      if (!ownEsplora && (net === 'bitcoincash' || net === 'bitcoincash-test'))
+        return { text: await bitcoinCash[net](path as string, post ? (body as string) : undefined) }
+      const base = ownEsplora ?? ESPLORA[net]
+      if (!base) throw new Error(`maki desktop has no ${COIN_NAME[BTC_CHAIN[net]]} server yet`)
       let res: Response
       try {
-        res = await esploras[BTC_CHAIN[net]](`${ownEsplora ?? ESPLORA[net]}${path}`, {
-          method: post ? 'POST' : 'GET',
-          body: post ? (body as string) : undefined,
-          headers: post ? { 'content-type': 'text/plain' } : undefined
-        })
+        res = await esploras[BTC_CHAIN[net] === 'litecoin' ? 'litecoin' : 'bitcoin'](
+          `${base}${path}`,
+          {
+            method: post ? 'POST' : 'GET',
+            body: post ? (body as string) : undefined,
+            headers: post ? { 'content-type': 'text/plain' } : undefined
+          }
+        )
       } catch {
         throw new Error(`${host} can’t be reached`)
       }
