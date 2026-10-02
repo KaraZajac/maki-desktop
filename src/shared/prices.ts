@@ -16,6 +16,7 @@ const IDS: Record<string, string> = {
   BCH: 'bitcoin-cash',
   XRP: 'ripple',
   XLM: 'stellar',
+  TRX: 'tron',
   ETH: 'ethereum',
   POL: 'polygon-ecosystem-token',
   USDC: 'usd-coin',

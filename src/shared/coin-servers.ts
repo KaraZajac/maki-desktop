@@ -40,6 +40,15 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
     get: /^\/(accounts\/G[A-Z2-7]{55}(\/payments\?order=desc&limit=20)?|fee_stats|ledgers\?order=desc&limit=1)$/,
     post: /^\/transactions\?tx=[A-Za-z0-9%]+$/,
     perSecond: 4
+  },
+  // TronGrid, keyless: accounts (TRX and TRC-20 balances) and their history; the latest block's
+  // header to make a transaction from, a token transfer's energy, the chain's prices, broadcasting
+  tron: {
+    main: ['https://api.trongrid.io'],
+    test: ['https://nile.trongrid.io'],
+    get: /^\/v1\/accounts\/T[1-9A-HJ-NP-Za-km-z]{33}(\/transactions(\/trc20)?\?limit=20)?$/,
+    post: /^\/wallet\/(getnowblock|broadcasthex|triggerconstantcontract|getchainparameters)$/,
+    perSecond: 3
   }
 }
 
