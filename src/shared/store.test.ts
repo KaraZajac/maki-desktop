@@ -55,6 +55,7 @@ describe.skipIf(!MAKI_STORE_THERE)('the maki store', () => {
       ['Initiative', 'wasm', 'Games'],
       ['Instruments', 'wasm', 'Tools'],
       ['Life', 'wasm', 'Games'],
+      ['Macro Pad', 'wasm', 'Tools'],
       ['Magic 8-Ball', 'wasm', 'Games'],
       ['Marble', 'wasm', 'Games'],
       ['Minesweeper', 'wasm', 'Games'],
