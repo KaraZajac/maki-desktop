@@ -14,6 +14,7 @@ import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
 import { APTOS } from '@shared/coins/aptos'
+import { CARDANO } from '@shared/coins/cardano'
 import { KASPA } from '@shared/coins/kaspa'
 import { NEAR } from '@shared/coins/near'
 import { STELLAR } from '@shared/coins/stellar'
@@ -138,6 +139,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'near',
     line: 'NEAR, USDC and USDT, the account MyNearWallet, near-cli and Trust Wallet make.',
     Card: (p) => <AccountCard {...p} chain={NEAR} />
+  },
+  {
+    app: CARDANO.app,
+    name: 'Cardano',
+    glyph: 'cardano',
+    line: 'ADA and its tokens, the account Eternl, Lace, Yoroi and Ledger make.',
+    Card: (p) => <AccountCard {...p} chain={CARDANO} />
   }
 ]
 

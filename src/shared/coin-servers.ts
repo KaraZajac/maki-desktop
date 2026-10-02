@@ -89,6 +89,16 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
       test: ['https://api-testnet.nearblocks.io'],
       perSecond: 1
     }
+  },
+  // Koios (keyless: 100 requests in 10 seconds, small JSON bodies): the account by its stake
+  // address (its coins, rewards, history), the tip and the epoch's fee parameters; sending (CBOR)
+  cardano: {
+    main: ['https://api.koios.rest/api/v1'],
+    test: ['https://preprod.koios.rest/api/v1'],
+    get: /^\/(tip|epoch_params\?_epoch_no=\d{1,6})$/,
+    post: /^\/(account_info|account_utxos|account_txs\?order=block_height\.desc&limit=16|tx_info|submittx)$/,
+    perSecond: 5,
+    binary: 'application/cbor'
   }
 }
 

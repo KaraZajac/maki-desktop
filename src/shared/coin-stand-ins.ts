@@ -1,6 +1,6 @@
 /**
  * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon,
- * Tron's TronGrid, api.kaspa.org, Aptos Labs' API and NEAR's RPC (with NearBlocks), each answering what maki desktop's wallet asks of it, for the test phrase's
+ * Tron's TronGrid, api.kaspa.org, Aptos Labs' API, NEAR's RPC (with NearBlocks) and Koios, each answering what maki desktop's wallet asks of it, for the test phrase's
  * account holding some of the coin and of a token. What each is sent is read back here byte by byte,
  * apart from maki desktop's own encoding, and taken only if its signature checks out over the hash
  * the network has signed, by the account's own key, as the network would check it; each keeps what
@@ -13,7 +13,7 @@ import { hmac } from '@noble/hashes/hmac.js'
 import { ripemd160 } from '@noble/hashes/legacy.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
 import { keccak_256, sha3_256 } from '@noble/hashes/sha3.js'
-import { base58, base64, hex } from '@scure/base'
+import { base58, base64, bech32, hex } from '@scure/base'
 import { HDKey } from '@scure/bip32'
 import { addressAt, addressOfScript, transactionId } from './coins/kaspa'
 import { accountAddress, PASSPHRASE } from './coins/stellar'
@@ -1127,6 +1127,206 @@ export function nearStandIn(): { answer: Answer; sent: NearSent[] } {
       return ok({ final_execution_status: 'INCLUDED', transaction: { hash } })
     }
     return error('NO_SUCH_METHOD', call)
+  }
+  return { answer, sent }
+}
+
+// ---- Cardano ----
+
+/**
+ * CBOR, read back from `start`: numbers, bytes, text, arrays, maps (as entries), tags (their item),
+ * simple values; with where the item ends.
+ */
+export function cborRead(b: Uint8Array, start = 0): [unknown, number] {
+  let at = start
+  const take = (n: number): Uint8Array => {
+    if (at + n > b.length) throw new Error('short')
+    return b.slice(at, (at += n))
+  }
+  const item = (): unknown => {
+    const first = take(1)[0]
+    const major = first >> 5
+    const info = first & 31
+    let n = BigInt(info)
+    if (info >= 24) {
+      if (info > 27) throw new Error('an indefinite length')
+      n = [...take(1 << (info - 24))].reduce((v, x) => (v << 8n) | BigInt(x), 0n)
+    }
+    if (major === 0) return n
+    if (major === 1) return -1n - n
+    if (major === 2) return take(Number(n))
+    if (major === 3) return new TextDecoder().decode(take(Number(n)))
+    if (major === 4) return Array.from({ length: Number(n) }, item)
+    if (major === 5) return Array.from({ length: Number(n) }, () => [item(), item()] as const)
+    if (major === 6) return item()
+    return info === 21 ? true : info === 20 ? false : null
+  }
+  return [item(), at]
+}
+
+/** Its first address, and CIP-19's base address example: someone to pay. */
+export const ADA_ME =
+  'addr1qy8ac7qqy0vtulyl7wntmsxc6wex80gvcyjy33qffrhm7sh927ysx5sftuw0dlft05dz3c7revpf7jx0xnlcjz3g69mq4afdhv'
+export const ADA_CHANGE =
+  'addr1qykhadtnvjpkxh76xgr0mu4huc9tg800x2sxsqemn9uz8jh927ysx5sftuw0dlft05dz3c7revpf7jx0xnlcjz3g69mq28kufu'
+export const ADA_STAKE = 'stake1u8j40zgr2gy4788kl54h6x3gu0pukq5lfr8nflufpg5dzaskqlx2l'
+export const ADA_THEM =
+  'addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x'
+/** SNEK: a token maki knows (its policy, and its name's hex). */
+export const ADA_SNEK = '279c909f348e533da5808898f87f9a14bb2c3dfbbacccd631d927a3f534e454b'
+
+/** A transaction the Cardano stand-in took. */
+export interface AdaSent {
+  id: string
+  inputs: string[]
+  outputs: { address: string; lovelace: bigint; assets: Record<string, bigint> }[]
+  fee: bigint
+  witnesses: number
+}
+
+/**
+ * Koios, answering maki desktop's wallet: the account's first address holds a coin of 120 ADA and
+ * 500 SNEK, its first change address one of 5 ADA; fees are mainnet's (44 a byte, 155,381 more,
+ * 4,310 a byte for each output). A transaction is taken if every coin it spends is one of these,
+ * each coin's payment key has signed its body's hash (Ed25519, a witness each, nothing else), it
+ * pays at least the ledger's fee for its size, it balances (ADA and every token), every output holds
+ * at least 1 ADA, and its slot isn't past.
+ */
+export function cardanoStandIn(
+  held: [string, { address: string; lovelace: bigint; assets: Record<string, bigint> }][] = [
+    [
+      `${'31'.repeat(32)}#0`,
+      { address: ADA_ME, lovelace: 120_000_000n, assets: { [ADA_SNEK]: 500n } }
+    ],
+    [`${'32'.repeat(32)}#1`, { address: ADA_CHANGE, lovelace: 5_000_000n, assets: {} }]
+  ]
+): { answer: Answer; sent: AdaSent[] } {
+  const sent: AdaSent[] = []
+  const tipSlot = 199_350_706n
+  const addressBytes = (a: string): Uint8Array =>
+    bech32.fromWords(bech32.decode(a as `${string}1${string}`, 200).words)
+  const coins = new Map(held)
+  const json = (status: number, body: unknown): [number, string] => [status, JSON.stringify(body)]
+  const refused = (why: string): [number, string] => [400, why]
+  const answer: Answer = async (method, path, _body, bytes = new Uint8Array()) => {
+    if (method === 'GET' && path === '/tip')
+      return json(200, [{ epoch_no: 659, abs_slot: Number(tipSlot) }])
+    if (method === 'GET' && path.startsWith('/epoch_params'))
+      return json(200, [
+        {
+          epoch_no: 659,
+          min_fee_a: 44,
+          min_fee_b: 155381,
+          coins_per_utxo_size: '4310',
+          max_tx_size: 16384
+        }
+      ])
+    if (method === 'POST' && path === '/account_info')
+      return json(200, [{ stake_address: ADA_STAKE, rewards_available: '0' }])
+    if (method === 'POST' && path === '/account_utxos')
+      return json(
+        200,
+        [...coins.entries()].map(([outpoint, c]) => ({
+          tx_hash: outpoint.split('#')[0],
+          tx_index: Number(outpoint.split('#')[1]),
+          address: c.address,
+          value: c.lovelace.toString(),
+          asset_list: Object.entries(c.assets).map(([unit, q]) => ({
+            policy_id: unit.slice(0, 56),
+            asset_name: unit.slice(56),
+            quantity: q.toString()
+          }))
+        }))
+      )
+    if (method === 'POST' && path.startsWith('/account_txs'))
+      return json(200, [{ tx_hash: '31'.repeat(32), block_time: 1_790_000_000 }])
+    if (method === 'POST' && path === '/tx_info')
+      return json(200, [
+        {
+          tx_hash: '31'.repeat(32),
+          inputs: [{ stake_addr: null, value: '130000000' }],
+          outputs: [{ stake_addr: ADA_STAKE, value: '120000000' }]
+        }
+      ])
+    if (method === 'POST' && path === '/submittx') {
+      // the transaction: an array of four, its body first; the body's own bytes are what's hashed
+      let bodyBytes: Uint8Array
+      let witnessSet: [unknown, [Uint8Array, Uint8Array][]][]
+      try {
+        if (bytes[0] !== 0x84) throw new Error('not four items')
+        const [, bodyEnd] = cborRead(bytes, 1)
+        bodyBytes = bytes.subarray(1, bodyEnd)
+        const [set, end] = cborRead(bytes, bodyEnd)
+        witnessSet = set as typeof witnessSet
+        if (bytes.length !== end + 2 || bytes[end] !== 0xf5 || bytes[end + 1] !== 0xf6)
+          throw new Error('not valid, or with metadata')
+      } catch (e) {
+        return refused(`not a transaction maki desktop makes: ${(e as Error).message}`)
+      }
+      const fields = new Map(
+        (cborRead(bodyBytes)[0] as [bigint, unknown][]).map(([k, v]) => [Number(k), v])
+      )
+      if ([...fields.keys()].join() !== '0,1,2,3') return refused('a body with more than a payment')
+      const hash = blake2b(bodyBytes, { dkLen: 32 })
+      const witnesses = witnessSet.find(([k]) => k === 0n)?.[1] ?? []
+      const signedBy = new Set<string>()
+      for (const [key, sig] of witnesses) {
+        if (!ed25519.verify(sig, hash, key)) return refused('a witness that doesn’t check out')
+        signedBy.add(hex.encode(blake2b(key, { dkLen: 28 })))
+      }
+      let inLovelace = 0n
+      const balance = new Map<string, bigint>()
+      const inputs: string[] = []
+      for (const [txid, index] of fields.get(0) as [Uint8Array, bigint][]) {
+        const outpoint = `${hex.encode(txid)}#${index}`
+        const coin = coins.get(outpoint)
+        if (!coin) return refused(`a coin that isn’t there: ${outpoint}`)
+        if (!signedBy.has(hex.encode(addressBytes(coin.address).subarray(1, 29))))
+          return refused('a coin its key didn’t sign for')
+        inLovelace += coin.lovelace
+        for (const [unit, q] of Object.entries(coin.assets))
+          balance.set(unit, (balance.get(unit) ?? 0n) + q)
+        inputs.push(outpoint)
+      }
+      const outputs: AdaSent['outputs'] = []
+      let outLovelace = 0n
+      for (const [address, v] of fields.get(1) as [
+        Uint8Array,
+        bigint | [bigint, [Uint8Array, [Uint8Array, bigint][]][]]
+      ][]) {
+        const lovelace = Array.isArray(v) ? v[0] : v
+        const assets: Record<string, bigint> = {}
+        if (Array.isArray(v))
+          for (const [policy, names] of v[1])
+            for (const [name, q] of names) {
+              const unit = hex.encode(policy) + hex.encode(name)
+              assets[unit] = q
+              balance.set(unit, (balance.get(unit) ?? 0n) - q)
+            }
+        outputs.push({
+          address: bech32.encode(
+            address[0] & 0x0f ? 'addr' : 'addr_test',
+            bech32.toWords(address),
+            200
+          ),
+          lovelace,
+          assets
+        })
+        outLovelace += lovelace
+      }
+      const fee = fields.get(2) as bigint
+      const ttl = fields.get(3) as bigint
+      if (fee < 44n * BigInt(bytes.length) + 155_381n) return refused('FeeTooSmallUTxO')
+      if (inLovelace !== outLovelace + fee || [...balance.values()].some((q) => q !== 0n))
+        return refused('ValueNotConservedUTxO')
+      if (outputs.some((o) => o.lovelace < 1_000_000n)) return refused('BabbageOutputTooSmallUTxO')
+      if (ttl <= tipSlot) return refused('OutsideValidityIntervalUTxO')
+      const id = hex.encode(hash)
+      for (const i of inputs) coins.delete(i)
+      sent.push({ id, inputs, outputs, fee, witnesses: witnesses.length })
+      return json(202, id)
+    }
+    return [404, '{}']
   }
   return { answer, sent }
 }

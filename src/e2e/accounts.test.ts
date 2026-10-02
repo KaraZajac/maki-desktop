@@ -1,6 +1,6 @@
 /**
  * The Wallets page's account coins, end to end: the real app, offscreen, linked to the fake maki
- * running maki's XRP, Stellar, Tron, Kaspa, Aptos and NEAR apps (the test phrase's accounts), each network stood in for
+ * running maki's XRP, Stellar, Tron, Kaspa, Aptos, NEAR and Cardano apps (the test phrase's accounts), each network stood in for
  * on this computer (coin-stand-ins.ts). For each, it adds the account from maki, sees what it holds,
  * and sends a token from it, pressing what a person would: the app makes the payment, maki's app
  * reads it and signs, and the stand-in takes it only if the signature checks out, by the account's
@@ -16,6 +16,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
+  ADA_CHANGE,
+  ADA_SNEK,
+  ADA_THEM,
+  cardanoStandIn,
   APT_ME,
   APT_THEM,
   APT_USDC,
@@ -60,7 +64,7 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
   beforeAll(async () => {
     build()
     fake = await startFake(
-      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos', 'near'].flatMap((a) => [
+      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos', 'near', 'cardano'].flatMap((a) => [
         '--app',
         join(APP_FIXTURES, `${a}.maki`)
       ])
@@ -266,6 +270,38 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
             args: JSON.stringify({ receiver_id: NEAR_THEM, amount: '5250000' })
           })
         ]
+      })
+    ])
+  }, 180_000)
+
+  it('adds the Cardano account, shows its ADA and SNEK, and sends ADA: maki witnesses it with its Icarus key, Koios takes it', async () => {
+    const koios = cardanoStandIn()
+    const server = await serve(koios.answer)
+    try {
+      const said = await drive(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--click', 'Cardano › Add from maki', '--until', 'as of'],
+          ...['--click', 'Cardano › Send', '--fill', `addr1…=${ADA_THEM}`, '--fill', '0.00=12.5'],
+          ...['--click', 'Cardano › Review on maki', '--until', 'Sent 12.5 ADA']
+        ],
+        { MAKI_COIN_SERVER: server.url }
+      )
+      expect(said).toContain('Sent 12.5 ADA')
+      expect(said).toMatch(/125[\s\S]*ADA[\s\S]*SNEK\s*500/)
+    } finally {
+      server.close()
+    }
+    // the 120 ADA coin; 12.5 to them; the rest and its SNEK to the change address; one witness
+    expect(koios.sent).toEqual([
+      expect.objectContaining({
+        inputs: [`${'31'.repeat(32)}#0`],
+        outputs: [
+          { address: ADA_THEM, lovelace: 12_500_000n, assets: {} },
+          expect.objectContaining({ address: ADA_CHANGE, assets: { [ADA_SNEK]: 500n } })
+        ],
+        witnesses: 1
       })
     ])
   }, 180_000)

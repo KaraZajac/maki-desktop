@@ -34,6 +34,7 @@ export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
 export const MONERO_APP = 'com.leviathan.maki.monero'
 export const SOLANA_APP = 'com.leviathan.maki.solana'
 export const KASPA_APP = 'com.leviathan.maki.kaspa'
+export const CARDANO_APP = 'com.leviathan.maki.cardano'
 
 /** Talking to an app on maki (Link.appMessage): its answer, if maki has it and it answered. */
 export type AppMessage = (
@@ -773,6 +774,61 @@ export class KaspaApp extends AccountApp {
       return { approval: a.approval, reason: a.reason(), signature: null }
     const signature = a.rest()
     return signature.length > 0 && signature.length % 65 === 0
+      ? { approval: a.approval, reason: '', signature }
+      : { approval: 'unavailable', reason: '', signature: null }
+  }
+}
+
+/**
+ * maki's Cardano app, which speaks the account coins' messages with fields of its own: `A` shares
+ * the account's key and chain code (every address it will have) and its first address, `D` shows
+ * an address by its role (0 receiving, 1 change, 2 the stake key's reward address) and index, and
+ * `T` takes its request in pieces (the keys its inputs need, its change, the body as it goes on
+ * chain), answering each key and its signature, 96 bytes each.
+ */
+export class CardanoApp extends AccountApp {
+  /** The first receiving address on maki's screen, to compare. */
+  override address(
+    network: 0 | 1,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    return this.addressOf(network, index, 0, 0)
+  }
+
+  /** Any of account `account`'s addresses on maki's screen. */
+  async addressOf(
+    network: 0 | 1,
+    account: number,
+    role: 0 | 1 | 2,
+    index: number
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    const m = new Writer().u8(0x44).u8(network).u32(account).u8(role).u32(index).finish()
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '' }
+    let address = ''
+    try {
+      address = a.text()
+    } catch {
+      // locked, or no answer: nothing shown
+    }
+    return { approval: a.approval, address }
+  }
+
+  /** A request (maki-ada's) signed once the owner has gone through it: each key and signature. */
+  override async sign(
+    network: 0 | 1,
+    index: number,
+    payload: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    if (payload.length === 0)
+      return { approval: 'refused', reason: 'nothing to sign', signature: null }
+    const head = new Writer().u8(0x54).u8(network).u32(index).finish()
+    const a = await this.pieces(head, new Uint8Array(), payload)
+    if (typeof a === 'string') return { approval: a, reason: '', signature: null }
+    if (a.approval !== 'approved')
+      return { approval: a.approval, reason: a.reason(), signature: null }
+    const signature = a.rest()
+    return signature.length > 0 && signature.length % 96 === 0
       ? { approval: a.approval, reason: '', signature }
       : { approval: 'unavailable', reason: '', signature: null }
   }
