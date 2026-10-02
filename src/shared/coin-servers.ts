@@ -31,6 +31,15 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
     get: /$^/,
     post: /^\/$/,
     perSecond: 4
+  },
+  // Horizon, the Stellar Development Foundation's: accounts, their payments, fees and the base
+  // reserve; a transaction submitted as Horizon's `tx` parameter
+  stellar: {
+    main: ['https://horizon.stellar.org'],
+    test: ['https://horizon-testnet.stellar.org'],
+    get: /^\/(accounts\/G[A-Z2-7]{55}(\/payments\?order=desc&limit=20)?|fee_stats|ledgers\?order=desc&limit=1)$/,
+    post: /^\/transactions\?tx=[A-Za-z0-9%]+$/,
+    perSecond: 4
   }
 }
 

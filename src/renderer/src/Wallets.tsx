@@ -13,6 +13,7 @@ import {
 import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
+import { STELLAR } from '@shared/coins/stellar'
 import { XRP } from '@shared/coins/xrp'
 import { AccountCard } from './AccountWallet'
 import { BitcoinCash, Dogecoin, Litecoin } from './BtcCoin'
@@ -98,6 +99,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'xrp',
     line: 'XRP and its tokens, the account Ledger and Trust Wallet make.',
     Card: (p) => <AccountCard {...p} chain={XRP} />
+  },
+  {
+    app: STELLAR.app,
+    name: 'Stellar',
+    glyph: 'stellar',
+    line: 'XLM and its assets (USDC), the account Lobstr and Freighter make.',
+    Card: (p) => <AccountCard {...p} chain={STELLAR} />
   }
 ]
 
