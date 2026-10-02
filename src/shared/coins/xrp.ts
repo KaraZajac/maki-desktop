@@ -194,20 +194,22 @@ export function transactionId(signed: Uint8Array): string {
   return hex.encode(h.slice(0, 32)).toUpperCase()
 }
 
-/** Tokens maki knows on the main network, by issuer and code (as maki's XRP app knows them). */
-const KNOWN: { issuer: string; currency: string; symbol: string }[] = [
-  {
-    issuer: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De',
-    currency: '524C555344000000000000000000000000000000',
-    symbol: 'RLUSD'
-  }
+/** Tokens maki knows, by network, issuer and code (as maki's XRP app knows them, maki-xrp's `tokens`). */
+const RLUSD = '524C555344000000000000000000000000000000'
+const USDC = '5553444300000000000000000000000000000000'
+const KNOWN: { network: 0 | 1; issuer: string; currency: string; symbol: string }[] = [
+  { network: 0, issuer: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', currency: RLUSD, symbol: 'RLUSD' },
+  { network: 0, issuer: 'rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE', currency: USDC, symbol: 'USDC' },
+  { network: 1, issuer: 'rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV', currency: RLUSD, symbol: 'RLUSD' },
+  { network: 1, issuer: 'rHuGNhqTG32mfmAvWA8hUyWRLV3tCSwKQt', currency: USDC, symbol: 'USDC' }
 ]
 /** A token's amounts are decimals: kept here to fifteen places. */
 const TOKEN_DECIMALS = 15
 
 function tokenOf(network: 0 | 1, currency: string, issuer: string): ChainToken {
-  const known =
-    network === 0 ? KNOWN.find((k) => k.issuer === issuer && k.currency === currency) : undefined
+  const known = KNOWN.find(
+    (k) => k.network === network && k.issuer === issuer && k.currency === currency
+  )
   return {
     id: `${currency}.${issuer}`,
     symbol: known?.symbol ?? null,
@@ -299,11 +301,9 @@ export const XRP: AccountChain = {
   wallets: 'The account Ledger and Trust Wallet make',
   servers:
     'Balances and payments go through public XRP Ledger servers (xrplcluster.com, Ripple’s), which see the account’s address and this computer’s IP address. An account keeps a reserve the network sets (1 XRP, and more for each token line), which can’t be sent.',
-  explorerName: 'xrpscan.com',
+  explorerName: 'the XRPL explorer',
   explorer: (network, kind, id) =>
-    network === 0
-      ? `https://xrpscan.com/${kind === 'tx' ? 'tx' : 'account'}/${id}`
-      : `https://testnet.xrpl.org/${kind === 'tx' ? 'transactions' : 'accounts'}/${id}`,
+    `https://${network === 0 ? 'livenet' : 'testnet'}.xrpl.org/${kind === 'tx' ? 'transactions' : 'accounts'}/${id}`,
   uri: (address) => address,
   valid: (address) => accountId(address) !== null,
 
@@ -421,7 +421,11 @@ export const XRP: AccountChain = {
   },
 
   async submit(fetch, account, payment, signature) {
-    const signed = encodePayment(payment.carry as XrpPayment, signature)
+    // maki's XRP app answers a length byte, then the DER signature
+    const der = signature.subarray(1, 1 + signature[0])
+    if (signature.length !== 1 + signature[0] || der[0] !== 0x30)
+      throw new Error('maki’s XRP app gave a signature maki desktop can’t read')
+    const signed = encodePayment(payment.carry as XrpPayment, der)
     const r = await rpc(fetch, account.network, 'submit', {
       tx_blob: hex.encode(signed).toUpperCase()
     })
