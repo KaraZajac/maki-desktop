@@ -8,7 +8,8 @@
  */
 
 /** maki's account wallets, by the coin's name. */
-export type CoinId = 'tron' | 'xrp' | 'stellar' | 'cosmos' | 'near' | 'sui' | 'aptos' | 'cardano'
+export type CoinId =
+  'tron' | 'xrp' | 'stellar' | 'kaspa' | 'cosmos' | 'near' | 'sui' | 'aptos' | 'cardano'
 
 export interface CoinServers {
   /** base addresses, tried in turn: the coin's own network's, then its test network's */
@@ -49,6 +50,15 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
     get: /^\/v1\/accounts\/T[1-9A-HJ-NP-Za-km-z]{33}(\/transactions(\/trc20)?\?limit=20)?$/,
     post: /^\/wallet\/(getnowblock|broadcasthex|triggerconstantcontract|getchainparameters)$/,
     perSecond: 3
+  },
+  // api.kaspa.org, the Kaspa community's REST API (Testnet 10's own): which of the account's
+  // addresses have been used, their coins and history, fees and the DAG's score, and sending
+  kaspa: {
+    main: ['https://api.kaspa.org'],
+    test: ['https://api-tn10.kaspa.org'],
+    get: /^\/(addresses\/kaspa(test)?:[02-9ac-hj-np-z]{61,63}\/full-transactions\?limit=20&resolve_previous_outpoints=light|info\/fee-estimate|info\/blockdag)$/,
+    post: /^\/(addresses\/(active|utxos)|transactions)$/,
+    perSecond: 4
   }
 }
 

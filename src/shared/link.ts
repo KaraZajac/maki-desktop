@@ -27,9 +27,12 @@ import {
   EthereumApp,
   BITCOINCASH_APP,
   DOGECOIN_APP,
+  KASPA_APP,
+  KaspaApp,
   LITECOIN_APP,
   MoneroApp,
   SolanaApp,
+  type AppMessage,
   type MoneroNetworkValue,
   type MoneroOutput
 } from './wallet-apps'
@@ -443,11 +446,9 @@ export class Link {
   accountApp(id: string, name: string): AccountApp {
     let app = this.accountApps.get(id)
     if (!app) {
-      app = new AccountApp(
-        (a, message, timeoutMs) => this.appMessage(a, message, timeoutMs),
-        id,
-        name
-      )
+      const send: AppMessage = (a, message, timeoutMs) => this.appMessage(a, message, timeoutMs)
+      // Kaspa's app speaks the same messages with fields of its own
+      app = id === KASPA_APP ? new KaspaApp(send, id, name) : new AccountApp(send, id, name)
       this.accountApps.set(id, app)
     }
     return app

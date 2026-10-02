@@ -33,6 +33,7 @@ export const BITCOINCASH_APP = 'com.leviathan.maki.bitcoincash'
 export const ETHEREUM_APP = 'com.leviathan.maki.ethereum'
 export const MONERO_APP = 'com.leviathan.maki.monero'
 export const SOLANA_APP = 'com.leviathan.maki.solana'
+export const KASPA_APP = 'com.leviathan.maki.kaspa'
 
 /** Talking to an app on maki (Link.appMessage): its answer, if maki has it and it answered. */
 export type AppMessage = (
@@ -702,6 +703,76 @@ export class AccountApp extends WalletApp {
       return { approval: a.approval, reason: a.reason(), signature: null }
     const signature = a.rest()
     return signature.length > 0
+      ? { approval: a.approval, reason: '', signature }
+      : { approval: 'unavailable', reason: '', signature: null }
+  }
+}
+
+/**
+ * maki's Kaspa app, which speaks the account coins' messages with its own fields: `A` shares the
+ * whole account (its key at m/44'/111111'/0' and chain code, so every address it will have, and its
+ * first address to check them by), `D` shows any of its addresses (receiving or change), and `T`
+ * takes a transaction with each coin it spends and its key (maki-kas's `request`), answering every
+ * input's signature, 65 bytes each.
+ */
+export class KaspaApp extends AccountApp {
+  /** The account: its key (33 bytes) then its chain code (32), and its first receiving address. */
+  override async account(
+    network: 0 | 1
+  ): Promise<{ approval: ApprovalValue; reason: string; publicKey: Uint8Array; address: string }> {
+    const a = await this.ask(new Writer().u8(0x41).u8(network).finish(), SIGN_TIMEOUT_MS)
+    const none = { publicKey: new Uint8Array(), address: '' }
+    if (typeof a === 'string') return { approval: a, reason: '', ...none }
+    if (a.approval !== 'approved') return { approval: a.approval, reason: a.reason(), ...none }
+    try {
+      const publicKey = Uint8Array.from([...a.fixed(33), ...a.fixed(32)])
+      return { approval: a.approval, reason: '', publicKey, address: a.text() }
+    } catch {
+      return { approval: 'unavailable', reason: '', ...none }
+    }
+  }
+
+  /** A receiving address on maki's screen, to compare. */
+  override address(
+    network: 0 | 1,
+    index = 0
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    return this.addressOn(network, 0, index)
+  }
+
+  /** Any of the account's addresses on maki's screen: chain 0 receiving, 1 change. */
+  async addressOn(
+    network: 0 | 1,
+    chain: 0 | 1,
+    index: number
+  ): Promise<{ approval: ApprovalValue; address: string }> {
+    const m = new Writer().u8(0x44).u8(network).u8(chain).u32(index).finish()
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, address: '' }
+    let address = ''
+    try {
+      address = a.text()
+    } catch {
+      // locked, or no answer: nothing shown
+    }
+    return { approval: a.approval, address }
+  }
+
+  /** A request (maki-kas's) signed once the owner has gone through it: each input's 65 bytes. */
+  override async sign(
+    network: 0 | 1,
+    _index: number,
+    payload: Uint8Array
+  ): Promise<{ approval: ApprovalValue; reason: string; signature: Uint8Array | null }> {
+    const m = Uint8Array.from([0x54, network, ...payload])
+    if (payload.length === 0 || m.length > MAX_APP_MESSAGE)
+      return { approval: 'refused', reason: 'bigger than maki takes', signature: null }
+    const a = await this.ask(m, SIGN_TIMEOUT_MS)
+    if (typeof a === 'string') return { approval: a, reason: '', signature: null }
+    if (a.approval !== 'approved')
+      return { approval: a.approval, reason: a.reason(), signature: null }
+    const signature = a.rest()
+    return signature.length > 0 && signature.length % 65 === 0
       ? { approval: a.approval, reason: '', signature }
       : { approval: 'unavailable', reason: '', signature: null }
   }

@@ -1,6 +1,6 @@
 /**
  * The Wallets page's account coins, end to end: the real app, offscreen, linked to the fake maki
- * running maki's XRP, Stellar and Tron apps (the test phrase's accounts), each network stood in for
+ * running maki's XRP, Stellar, Tron and Kaspa apps (the test phrase's accounts), each network stood in for
  * on this computer (coin-stand-ins.ts). For each, it adds the account from maki, sees what it holds,
  * and sends a token from it, pressing what a person would: the app makes the payment, maki's app
  * reads it and signs, and the stand-in takes it only if the signature checks out, by the account's
@@ -16,6 +16,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
+  KAS_ME,
+  KAS_NEXT_CHANGE,
+  KAS_THEM,
+  kaspaStandIn,
   stellarStandIn,
   tronStandIn,
   TRX_ME,
@@ -48,7 +52,7 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
   beforeAll(async () => {
     build()
     fake = await startFake(
-      ['xrp', 'stellar', 'tron'].flatMap((a) => ['--app', join(APP_FIXTURES, `${a}.maki`)])
+      ['xrp', 'stellar', 'tron', 'kaspa'].flatMap((a) => ['--app', join(APP_FIXTURES, `${a}.maki`)])
     )
   }, 180_000)
   afterAll(() => {
@@ -153,5 +157,39 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
         feeLimit: 9_000_000n
       }
     ])
+  }, 180_000)
+
+  it('adds the Kaspa account, finds its coins on two addresses, and sends KAS: maki signs every input, the network takes it', async () => {
+    const network = kaspaStandIn()
+    const server = await serve(network.answer)
+    try {
+      const said = await drive(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--click', 'Kaspa › Add from maki', '--until', 'as of'],
+          ...['--click', 'Kaspa › Send', '--fill', `kaspa:…=${KAS_THEM}`, '--fill', '0.00=12.5'],
+          ...['--click', 'Kaspa › Review on maki', '--until', 'Sent 12.5 KAS']
+        ],
+        { MAKI_COIN_SERVER: server.url }
+      )
+      expect(said).toContain('Sent 12.5 KAS')
+      // 50 KAS on its first receiving address, 3 on its first change address
+      expect(said).toMatch(/53[\s\S]*KAS/)
+    } finally {
+      server.close()
+    }
+    // the 50 KAS coin, 12.5 to them, the change to the next change address; 2036 grams at 100
+    expect(network.sent).toEqual([
+      expect.objectContaining({
+        inputs: [{ txid: '11'.repeat(32), index: 0 }],
+        outputs: [
+          { address: KAS_THEM, value: 1_250_000_000n },
+          { address: KAS_NEXT_CHANGE, value: 5_000_000_000n - 1_250_000_000n - 203_600n }
+        ],
+        fee: 203_600n
+      })
+    ])
+    expect(KAS_ME).toMatch(/^kaspa:qqd6e65y/)
   }, 180_000)
 })

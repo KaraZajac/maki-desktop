@@ -13,6 +13,7 @@ import {
 import type { Apps } from './apps-state'
 import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
+import { KASPA } from '@shared/coins/kaspa'
 import { STELLAR } from '@shared/coins/stellar'
 import { TRON } from '@shared/coins/tron'
 import { XRP } from '@shared/coins/xrp'
@@ -72,6 +73,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'bitcoincash',
     line: 'The account Electron Cash and Ledger make, through its Electrum servers.',
     Card: BitcoinCash
+  },
+  {
+    app: KASPA.app,
+    name: 'Kaspa',
+    glyph: 'kaspa',
+    line: 'KAS, the account Kaspium, Kaspa NG, Kastle and Ledger make.',
+    Card: (p) => <AccountCard {...p} chain={KASPA} />
   },
   {
     app: ETHEREUM_APP,

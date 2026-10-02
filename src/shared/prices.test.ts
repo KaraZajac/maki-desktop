@@ -10,6 +10,7 @@ describe('prices', () => {
       'dogecoin',
       'ethereum',
       'euro-coin',
+      'kaspa',
       'litecoin',
       'monero',
       'paypal-usd',
@@ -25,7 +26,7 @@ describe('prices', () => {
       'wrapped-bitcoin'
     ])
     expect(pricesUrl('eur')).toBe(
-      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,bitcoin-cash,dai,dogecoin,ethereum,euro-coin,litecoin,monero,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
+      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,bitcoin-cash,dai,dogecoin,ethereum,euro-coin,kaspa,litecoin,monero,paypal-usd,polygon-ecosystem-token,ripple,solana,stellar,tether,tron,usd-coin,usdt0,weth,wrapped-bitcoin&vs_currencies=eur'
     )
   })
 

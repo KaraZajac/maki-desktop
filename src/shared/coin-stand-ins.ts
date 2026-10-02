@@ -1,22 +1,30 @@
 /**
- * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon
- * and Tron's TronGrid, each answering what maki desktop's wallet asks of it, for the test phrase's
+ * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon,
+ * Tron's TronGrid and api.kaspa.org, each answering what maki desktop's wallet asks of it, for the test phrase's
  * account holding some of the coin and of a token. What each is sent is read back here byte by byte,
  * apart from maki desktop's own encoding, and taken only if its signature checks out over the hash
  * the network has signed, by the account's own key, as the network would check it; each keeps what
  * it took.
  */
 import { ed25519 } from '@noble/curves/ed25519.js'
-import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js'
+import { blake2b } from '@noble/hashes/blake2.js'
 import { ripemd160 } from '@noble/hashes/legacy.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
 import { keccak_256 } from '@noble/hashes/sha3.js'
 import { hex } from '@scure/base'
+import { HDKey } from '@scure/bip32'
+import { addressAt, addressOfScript, transactionId } from './coins/kaspa'
 import { accountAddress, PASSPHRASE } from './coins/stellar'
 import { addressText } from './coins/tron'
 import { classicAddress } from './coins/xrp'
 
 type Answer = (method: string, path: string, body: string) => Promise<[number, string]>
+
+/** The test phrase's seed: "abandon" eleven times, then "about" (BIP 39's). */
+export const TEST_SEED = hex.decode(
+  '5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4'
+)
 
 /** A decimal's text, from an integer and a power of ten: `5.25` from 525 and -2. */
 function decimal(mantissa: bigint, exponent: number): string {
@@ -562,6 +570,241 @@ export function tronStandIn(): { answer: Answer; sent: TrxSent[] } {
       return json({ result: true, txid: id })
     }
     return [404, '{}']
+  }
+  return { answer, sent }
+}
+
+// ---- Kaspa ----
+
+/** The test phrase's Kaspa account (m/44'/111111'/0'): its first receiving address is Kastle's. */
+const KAS_ACCOUNT = HDKey.fromMasterSeed(TEST_SEED).derive("m/44'/111111'/0'")
+export const KAS_ME = addressAt(KAS_ACCOUNT, 0, 0, 0)
+/** Its first change address, which holds a coin too, and its second, where change goes next. */
+export const KAS_CHANGE = addressAt(KAS_ACCOUNT, 0, 1, 0)
+export const KAS_NEXT_CHANGE = addressAt(KAS_ACCOUNT, 0, 1, 1)
+/** Someone to pay. */
+export const KAS_THEM = 'kaspa:qqkqkzjvr7zwxxmjxjkmxxdwju9kjs6e9u82uh59z07vgaks6gg62v8707g73'
+
+/** A payment the Kaspa stand-in took. */
+export interface KasSent {
+  id: string
+  inputs: { txid: string; index: number }[]
+  outputs: { address: string | null; value: bigint }[]
+  fee: bigint
+}
+
+/** Kaspa's signature hash for a version 0 transaction and SIGHASH_ALL (rusty-kaspa's `sighash`). */
+export function kaspaSignatureHash(
+  inputs: {
+    txid: Uint8Array
+    index: number
+    sequence: bigint
+    sigOps: number
+    amount: bigint
+    script: Uint8Array
+  }[],
+  outputs: { value: bigint; script: Uint8Array }[],
+  n: number
+): Uint8Array {
+  const le = (n: bigint | number, bytes: number): number[] =>
+    Array.from({ length: bytes }, (_, i) => Number((BigInt(n) >> BigInt(8 * i)) & 0xffn))
+  const hash = (b: number[]): number[] => [
+    ...blake2b(Uint8Array.from(b), {
+      dkLen: 32,
+      key: new TextEncoder().encode('TransactionSigningHash')
+    })
+  ]
+  const me = inputs[n]
+  return Uint8Array.from(
+    hash([
+      ...le(0, 2),
+      ...hash(inputs.flatMap((i) => [...i.txid, ...le(i.index, 4)])),
+      ...hash(inputs.flatMap((i) => le(i.sequence, 8))),
+      ...hash(inputs.map((i) => i.sigOps)),
+      ...me.txid,
+      ...le(me.index, 4),
+      ...le(0, 2),
+      ...le(me.script.length, 8),
+      ...me.script,
+      ...le(me.amount, 8),
+      ...le(me.sequence, 8),
+      me.sigOps,
+      ...hash(
+        outputs.flatMap((o) => [
+          ...le(o.value, 8),
+          ...le(0, 2),
+          ...le(o.script.length, 8),
+          ...o.script
+        ])
+      ),
+      ...le(0, 8),
+      ...new Array(20).fill(0),
+      ...le(0, 8),
+      // the native subnetwork, no payload: zeros
+      ...new Array(32).fill(0),
+      1
+    ])
+  )
+}
+
+/**
+ * api.kaspa.org, answering maki desktop's wallet: the account's first receiving address holds a
+ * coin of 50 KAS, its first change address one of 3; the DAG's score is far past both; fees are
+ * 100 sompi a gram. A transaction is taken if every coin it spends is one of these, each input's
+ * script is its BIP340 signature over Kaspa's signature hash (with the coin's amount and script,
+ * as only the stand-in knows them) and SIGHASH_ALL, by the coin's own key, and it pays no more than
+ * it spends; its coins are spent then, and its outputs new ones.
+ */
+export function kaspaStandIn(): { answer: Answer; sent: KasSent[] } {
+  const sent: KasSent[] = []
+  const coins = new Map<string, { address: string; amount: bigint; script: Uint8Array }>()
+  const fund = (txid: string, index: number, address: string, amount: bigint): void => {
+    const key = KAS_ACCOUNT.deriveChild(address === KAS_ME ? 0 : 1).deriveChild(0).publicKey!
+    coins.set(`${txid}:${index}`, {
+      address,
+      amount,
+      script: Uint8Array.of(0x20, ...key.subarray(1), 0xac)
+    })
+  }
+  fund('11'.repeat(32), 0, KAS_ME, 5_000_000_000n)
+  fund('22'.repeat(32), 1, KAS_CHANGE, 300_000_000n)
+  const json = (status: number, body: unknown): [number, string] => [status, JSON.stringify(body)]
+  const answer: Answer = async (method, path, body) => {
+    if (method === 'POST' && path === '/addresses/active') {
+      const { addresses } = JSON.parse(body) as { addresses: string[] }
+      return json(
+        200,
+        addresses.map((address) => ({
+          address,
+          active: address === KAS_ME || address === KAS_CHANGE
+        }))
+      )
+    }
+    if (method === 'POST' && path === '/addresses/utxos') {
+      const { addresses } = JSON.parse(body) as { addresses: string[] }
+      return json(
+        200,
+        [...coins.entries()]
+          .filter(([, c]) => addresses.includes(c.address))
+          .map(([outpoint, c]) => ({
+            address: c.address,
+            outpoint: {
+              transactionId: outpoint.split(':')[0],
+              index: Number(outpoint.split(':')[1])
+            },
+            utxoEntry: {
+              amount: c.amount.toString(),
+              scriptPublicKey: { scriptPublicKey: hex.encode(c.script) },
+              blockDaaScore: '80000000',
+              isCoinbase: false
+            }
+          }))
+      )
+    }
+    if (method === 'GET' && path.startsWith(`/addresses/${KAS_ME}/full-transactions`))
+      return json(200, [
+        {
+          transaction_id: '11'.repeat(32),
+          block_time: 1_790_000_000_000,
+          is_accepted: true,
+          inputs: [
+            { previous_outpoint_address: KAS_THEM, previous_outpoint_amount: 5_100_000_000 }
+          ],
+          outputs: [
+            { amount: 5_000_000_000, script_public_key_address: KAS_ME },
+            { amount: 99_000_000, script_public_key_address: KAS_THEM }
+          ]
+        }
+      ])
+    if (method === 'GET' && path.startsWith('/addresses/')) return json(200, [])
+    if (method === 'GET' && path === '/info/fee-estimate')
+      return json(200, {
+        priorityBucket: { feerate: 100 },
+        normalBuckets: [{ feerate: 100 }],
+        lowBuckets: [{ feerate: 100 }]
+      })
+    if (method === 'GET' && path === '/info/blockdag')
+      return json(200, { virtualDaaScore: '90000000' })
+    if (method === 'POST' && path === '/transactions') {
+      const refused = (error: string): [number, string] => json(400, { error })
+      const { transaction: t } = JSON.parse(body) as {
+        transaction: {
+          version: number
+          inputs: {
+            previousOutpoint: { transactionId: string; index: number }
+            signatureScript: string
+            sequence: number
+            sigOpCount: number
+          }[]
+          outputs: {
+            amount: number
+            scriptPublicKey: { version: number; scriptPublicKey: string }
+          }[]
+          lockTime: number
+          subnetworkId: string
+        }
+      }
+      // amounts as written, not as JavaScript's numbers would read them
+      const values = [...body.matchAll(/"amount":(\d+)/g)].map((m) => BigInt(m[1]))
+      if (t.version !== 0 || t.lockTime !== 0 || t.subnetworkId !== '0'.repeat(40))
+        return refused('not a plain transaction')
+      const inputs = t.inputs.map((i) => {
+        const coin = coins.get(`${i.previousOutpoint.transactionId}:${i.previousOutpoint.index}`)
+        return (
+          coin && {
+            txid: hex.decode(i.previousOutpoint.transactionId),
+            index: i.previousOutpoint.index,
+            sequence: BigInt(i.sequence),
+            sigOps: i.sigOpCount,
+            amount: coin.amount,
+            script: coin.script,
+            signature: hex.decode(i.signatureScript)
+          }
+        )
+      })
+      if (inputs.some((i) => !i)) return refused('a coin that isn’t there')
+      const outputs = t.outputs.map((o, n) => ({
+        value: values[n],
+        script: hex.decode(o.scriptPublicKey.scriptPublicKey)
+      }))
+      for (const [n, i] of inputs.entries()) {
+        const s = i!.signature
+        if (s.length !== 66 || s[0] !== 0x41 || s[65] !== 1)
+          return refused('not a signature script')
+        const hash = kaspaSignatureHash(
+          inputs as NonNullable<(typeof inputs)[number]>[],
+          outputs,
+          n
+        )
+        if (!schnorr.verify(s.subarray(1, 65), hash, i!.script.subarray(1, 33)))
+          return refused('a bad signature')
+      }
+      const spent = inputs.reduce((sum, i) => sum + i!.amount, 0n)
+      const paid = outputs.reduce((sum, o) => sum + o.value, 0n)
+      if (paid > spent) return refused('it pays more than it spends')
+      const tx = {
+        inputs: t.inputs.map((i, n) => ({
+          txid: i.previousOutpoint.transactionId,
+          index: i.previousOutpoint.index,
+          amount: inputs[n]!.amount,
+          script: inputs[n]!.script,
+          chain: 0 as const,
+          keyIndex: 0
+        })),
+        outputs
+      }
+      const id = transactionId(tx)
+      for (const i of t.inputs)
+        coins.delete(`${i.previousOutpoint.transactionId}:${i.previousOutpoint.index}`)
+      sent.push({
+        id,
+        inputs: tx.inputs.map(({ txid, index }) => ({ txid, index })),
+        outputs: outputs.map((o) => ({ address: addressOfScript(o.script, 0), value: o.value })),
+        fee: spent - paid
+      })
+      return json(200, { transactionId: id })
+    }
+    return json(404, { detail: 'Not Found' })
   }
   return { answer, sent }
 }
