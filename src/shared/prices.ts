@@ -42,7 +42,20 @@ const IDS: Record<string, string> = {
   WBTC: 'wrapped-bitcoin',
   XMR: 'monero',
   SOL: 'solana',
-  PYUSD: 'paypal-usd'
+  PYUSD: 'paypal-usd',
+  // the Ethereum account's other networks' coins, and their tokens (checked against CoinGecko's
+  // simple price, and USDC.e by its contract on Gnosis)
+  BNB: 'binancecoin',
+  AVAX: 'avalanche-2',
+  HYPE: 'hyperliquid',
+  MON: 'monad',
+  MNT: 'mantle',
+  XPL: 'plasma',
+  OKB: 'okb',
+  xDAI: 'xdai',
+  CELO: 'celo',
+  USDG: 'global-dollar',
+  'USDC.e': 'bridged-usdc-gnosis'
 }
 
 /** Everything asked about, every time: the question says nothing about what's held. */

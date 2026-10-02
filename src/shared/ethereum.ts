@@ -21,11 +21,28 @@ export interface EthNetwork {
   explorer: string
   /** a network for testing, whose coin is worth nothing */
   test?: boolean
+  /**
+   * Fees it charges outside the gas, which nothing in a transaction caps: an OP Stack chain's L1
+   * data fee (for posting the transaction to Ethereum) and operator fee. maki says so when it
+   * shows a transaction there (libs/maki-eth's display.rs), and sending all of a coin leaves
+   * room for them, as the network's fee oracle prices them. 'mantle': the oracle prices the L1
+   * fee in ether, which Mantle charges in MNT at its `tokenRatio()`.
+   */
+  feesOutsideGas?: 'op-stack' | 'mantle'
+  /**
+   * The coin's own ERC-20 contract, if it has one (Arc's USDC): the same balance as the coin,
+   * not a second one, so it isn't counted twice.
+   */
+  coinContract?: string
 }
 
 /**
  * The networks maki desktop knows, each with public servers to try in turn: when one can't be
- * reached (they come and go), the next.
+ * reached (they come and go), the next. maki's Ethereum app names the same ones, with the same
+ * coins (libs/maki-eth/src/display.rs, where their sources are); eth-networks.test.ts keeps the
+ * two alike. Each server here is the network's own, or a public one with no key (publicnode,
+ * dRPC, thirdweb), and each answered for its chain on 2026-10-02; each explorer takes
+ * `/address/<address>` and `/tx/<hash>`.
  */
 export const NETWORKS: EthNetwork[] = [
   {
@@ -42,7 +59,8 @@ export const NETWORKS: EthNetwork[] = [
     unit: 'ETH',
     rpc: 'https://mainnet.base.org',
     fallbacks: ['https://base-rpc.publicnode.com'],
-    explorer: 'https://basescan.org'
+    explorer: 'https://basescan.org',
+    feesOutsideGas: 'op-stack'
   },
   {
     chainId: 10n,
@@ -50,7 +68,8 @@ export const NETWORKS: EthNetwork[] = [
     unit: 'ETH',
     rpc: 'https://mainnet.optimism.io',
     fallbacks: ['https://optimism-rpc.publicnode.com'],
-    explorer: 'https://optimistic.etherscan.io'
+    explorer: 'https://optimistic.etherscan.io',
+    feesOutsideGas: 'op-stack'
   },
   {
     chainId: 42161n,
@@ -67,6 +86,157 @@ export const NETWORKS: EthNetwork[] = [
     rpc: 'https://polygon-bor-rpc.publicnode.com',
     fallbacks: ['https://polygon.drpc.org'],
     explorer: 'https://polygonscan.com'
+  },
+  // docs.bnbchain.org: BNB Chain's own servers, bsc-dataseed
+  {
+    chainId: 56n,
+    name: 'BNB Chain',
+    unit: 'BNB',
+    rpc: 'https://bsc-dataseed.bnbchain.org',
+    fallbacks: ['https://bsc-rpc.publicnode.com'],
+    explorer: 'https://bscscan.com'
+  },
+  // build.avax.network: the C-Chain, through Avalanche's public API
+  {
+    chainId: 43114n,
+    name: 'Avalanche',
+    unit: 'AVAX',
+    rpc: 'https://api.avax.network/ext/bc/C/rpc',
+    fallbacks: ['https://avalanche-c-chain-rpc.publicnode.com'],
+    explorer: 'https://snowtrace.io'
+  },
+  // docs.robinhood.com/chain/connecting: its public server is rate-limited
+  {
+    chainId: 4663n,
+    name: 'Robinhood Chain',
+    unit: 'ETH',
+    rpc: 'https://rpc.mainnet.chain.robinhood.com',
+    fallbacks: ['https://robinhood-rpc.publicnode.com'],
+    explorer: 'https://robinhoodchain.blockscout.com'
+  },
+  // hyperliquid.gitbook.io, HyperEVM: its server takes 100 requests a minute
+  {
+    chainId: 999n,
+    name: 'HyperEVM',
+    unit: 'HYPE',
+    rpc: 'https://rpc.hyperliquid.xyz/evm',
+    fallbacks: ['https://hyperliquid-rpc.publicnode.com'],
+    explorer: 'https://hyperevmscan.io'
+  },
+  // docs.monad.xyz, Network information: both servers are the Monad Foundation's
+  {
+    chainId: 143n,
+    name: 'Monad',
+    unit: 'MON',
+    rpc: 'https://rpc.monad.xyz',
+    fallbacks: ['https://rpc1.monad.xyz'],
+    explorer: 'https://monadscan.com'
+  },
+  // docs.mantle.xyz
+  {
+    chainId: 5000n,
+    name: 'Mantle',
+    unit: 'MNT',
+    rpc: 'https://rpc.mantle.xyz',
+    fallbacks: ['https://mantle-rpc.publicnode.com'],
+    explorer: 'https://mantlescan.xyz',
+    feesOutsideGas: 'mantle'
+  },
+  // docs.plasma.org, Connect to Plasma: no other server without a key answered
+  {
+    chainId: 9745n,
+    name: 'Plasma',
+    unit: 'XPL',
+    rpc: 'https://rpc.plasma.to',
+    fallbacks: [],
+    explorer: 'https://plasmascan.to'
+  },
+  // web3.okx.com, X Layer's network information: both servers are OKX's. An OP Stack chain:
+  // its L1 and operator fees were zero on 2026-10-02, but nothing published says they'll stay so
+  {
+    chainId: 196n,
+    name: 'X Layer',
+    unit: 'OKB',
+    rpc: 'https://rpc.xlayer.tech',
+    fallbacks: ['https://xlayerrpc.okx.com'],
+    explorer: 'https://www.okx.com/web3/explorer/xlayer',
+    feesOutsideGas: 'op-stack'
+  },
+  // docs.arc.io, Connect to Arc: USDC is its coin
+  {
+    chainId: 5042n,
+    name: 'Arc',
+    unit: 'USDC',
+    rpc: 'https://rpc.mainnet.arc.io',
+    fallbacks: ['https://rpc.drpc.mainnet.arc.io'],
+    explorer: 'https://explorer.arc.io',
+    coinContract: '0x3600000000000000000000000000000000000000'
+  },
+  // docs.world.org, World Chain's info
+  {
+    chainId: 480n,
+    name: 'World Chain',
+    unit: 'ETH',
+    rpc: 'https://worldchain-mainnet.g.alchemy.com/public',
+    fallbacks: ['https://480.rpc.thirdweb.com'],
+    explorer: 'https://worldscan.org',
+    feesOutsideGas: 'op-stack'
+  },
+  // docs.inkonchain.com, Network information: both servers are Ink's
+  {
+    chainId: 57073n,
+    name: 'Ink',
+    unit: 'ETH',
+    rpc: 'https://rpc-gel.inkonchain.com',
+    fallbacks: ['https://rpc-qnd.inkonchain.com'],
+    explorer: 'https://explorer.inkonchain.com',
+    feesOutsideGas: 'op-stack'
+  },
+  // docs.linea.build, Connect
+  {
+    chainId: 59144n,
+    name: 'Linea',
+    unit: 'ETH',
+    rpc: 'https://rpc.linea.build',
+    fallbacks: ['https://linea-rpc.publicnode.com'],
+    explorer: 'https://lineascan.build'
+  },
+  // docs.gnosischain.com: xDAI, a dollar, is its coin
+  {
+    chainId: 100n,
+    name: 'Gnosis',
+    unit: 'xDAI',
+    rpc: 'https://rpc.gnosischain.com',
+    fallbacks: ['https://gnosis-rpc.publicnode.com'],
+    explorer: 'https://gnosisscan.io'
+  },
+  // docs.zksync.io, ZKsync Era's network details
+  {
+    chainId: 324n,
+    name: 'ZKsync Era',
+    unit: 'ETH',
+    rpc: 'https://mainnet.era.zksync.io',
+    fallbacks: ['https://zksync.drpc.org'],
+    explorer: 'https://explorer.zksync.io'
+  },
+  // docs.celo.org, Network overview: forno is Celo's own
+  {
+    chainId: 42220n,
+    name: 'Celo',
+    unit: 'CELO',
+    rpc: 'https://forno.celo.org',
+    fallbacks: ['https://celo-rpc.publicnode.com'],
+    explorer: 'https://celoscan.io'
+  },
+  // developers.uniswap.org/docs/unichain, Network information
+  {
+    chainId: 130n,
+    name: 'Unichain',
+    unit: 'ETH',
+    rpc: 'https://mainnet.unichain.org',
+    fallbacks: ['https://unichain-rpc.publicnode.com'],
+    explorer: 'https://uniscan.xyz',
+    feesOutsideGas: 'op-stack'
   },
   {
     chainId: 11155111n,

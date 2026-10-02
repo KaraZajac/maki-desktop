@@ -10,7 +10,7 @@
 import { keccak_256 } from '@noble/hashes/sha3.js'
 import { WALLET_SITE } from './bridge-types'
 import { NETWORKS, type EthNetwork, type Ethereum, type Rpc } from './ethereum'
-import { quantity, toQuantity } from './rlp'
+import { fromHex, quantity, toHex, toQuantity, unsignedEip1559 } from './rlp'
 import { tokensOn, type Token } from './tokens'
 
 export { WALLET_SITE }
@@ -40,6 +40,57 @@ const TRANSFER = 'a9059cbb'
 
 /** A 20-byte address, as a 32-byte ABI word (hex, no 0x). */
 const addressWord = (address: string): string => address.slice(2).toLowerCase().padStart(64, '0')
+
+/** A number, as a 32-byte ABI word (hex, no 0x). */
+const uintWord = (n: bigint): string => n.toString(16).padStart(64, '0')
+
+/** The OP Stack's fee oracle, the same address on each of its chains (Mantle's too). */
+export const GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000F'
+const GET_L1_FEE = '0x49948e0e' // getL1Fee(bytes)
+const GET_OPERATOR_FEE = '0x275aedd2' // getOperatorFee(uint256), from the OP Stack's Isthmus
+const TOKEN_RATIO = '0x06f837d3' // tokenRatio(), Mantle's: MNT to the ether
+
+/** A uint256 an eth_call answered, or an error saying the oracle didn't say `what`. */
+function oracleWord(r: unknown, what: string): bigint {
+  if (typeof r !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(r))
+    throw new Error(`the network’s fee oracle didn’t say ${what}`)
+  return BigInt(r)
+}
+
+/**
+ * What a network that charges fees outside the gas would charge for `unsigned` that way, as its
+ * fee oracle prices it now: the L1 data fee (Mantle's priced in ether, and charged in MNT at its
+ * token ratio) and the operator fee for `gas`, which a chain from before the OP Stack's Isthmus
+ * hasn't (its oracle says so by refusing the call).
+ */
+async function feesOutsideGas(
+  network: EthNetwork,
+  call: (method: string, params: unknown[]) => Promise<unknown>,
+  unsigned: Uint8Array,
+  gas: bigint
+): Promise<bigint> {
+  const ask = (data: string): Promise<unknown> =>
+    call('eth_call', [{ to: GAS_PRICE_ORACLE, data }, 'latest'])
+  const bytes = toHex(unsigned).slice(2)
+  const l1 = oracleWord(
+    await ask(
+      GET_L1_FEE +
+        uintWord(32n) +
+        uintWord(BigInt(unsigned.length)) +
+        bytes.padEnd(Math.ceil(bytes.length / 64) * 64, '0')
+    ),
+    'its L1 fee'
+  )
+  const ratio =
+    network.feesOutsideGas === 'mantle' ? oracleWord(await ask(TOKEN_RATIO), 'its token ratio') : 1n
+  let operator = 0n
+  try {
+    operator = oracleWord(await ask(GET_OPERATOR_FEE + uintWord(gas)), 'its operator fee')
+  } catch {
+    // none
+  }
+  return l1 * ratio + operator
+}
 
 /** Calldata for an ERC-20 transfer of `amount` to `to`. */
 export function transferData(to: string, amount: bigint): string {
@@ -114,25 +165,31 @@ export class EthWallet {
     return this.eth.disconnect(WALLET_SITE)
   }
 
-  /** What the account holds on each network: its coin, and the known tokens it has any of. */
+  /**
+   * What the account holds on each network: its coin, and the known tokens it has any of (but the
+   * coin's own ERC-20, Arc's USDC, which is the coin's balance again).
+   */
   holdings(address: string): Promise<NetworkHoldings[]> {
     return Promise.all(
       this.networks.map(async (network): Promise<NetworkHoldings> => {
         const call = (method: string, params: unknown[]): Promise<unknown> =>
           this.rpc(network.rpc, method, params)
+        const coinContract = network.coinContract?.toLowerCase()
         try {
           const coin = quantity(await call('eth_getBalance', [address, 'latest']))
           const tokens = await Promise.all(
-            tokensOn(network.chainId).map(async (token) => {
-              const r = await call('eth_call', [
-                { to: token.contract, data: BALANCE_OF + addressWord(address) },
-                'latest'
-              ])
-              return {
-                token,
-                amount: typeof r === 'string' && /^0x[0-9a-fA-F]+$/.test(r) ? BigInt(r) : 0n
-              }
-            })
+            tokensOn(network.chainId)
+              .filter((token) => token.contract.toLowerCase() !== coinContract)
+              .map(async (token) => {
+                const r = await call('eth_call', [
+                  { to: token.contract, data: BALANCE_OF + addressWord(address) },
+                  'latest'
+                ])
+                return {
+                  token,
+                  amount: typeof r === 'string' && /^0x[0-9a-fA-F]+$/.test(r) ? BigInt(r) : 0n
+                }
+              })
           )
           return {
             network,
@@ -167,7 +224,9 @@ export class EthWallet {
   /**
    * The most of the network's coin the account can send to `to`, and the fees that leaves room
    * for: what it holds, less the gas it might use at the most it might cost (the base fee
-   * doubling, as the provider allows). Send it with those fees, or it may not cover them.
+   * doubling, as the provider allows), and on a network that charges fees outside the gas, less
+   * twice what its fee oracle prices those at now. Send it with those fees, or it may not cover
+   * them.
    */
   async most(network: EthNetwork, to: string): Promise<{ amount: bigint; fees: Fees }> {
     const from = await this.account()
@@ -182,7 +241,24 @@ export class EthWallet {
     }
     const maxPriorityFeePerGas = quantity(await call('eth_maxPriorityFeePerGas', []))
     const maxFeePerGas = quantity(block.baseFeePerGas ?? '0x0') * 2n + maxPriorityFeePerGas
-    const amount = balance - gas * maxFeePerGas
+    let outside = 0n
+    if (network.feesOutsideGas) {
+      // priced for a transaction as long as this one can be: all it holds, and a nonce as long
+      // as any the account will have
+      const unsigned = unsignedEip1559({
+        chainId: network.chainId,
+        nonce: 0xffffffffn,
+        maxPriorityFeePerGas,
+        maxFeePerGas,
+        gasLimit: gas,
+        to: fromHex(to),
+        value: balance,
+        data: new Uint8Array(),
+        accessList: []
+      })
+      outside = 2n * (await feesOutsideGas(network, call, unsigned, gas))
+    }
+    const amount = balance - gas * maxFeePerGas - outside
     if (amount <= 0n)
       throw new Error(`the account doesn’t hold enough ${network.unit} to pay the fee`)
     return { amount, fees: { gas, maxFeePerGas, maxPriorityFeePerGas } }

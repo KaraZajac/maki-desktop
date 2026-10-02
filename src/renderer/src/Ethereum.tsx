@@ -72,8 +72,8 @@ export function Ethereum({ link, apps }: { link: Link; apps: Apps }): React.JSX.
             </h3>
             <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-subtext0">
               Connect maki desktop to the account the way a site connects: maki asks you first. Then
-              see what it holds on Ethereum, Base, Optimism, Arbitrum and Polygon, and send from it,
-              each payment shown on maki and signed there.
+              see what it holds on Ethereum and the networks like it (Base, Arbitrum, BNB Chain,
+              Avalanche and more), and send from it, each payment shown on maki and signed there.
             </p>
           </div>
           <Button

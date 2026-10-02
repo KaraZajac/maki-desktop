@@ -1,7 +1,9 @@
 /**
- * Tokens maki knows by their contracts (libs/maki-eth/src/tokens.rs in the firmware repo): the
- * same table, so the balances here and the amounts maki shows when one is sent agree. Each was
- * checked against its contract's own symbol() and decimals(). tokens.test.ts keeps the two alike.
+ * Tokens maki knows by their contracts (libs/maki-eth/src/tokens.rs in the firmware repo, where
+ * each one's source is): the same table, so the balances here and the amounts maki shows when one
+ * is sent agree. Each was checked against its contract's own symbol() and decimals(), and is
+ * written in ASCII (USDT0's contracts call themselves USD₮0 on some networks). tokens.test.ts
+ * keeps the two alike.
  */
 
 export interface Token {
@@ -38,7 +40,56 @@ export const TOKENS: Token[] = [
   token(137, '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', 'USDC', 6),
   token(137, '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', 'USDT0', 6),
   token(137, '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', 'DAI', 18),
-  token(137, '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', 'WETH', 18)
+  token(137, '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', 'WETH', 18),
+  // BNB Chain: Binance’s own, with 18 decimals
+  token(56, '0x55d398326f99059fF775485246999027B3197955', 'USDT', 18),
+  token(56, '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', 'USDC', 18),
+  // Avalanche
+  token(43114, '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', 'USDC', 6),
+  token(43114, '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', 'USDT', 6),
+  // Robinhood Chain
+  token(4663, '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168', 'USDG', 6),
+  token(4663, '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', 'WETH', 18),
+  // HyperEVM
+  token(999, '0xb88339CB7199b77E23DB6E890353E22632Ba630f', 'USDC', 6),
+  token(999, '0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb', 'USDT0', 6),
+  // Monad
+  token(143, '0x754704Bc059F8C67012fEd69BC8A327a5aafb603', 'USDC', 6),
+  token(143, '0xe7cd86e13AC4309349F30B3435a9d337750fC82D', 'USDT0', 6),
+  // Mantle
+  token(5000, '0x779Ded0c9e1022225f8E0630b35a9b54bE713736', 'USDT0', 6),
+  token(5000, '0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111', 'WETH', 18),
+  // Plasma
+  token(9745, '0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb', 'USDT0', 6),
+  token(9745, '0x2d661C89D812261039AF9764eceaAee884f5F67F', 'USDC', 6),
+  // X Layer
+  token(196, '0x779Ded0c9e1022225f8E0630b35a9b54bE713736', 'USDT0', 6),
+  token(196, '0xB6CEceAB302E2E4948951eE7843FC24E92933061', 'USDC', 6),
+  token(196, '0x4ae46a509F6b1D9056937BA4500cb143933D2dc8', 'USDG', 6),
+  // Arc: its coin, USDC, as an ERC-20 too (the same balance)
+  token(5042, '0x3600000000000000000000000000000000000000', 'USDC', 6),
+  // World Chain
+  token(480, '0x79A02482A880bCE3F13e09Da970dC34db4CD24d1', 'USDC', 6),
+  token(480, '0x4200000000000000000000000000000000000006', 'WETH', 18),
+  // Ink
+  token(57073, '0x2D270e6886d130D724215A266106e6832161EAEd', 'USDC', 6),
+  token(57073, '0x0200C29006150606B650577BBE7B6248F58470c1', 'USDT0', 6),
+  token(57073, '0xe343167631d89B6Ffc58B88d6b7fB0228795491D', 'USDG', 6),
+  token(57073, '0x4200000000000000000000000000000000000006', 'WETH', 18),
+  // Linea
+  token(59144, '0x176211869cA2b568f2A7D4EE941E073a821EE1ff', 'USDC', 6),
+  token(59144, '0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f', 'WETH', 18),
+  // Gnosis: USDC bridged by Gnosis’s own bridge, by its own symbol
+  token(100, '0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0', 'USDC.e', 6),
+  // ZKsync Era
+  token(324, '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4', 'USDC', 6),
+  // Celo
+  token(42220, '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', 'USDC', 6),
+  token(42220, '0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e', 'USDT', 6),
+  // Unichain
+  token(130, '0x078D782b760474a361dDA0AF3839290b0EF57AD6', 'USDC', 6),
+  token(130, '0x9151434b16b9763660705744891fA906F660EcC5', 'USDT0', 6),
+  token(130, '0x4200000000000000000000000000000000000006', 'WETH', 18)
 ]
 
 export function tokensOn(chainId: bigint): Token[] {

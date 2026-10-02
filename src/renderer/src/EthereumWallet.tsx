@@ -150,8 +150,8 @@ export function EthereumWallet({
             </code>
             <p className="mt-3 max-w-md text-xs leading-relaxed text-overlay1">
               maki showed you this address when you connected maki desktop to the account. It’s the
-              same on Ethereum, Base, Optimism, Arbitrum and Polygon: have whoever pays you say
-              which network they send on.
+              same on every network maki desktop knows, Ethereum, Base, Arbitrum, BNB Chain,
+              Avalanche and the rest: have whoever pays you say which network they send on.
             </p>
           </div>
         </div>
@@ -386,13 +386,20 @@ function Send({
             Network
           </div>
           <div className="mt-1.5">
-            <Segmented
-              label="Network"
+            {/* a list, not buttons: the account may hold something on twenty networks */}
+            <select
+              aria-label="Network"
               value={chain}
               disabled={busy}
-              options={holdings.map((n) => [String(n.network.chainId), n.network.name])}
-              onChange={setChain}
-            />
+              onChange={(e) => setChain(e.target.value)}
+              className="rounded-lg border border-surface1 bg-crust/60 px-2 py-1.5 font-mono text-[0.72rem] text-fg outline-none focus:border-peach/70 disabled:opacity-40"
+            >
+              {holdings.map((n) => (
+                <option key={String(n.network.chainId)} value={String(n.network.chainId)}>
+                  {n.network.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <div>
@@ -486,6 +493,12 @@ function Send({
             </span>
           ) : check ? (
             <span className="text-yellow">{check}</span>
+          ) : ready && network.feesOutsideGas ? (
+            <span className="text-subtext1">
+              maki shows {token ? 'the token, the amount' : 'the amount'}, where it goes and the
+              most the gas can cost ({network.unit}, on {network.name}), and that {network.name} can
+              add fees outside the gas (for posting it to Ethereum), which nothing caps.
+            </span>
           ) : ready ? (
             <span className="text-subtext1">
               maki shows {token ? 'the token, the amount' : 'the amount'}, where it goes and the

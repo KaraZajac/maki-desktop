@@ -7,15 +7,24 @@ import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
-import { Ethereum, memoryStore, NETWORKS, type Rpc } from './ethereum'
+import {
+  Ethereum,
+  memoryStore,
+  NETWORKS,
+  ProviderError,
+  type EthNetwork,
+  type Rpc
+} from './ethereum'
 import {
   checksummed,
   ENS_REGISTRY,
   EthWallet,
+  GAS_PRICE_ORACLE,
   isAddress,
   isEnsName,
   namehash,
-  transferData
+  transferData,
+  WALLET_SITE
 } from './eth-wallet'
 import { toHex } from './rlp'
 import { tokensOn } from './tokens'
@@ -84,6 +93,99 @@ describe('addresses', () => {
     // one letter's capital changed: a typo EIP-55 catches
     expect(isAddress(PAYEE.replace('C51812dc', 'C51812Dc'))).toBe(false)
     expect(isAddress('0x1234')).toBe(false)
+  })
+})
+
+describe('the Ethereum wallet’s networks', () => {
+  const network = (name: string): EthNetwork => NETWORKS.find((n) => n.name === name)!
+  const word = (n: bigint): string => '0x' + n.toString(16).padStart(64, '0')
+
+  /** A wallet connected to the account, on `rpc`, whatever the network. */
+  const wallet = async (rpc: Rpc): Promise<EthWallet> => {
+    const store = memoryStore()
+    await store.save({ connected: { [WALLET_SITE]: ADDRESS }, chains: {} })
+    return new EthWallet(new Ethereum(() => null, rpc, store), rpc)
+  }
+
+  it('counts Arc’s USDC once: the coin, not its ERC-20 again', async () => {
+    const arc = network('Arc')
+    const rpc: Rpc = async (_url, method) =>
+      method === 'eth_getBalance' ? '0xde0b6b3a7640000' : word(1_000_000n)
+    const held = await new EthWallet(new Ethereum(() => null, rpc, memoryStore()), rpc, [
+      arc
+    ]).holdings(ADDRESS)
+    expect(held[0].holdings).toEqual([{ token: null, amount: 10n ** 18n }])
+  })
+
+  /** A network that holds 1 of its coin, as the stand-in's, and fee oracle answers. */
+  const fees = (
+    oracle: Record<string, string>
+  ): { rpc: Rpc; calls: { url: string; data: string }[] } => {
+    const calls: { url: string; data: string }[] = []
+    const answers: Record<string, unknown> = {
+      eth_getBalance: '0xde0b6b3a7640000',
+      eth_estimateGas: '0xc350',
+      eth_getBlockByNumber: { baseFeePerGas: '0x3b9aca00' },
+      eth_maxPriorityFeePerGas: '0x3b9aca00'
+    }
+    return {
+      calls,
+      rpc: async (url, method, params) => {
+        if (method !== 'eth_call') return answers[method]
+        const { to, data } = params[0] as { to: string; data: string }
+        expect(to).toBe(GAS_PRICE_ORACLE)
+        calls.push({ url, data })
+        const answer = oracle[data.slice(0, 10)]
+        if (answer === undefined) throw new ProviderError(3, 'execution reverted')
+        return answer
+      }
+    }
+  }
+  // the gas at the most it might cost: 50,000 and a fifth, at the base fee (1 gwei) doubled and
+  // the tip (1 gwei)
+  const gas = 60_000n * 3_000_000_000n
+
+  it('sends all of a coin less twice the fees a network charges outside the gas', async () => {
+    const base = network('Base')
+    const net = fees({ '0x49948e0e': word(10n ** 12n), '0x275aedd2': word(5n * 10n ** 11n) })
+    const { amount } = await (await wallet(net.rpc)).most(base, PAYEE)
+    expect(amount).toBe(10n ** 18n - gas - 2n * (10n ** 12n + 5n * 10n ** 11n))
+    // its L1 fee, priced for the transaction: getL1Fee(bytes) of it unsigned, an EIP-1559 one
+    // to the payee on Base, and the operator fee for its gas
+    const [l1, operator] = net.calls
+    expect(l1.url).toBe(base.rpc)
+    expect(l1.data.slice(0, 74)).toBe('0x49948e0e' + word(32n).slice(2))
+    const length = Number(BigInt('0x' + l1.data.slice(74, 138)))
+    const unsigned = l1.data.slice(138, 138 + length * 2)
+    expect(unsigned.startsWith('02')).toBe(true)
+    expect(unsigned).toContain('822105') // chain 8453
+    expect(unsigned).toContain(PAYEE.slice(2).toLowerCase())
+    expect(operator.data).toBe('0x275aedd2' + word(60_000n).slice(2))
+    // an oracle from before the operator fee refuses that call: no operator fee
+    const older = fees({ '0x49948e0e': word(10n ** 12n) })
+    expect((await (await wallet(older.rpc)).most(base, PAYEE)).amount).toBe(
+      10n ** 18n - gas - 2n * 10n ** 12n
+    )
+  })
+
+  it('prices Mantle’s L1 fee in MNT, at its token ratio', async () => {
+    const net = fees({
+      '0x49948e0e': word(6n * 10n ** 10n),
+      '0x06f837d3': word(4_037n),
+      '0x275aedd2': word(21n * 10n ** 13n)
+    })
+    const { amount } = await (await wallet(net.rpc)).most(network('Mantle'), PAYEE)
+    expect(amount).toBe(10n ** 18n - gas - 2n * (6n * 10n ** 10n * 4_037n + 21n * 10n ** 13n))
+  })
+
+  it('asks a network with fees in the gas alone nothing more, and believes no odd answer', async () => {
+    const net = fees({})
+    const { amount } = await (await wallet(net.rpc)).most(network('Avalanche'), PAYEE)
+    expect([amount, net.calls.length]).toEqual([10n ** 18n - gas, 0])
+    const odd = fees({ '0x49948e0e': '0x1234' })
+    await expect((await wallet(odd.rpc)).most(network('Unichain'), PAYEE)).rejects.toThrow(
+      /didn’t say its L1 fee/
+    )
   })
 })
 
