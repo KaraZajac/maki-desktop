@@ -23,6 +23,7 @@ import {
 import { keyLines, keyOf, SUDO_APP, type SudoStatus } from '@shared/sudo'
 import { NOSTR_APP } from '@shared/nostr'
 import { BrowsersCard } from './Browsers'
+import { Passwords } from './Passwords'
 import type { BunkerView } from './bunker-state'
 import { Qr } from './Qr'
 import {
@@ -133,6 +134,8 @@ export function Connections({
       <Notes link={link} apps={apps} go={go} />
 
       <MacroPad link={link} apps={apps} go={go} />
+
+      <Passwords link={link} apps={apps} go={go} />
 
       <Contacts link={link} apps={apps} go={go} />
 
