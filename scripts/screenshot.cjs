@@ -88,11 +88,12 @@ app.whenReady().then(async () => {
       await wait(2500) // the fake approves after a moment
     } else {
       const [placeholder, ...text] = arg.split('=')
-      // React watches the value's setter, not the property: set it the way typing does
+      // React watches the value's setter, not the property: set it the way typing does (a text
+      // area's or an input's)
       await run(`(() => {
-        const input = document.querySelector(${JSON.stringify(`input[placeholder="${placeholder}"]`)})
+        const input = document.querySelector(${JSON.stringify(`input[placeholder="${placeholder}"], textarea[placeholder="${placeholder}"]`)})
         if (!input) return
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(text.join('='))})
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value').set.call(input, ${JSON.stringify(text.join('='))})
         input.dispatchEvent(new Event('input', { bubbles: true }))
       })()`)
       await wait(300)

@@ -26,6 +26,7 @@ import { BrowsersCard } from './Browsers'
 import { Passwords } from './Passwords'
 import { Confirm } from './Confirm'
 import { ShowQr } from './ShowQr'
+import { Flashcards } from './Flashcards'
 import type { BunkerView } from './bunker-state'
 import { Qr } from './Qr'
 import {
@@ -142,6 +143,8 @@ export function Connections({
       <Passwords link={link} apps={apps} go={go} />
 
       <ShowQr link={link} apps={apps} go={go} />
+
+      <Flashcards link={link} apps={apps} go={go} />
 
       <Contacts link={link} apps={apps} go={go} />
 
