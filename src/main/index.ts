@@ -739,7 +739,7 @@ function ipc(): void {
   // its wallet makes and no others, paced to what each allows; MAKI_COIN_SERVER (tests) is a server
   // to use instead, for every coin
   const ownCoinServer = process.env['MAKI_COIN_SERVER']
-  const pacedCoins = new Map<CoinId, ReturnType<typeof polite>>()
+  const pacedCoins = new Map<string, ReturnType<typeof polite>>()
   ipcMain.handle(
     'coin:fetch',
     async (
@@ -770,23 +770,29 @@ function ipc(): void {
               !/^(?:[0-9a-f]{2})+$/.test(body)))
         )
           throw new Error('not something the wallet asks')
-        let paced = pacedCoins.get(coin as CoinId)
+        // the coin's other service, for the paths it answers; its own pace
+        const also = servers.also && path.startsWith(servers.also.prefix) ? servers.also : null
+        const service = also ?? servers
+        const pacedKey = `${coin as CoinId}${also ? also.prefix : ''}`
+        let paced = pacedCoins.get(pacedKey)
         if (!paced) {
           paced = polite(
             (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(20_000) }),
             {
               atOnce: 2,
-              perSecond: servers.perSecond,
+              perSecond: service.perSecond,
               wait: 5000
             }
           )
-          pacedCoins.set(coin as CoinId, paced)
+          pacedCoins.set(pacedKey, paced)
         }
-        const bases = ownCoinServer ? [ownCoinServer] : network === 0 ? servers.main : servers.test
+        // a stand-in (tests) takes every path as the wallet asks it
+        const bases = ownCoinServer ? [ownCoinServer] : network === 0 ? service.main : service.test
+        const sent = ownCoinServer || !also ? path : path.slice(also.prefix.length)
         let unreachable = ''
         for (const base of bases) {
           try {
-            const res = await paced(`${base}${path}`, {
+            const res = await paced(`${base}${sent}`, {
               method,
               body: binary ? Buffer.from(body as string, 'hex') : (body as string | undefined),
               headers:

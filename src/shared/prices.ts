@@ -18,6 +18,7 @@ const IDS: Record<string, string> = {
   XLM: 'stellar',
   KAS: 'kaspa',
   APT: 'aptos',
+  NEAR: 'near',
   TRX: 'tron',
   ETH: 'ethereum',
   POL: 'polygon-ecosystem-token',

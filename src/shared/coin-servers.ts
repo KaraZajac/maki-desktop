@@ -23,6 +23,8 @@ export interface CoinServers {
   perSecond: number
   /** the type of the bytes it takes in a POST's body, for a coin that sends some (they cross as hex) */
   binary?: string
+  /** another service the wallet asks, for paths that start with `prefix` (which it doesn't see) */
+  also?: { prefix: string; main: string[]; test: string[]; perSecond: number }
 }
 
 /** Each coin's servers; a coin's entry comes with its wallet. */
@@ -72,6 +74,21 @@ export const COIN_SERVERS: Partial<Record<CoinId, CoinServers>> = {
     post: /^\/v1\/(transactions(\/simulate\?estimate_max_gas_amount=true&estimate_gas_unit_price=true)?|graphql)$/,
     perSecond: 2,
     binary: 'application/x.aptos.signed_transaction+bcs'
+  },
+  // FastNEAR's RPC (keyless; NEAR's own rpc.*.near.org is deprecated): accounts, keys' nonces,
+  // tokens' balances, the latest block, gas prices, sending; history from NearBlocks
+  near: {
+    main: ['https://rpc.mainnet.fastnear.com'],
+    test: ['https://rpc.testnet.fastnear.com'],
+    get: /^\/nearblocks\/v1\/account\/[a-z0-9._-]{2,64}\/(txns-only|ft-txns)\?per_page=20$/,
+    post: /^\/$/,
+    perSecond: 4,
+    also: {
+      prefix: '/nearblocks',
+      main: ['https://api.nearblocks.io'],
+      test: ['https://api-testnet.nearblocks.io'],
+      perSecond: 1
+    }
   }
 }
 

@@ -15,6 +15,7 @@ import { Bitcoin } from './Bitcoin'
 import { Ethereum } from './Ethereum'
 import { APTOS } from '@shared/coins/aptos'
 import { KASPA } from '@shared/coins/kaspa'
+import { NEAR } from '@shared/coins/near'
 import { STELLAR } from '@shared/coins/stellar'
 import { TRON } from '@shared/coins/tron'
 import { XRP } from '@shared/coins/xrp'
@@ -130,6 +131,13 @@ const WALLETS: WalletKind[] = [
     glyph: 'aptos',
     line: 'APT, USDC and USDT, the account Petra and Ledger make.',
     Card: (p) => <AccountCard {...p} chain={APTOS} />
+  },
+  {
+    app: NEAR.app,
+    name: 'NEAR',
+    glyph: 'near',
+    line: 'NEAR, USDC and USDT, the account MyNearWallet, near-cli and Trust Wallet make.',
+    Card: (p) => <AccountCard {...p} chain={NEAR} />
   }
 ]
 

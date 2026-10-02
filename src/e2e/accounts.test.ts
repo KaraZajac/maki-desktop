@@ -1,6 +1,6 @@
 /**
  * The Wallets page's account coins, end to end: the real app, offscreen, linked to the fake maki
- * running maki's XRP, Stellar, Tron, Kaspa and Aptos apps (the test phrase's accounts), each network stood in for
+ * running maki's XRP, Stellar, Tron, Kaspa, Aptos and NEAR apps (the test phrase's accounts), each network stood in for
  * on this computer (coin-stand-ins.ts). For each, it adds the account from maki, sees what it holds,
  * and sends a token from it, pressing what a person would: the app makes the payment, maki's app
  * reads it and signs, and the stand-in takes it only if the signature checks out, by the account's
@@ -24,6 +24,10 @@ import {
   KAS_NEXT_CHANGE,
   KAS_THEM,
   kaspaStandIn,
+  NEAR_ME,
+  NEAR_THEM,
+  NEAR_USDC,
+  nearStandIn,
   stellarStandIn,
   tronStandIn,
   TRX_ME,
@@ -56,7 +60,7 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
   beforeAll(async () => {
     build()
     fake = await startFake(
-      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos'].flatMap((a) => [
+      ['xrp', 'stellar', 'tron', 'kaspa', 'aptos', 'near'].flatMap((a) => [
         '--app',
         join(APP_FIXTURES, `${a}.maki`)
       ])
@@ -227,6 +231,41 @@ describe.skipIf(!E2E || !FAKE_BUILT)('the account wallets, end to end', () => {
         args: [APT_USDC.slice(2), APT_THEM.slice(2), '50a06e0000000000'],
         maxGas: 28n,
         gasPrice: 100n
+      })
+    ])
+  }, 180_000)
+
+  it('adds the NEAR account, shows its NEAR and USDC, and sends USDC to someone not signed up for it: maki signs, NEAR takes it', async () => {
+    const near = nearStandIn()
+    const server = await serve(near.answer)
+    try {
+      const said = await drive(
+        home(),
+        fake.port,
+        [
+          ...['--click', 'Wallets', '--click', 'NEAR › Add from maki', '--until', 'as of'],
+          ...['--click', 'NEAR › Send', '--choose', NEAR_USDC],
+          ...['--fill', `name.near, or 64 hex digits=${NEAR_THEM}`, '--fill', '0.00=5.25'],
+          ...['--click', 'NEAR › Review on maki', '--until', 'Sent 5.25 USDC']
+        ],
+        { MAKI_COIN_SERVER: server.url }
+      )
+      expect(said).toContain('Sent 5.25 USDC')
+      expect(said).toMatch(/12\.5[\s\S]*NEAR[\s\S]*USDC\s*40/)
+    } finally {
+      server.close()
+    }
+    expect(near.sent).toEqual([
+      expect.objectContaining({
+        signer: NEAR_ME,
+        receiver: NEAR_USDC,
+        actions: [
+          expect.objectContaining({ method: 'storage_deposit' }),
+          expect.objectContaining({
+            method: 'ft_transfer',
+            args: JSON.stringify({ receiver_id: NEAR_THEM, amount: '5250000' })
+          })
+        ]
       })
     ])
   }, 180_000)

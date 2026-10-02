@@ -1,6 +1,6 @@
 /**
  * Stand-ins for the account coins' servers, for tests (Node only): XRP's rippled, Stellar's Horizon,
- * Tron's TronGrid, api.kaspa.org and Aptos Labs' API, each answering what maki desktop's wallet asks of it, for the test phrase's
+ * Tron's TronGrid, api.kaspa.org, Aptos Labs' API and NEAR's RPC (with NearBlocks), each answering what maki desktop's wallet asks of it, for the test phrase's
  * account holding some of the coin and of a token. What each is sent is read back here byte by byte,
  * apart from maki desktop's own encoding, and taken only if its signature checks out over the hash
  * the network has signed, by the account's own key, as the network would check it; each keeps what
@@ -13,7 +13,7 @@ import { hmac } from '@noble/hashes/hmac.js'
 import { ripemd160 } from '@noble/hashes/legacy.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
 import { keccak_256, sha3_256 } from '@noble/hashes/sha3.js'
-import { hex } from '@scure/base'
+import { base58, base64, hex } from '@scure/base'
 import { HDKey } from '@scure/bip32'
 import { addressAt, addressOfScript, transactionId } from './coins/kaspa'
 import { accountAddress, PASSPHRASE } from './coins/stellar'
@@ -980,6 +980,153 @@ export function aptosStandIn(): { answer: Answer; sent: AptSent[] } {
       return json(202, { hash })
     }
     return json(404, { message: 'not found' })
+  }
+  return { answer, sent }
+}
+
+// ---- NEAR ----
+
+/** The test phrase's NEAR account (implicit: its key's hex), a named account, and USDC's contract. */
+export const NEAR_ME = '5510e2b44cae6eb807e3e0e45d579dda058c274abcba15e5cb84636f5d1ee412'
+export const NEAR_THEM = 'bob.near'
+export const NEAR_USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1'
+
+/** A transaction the NEAR stand-in took. */
+export interface NearSent {
+  hash: string
+  signer: string
+  receiver: string
+  nonce: bigint
+  /** each action: a transfer's deposit, or a call's method, arguments, gas and deposit */
+  actions: ({ transfer: bigint } | { method: string; args: string; gas: bigint; deposit: bigint })[]
+}
+
+/**
+ * NEAR's RPC and NearBlocks, answering maki desktop's wallet: the account holds 12.5 NEAR (182
+ * bytes stored) and 40 USDC; bob.near exists but isn't signed up for USDC (its contract asks 0.00125
+ * NEAR for that); the latest block's hash is fixed. A transaction sent is taken if it's the
+ * account's (its signer and key), at the key's next nonce, on that block, and Ed25519-signed over
+ * its SHA-256 by that key.
+ */
+export function nearStandIn(): { answer: Answer; sent: NearSent[] } {
+  const sent: NearSent[] = []
+  let nonce = 117_000_000_000_000n
+  const blockHash = new Uint8Array(32).fill(7)
+  const json = (body: unknown): [number, string] => [200, JSON.stringify(body)]
+  const ok = (result: unknown): [number, string] => json({ jsonrpc: '2.0', id: 'maki', result })
+  const error = (name: string, data: string): [number, string] =>
+    json({
+      jsonrpc: '2.0',
+      id: 'maki',
+      error: { name: 'HANDLER_ERROR', cause: { name }, code: -32000, data }
+    })
+  const bytesOf = (v: unknown): number[] => [...new TextEncoder().encode(JSON.stringify(v))]
+  const answer: Answer = async (method, path, body) => {
+    if (method === 'GET' && path.startsWith(`/nearblocks/v1/account/${NEAR_ME}/txns-only`))
+      return json({
+        txns: [
+          {
+            transaction_hash: 'FMzgJy1CP6y73Pfp6q7iKoZ1o73wmaLwFwcBSbWSjFPL',
+            signer_account_id: NEAR_THEM,
+            receiver_account_id: NEAR_ME,
+            block_timestamp: '1790000000000000000',
+            actions_agg: { deposit: 1.25e25 },
+            outcomes: { status: true }
+          }
+        ]
+      })
+    if (method === 'GET' && path.startsWith(`/nearblocks/v1/account/${NEAR_ME}/ft-txns`))
+      return json({
+        txns: [
+          {
+            transaction_hash: '97FmXVRNTWMuuP39YyT95sg21TKHo1wzu5QFAzFY2ARS',
+            involved_account_id: NEAR_THEM,
+            delta_amount: '40000000',
+            block_timestamp: '1790000100000000000',
+            outcomes: { status: true },
+            ft: { contract: NEAR_USDC, symbol: 'USDC', decimals: 6 }
+          }
+        ]
+      })
+    if (method !== 'POST' || path !== '/') return [404, '{}']
+    const { method: call, params } = JSON.parse(body) as {
+      method: string
+      params: Record<string, string>
+    }
+    if (call === 'block')
+      return ok({ header: { hash: base58.encode(blockHash), height: 218_000_000 } })
+    if (call === 'gas_price') return ok({ gas_price: '100000000' })
+    if (call === 'query' && params.request_type === 'view_account') {
+      if (params.account_id === NEAR_ME)
+        return ok({ amount: '12500000000000000000000000', locked: '0', storage_usage: 182 })
+      if (params.account_id === NEAR_THEM)
+        return ok({ amount: '1000000000000000000000000', locked: '0', storage_usage: 300 })
+      return error('UNKNOWN_ACCOUNT', `account ${params.account_id} does not exist while viewing`)
+    }
+    if (call === 'query' && params.request_type === 'view_access_key')
+      return ok({ nonce: Number(nonce), permission: 'FullAccess' })
+    if (call === 'query' && params.request_type === 'call_function') {
+      const args = JSON.parse(new TextDecoder().decode(base64.decode(params.args_base64))) as {
+        account_id?: string
+      }
+      const result =
+        params.method_name === 'ft_balance_of'
+          ? params.account_id === NEAR_USDC && args.account_id === NEAR_ME
+            ? '40000000'
+            : '0'
+          : params.method_name === 'storage_balance_of'
+            ? args.account_id === NEAR_ME
+              ? { total: '1250000000000000000000', available: '0' }
+              : null
+            : params.method_name === 'storage_balance_bounds'
+              ? { min: '1250000000000000000000', max: '1250000000000000000000' }
+              : undefined
+      if (result === undefined) return error('NO_SUCH_METHOD', params.method_name)
+      return ok({ result: bytesOf(result), logs: [] })
+    }
+    if (call === 'send_tx') {
+      const signed = base64.decode(params.signed_tx_base64)
+      const tx = signed.subarray(0, signed.length - 65)
+      const signature = signed.subarray(signed.length - 64)
+      // read it back: borsh
+      let at = 0
+      const take = (n: number): Uint8Array => tx.slice(at, (at += n))
+      const u32 = (): number => new DataView(take(4).buffer).getUint32(0, true)
+      const int = (n: number): bigint =>
+        [...take(n)].reduceRight((v, x) => (v << 8n) | BigInt(x), 0n)
+      const str = (): string => new TextDecoder().decode(take(u32()))
+      const signer = str()
+      const keyType = take(1)[0]
+      const key = take(32)
+      const txNonce = int(8)
+      const receiver = str()
+      const block = take(32)
+      const actions: NearSent['actions'] = []
+      for (let n = u32(); n > 0; n--) {
+        const kind = take(1)[0]
+        if (kind === 3) actions.push({ transfer: int(16) })
+        else if (kind === 2)
+          actions.push({ method: str(), args: str(), gas: int(8), deposit: int(16) })
+        else return error('INVALID_TRANSACTION', 'an action the stand-in doesn’t take')
+      }
+      if (
+        at !== tx.length ||
+        signed[signed.length - 65] !== 0 ||
+        keyType !== 0 ||
+        signer !== NEAR_ME ||
+        hex.encode(key) !== NEAR_ME ||
+        !ed25519.verify(signature, sha256(tx), key)
+      )
+        return error('INVALID_TRANSACTION', 'InvalidSignature')
+      if (txNonce !== nonce + 1n) return error('INVALID_TRANSACTION', 'InvalidNonce')
+      if (hex.encode(block) !== hex.encode(blockHash))
+        return error('INVALID_TRANSACTION', 'Expired')
+      nonce = txNonce
+      const hash = base58.encode(sha256(tx))
+      sent.push({ hash, signer, receiver, nonce: txNonce, actions })
+      return ok({ final_execution_status: 'INCLUDED', transaction: { hash } })
+    }
+    return error('NO_SUCH_METHOD', call)
   }
   return { answer, sent }
 }
