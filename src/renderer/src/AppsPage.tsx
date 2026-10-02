@@ -8,6 +8,7 @@ import { revoked, sourcePage, type StoreApp } from '@shared/store'
 import type { Apps } from './apps-state'
 import { appColours, StorageChart, takes } from './StorageChart'
 import { ago, Badge, Button, bytes, Card, Glyph, Label, PageHeader, PixelIcon } from './ui'
+import { PAGES, type Page } from './pages'
 
 function why(approval: ApprovalValue, reason: string): string {
   switch (approval) {
@@ -87,13 +88,15 @@ export function AppsPage({
   link,
   apps: state,
   storeName,
-  storePrivate
+  storePrivate,
+  go
 }: {
   link: Link
   apps: Apps
   storeName: string | null
   /** on GitHub, with no token to read it: if it can't be read, it may be private */
   storePrivate: boolean
+  go: (page: Page) => void
 }): React.JSX.Element {
   const linked = link.state.linked
   const { status, apps, space, keys } = state
@@ -274,6 +277,17 @@ export function AppsPage({
                         onClick={() => void chooseFromStore(fromStore)}
                       >
                         Update
+                      </Button>
+                    )}
+                    {PAGES.some((p) => p.app === a.id) && (
+                      <Button
+                        small
+                        kind="ghost"
+                        glyph="external"
+                        title={`${a.name}’s page in maki desktop`}
+                        onClick={() => go(PAGES.find((p) => p.app === a.id)!.id)}
+                      >
+                        Open
                       </Button>
                     )}
                     <Button

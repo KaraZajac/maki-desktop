@@ -88,11 +88,9 @@ export function BrowsersCard({ link }: { link: Link }): React.JSX.Element {
           <Glyph name="globe" className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <Label>browsers</Label>
+          <Label>on this computer</Label>
           <p className="mt-2 text-sm text-subtext1">
-            The maki extension fills logins and codes once you approve them on maki, and gives sites
-            maki’s Ethereum, Solana and Nostr accounts. Connect each browser you use it in, then add
-            the extension there.
+            Connect each browser you use the extension in, then add the extension there.
           </p>
           {view === null ? null : view.browsers.length === 0 ? (
             <p className="mt-4 text-sm text-overlay1">
@@ -215,7 +213,7 @@ export function BrowsersPage({ link }: { link: Link }): React.JSX.Element {
       <PageHeader
         label="computer"
         title="Browsers"
-        lede="The maki extension fills your logins and codes once you say yes on maki, and lets sites use maki’s passkeys and wallets: it talks to maki through maki desktop, which has to be running."
+        lede="The maki extension fills your logins and codes once you say yes on maki, and gives sites maki’s passkeys and its Ethereum, Solana and Nostr accounts. It talks to maki through maki desktop, which has to be running."
       />
 
       <BrowsersCard link={link} />

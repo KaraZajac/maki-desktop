@@ -186,6 +186,7 @@ export default function App(): React.JSX.Element {
                   apps={apps}
                   storeName={storeName}
                   storePrivate={storePrivate}
+                  go={go}
                 />
               )}
               {page === 'backups' && <Backups link={link} backup={backup} />}

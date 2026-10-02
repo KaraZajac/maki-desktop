@@ -264,13 +264,13 @@ export function Wallets({ link, apps }: { link: Link; apps: Apps }): React.JSX.E
             className="flex items-center gap-2 font-mono text-[0.68rem] text-overlay1"
             title="Prices come from CoinGecko, which sees this computer's IP address and the list of coins asked about (the same for everyone), never your addresses or balances."
           >
-            values in
+            prices
             <select
               value={currency ?? ''}
               onChange={(e) => choose((e.target.value || null) as Currency | null)}
               className="rounded-lg border border-surface1 bg-crust/60 px-2 py-1.5 font-mono text-[0.72rem] text-fg outline-none focus:border-peach/70"
             >
-              <option value="">nothing</option>
+              <option value="">off</option>
               {CURRENCIES.map((c) => (
                 <option key={c} value={c}>
                   {c.toUpperCase()}
