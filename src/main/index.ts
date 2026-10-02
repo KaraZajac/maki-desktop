@@ -55,6 +55,8 @@ import { browserSocketPath, extensionOnly, forWindow, serveBridge, socketPath } 
 import { getStartAtLogin, refreshStartAtLogin, setStartAtLogin } from './login'
 import { AGE_PLUGIN, agePluginStatus, askOver, installAgePlugin, runAgePlugin } from './age-plugin'
 import { MINISIGN_COMMAND, runMinisign } from './minisign'
+import { CONFIRM_COMMAND, readAll, runConfirm, whoAsks } from './confirm'
+import { CONFIRM_APP, keysIn } from '../shared/confirm'
 import { runSshKeygen, SSH_KEYGEN_COMMAND, sshKeygenOnPath } from './ssh-keygen'
 import { GPG_COMMAND, gpgOnPath, runGpg } from './gpg'
 import { OPENPGP_APP } from '../shared/openpgp'
@@ -936,6 +938,27 @@ function ipc(): void {
     return r.filePath
   })
 
+  // maki-confirm: on the PATH, Confirm's key where the owner says, and who asks from here
+  ipcMain.handle('confirm:status', () => scriptStatus(CONFIRM_COMMAND, launch()))
+  ipcMain.handle('confirm:install', () => installScript(CONFIRM_COMMAND, launch()))
+  ipcMain.handle('confirm:who', () => {
+    const { user, host } = whoAsks()
+    return { user, host }
+  })
+  ipcMain.handle('confirm:save', async (e, text: unknown) => {
+    // only a key file's line, as the window makes it from maki's key
+    if (typeof text !== 'string' || text.length > 200 || keysIn(text).length !== 1) return null
+    const win = BrowserWindow.fromWebContents(e.sender)
+    const options = {
+      defaultPath: join(app.getPath('home'), 'maki-confirm.pub'),
+      title: 'Save Confirm’s key'
+    }
+    const r = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, text)
+    return r.filePath
+  })
+
   // Monero: the view key maki shared (for this computer to watch the wallet, and to read and write
   // the Monero GUI's files), and maki desktop's own wallet's state; readable by this user alone
   const xmrFile = (): string => join(app.getPath('userData'), 'monero.json')
@@ -1166,6 +1189,18 @@ if (process.argv.includes('--age-plugin-maki')) {
     error: (line) => process.stderr.write(`${line}\n`),
     ask: askOver(socketPath(), MINISIGN_APP)
   }).then((code) => app.exit(code))
+} else if (process.argv.includes(CONFIRM_COMMAND.flag)) {
+  // started by maki-confirm on the PATH: a script asking maki's Confirm app, through the tray app,
+  // before it goes ahead
+  console.log = console.info = console.debug = console.error
+  app.dock?.hide()
+  void runConfirm(process.argv, {
+    output: (text) => process.stdout.write(text),
+    error: (line) => process.stderr.write(`${line}\n`),
+    ask: askOver(socketPath(), CONFIRM_APP),
+    who: whoAsks,
+    input: () => readAll(process.stdin)
+  }).then((code) => app.exit(code))
 } else if (process.argv.includes('--native-host')) {
   // started by a browser for the maki extension: relay to the tray app, starting it if needed.
   // Before the single-instance lock, which the tray app holds. stdout carries only framed
@@ -1194,7 +1229,10 @@ if (process.argv.includes('--age-plugin-maki')) {
     if (app.isPackaged) {
       Promise.all([
         refreshLauncher(launch()),
-        refreshScripts([GPG_COMMAND, SSH_KEYGEN_COMMAND, MINISIGN_COMMAND, AGE_PLUGIN], launch())
+        refreshScripts(
+          [GPG_COMMAND, SSH_KEYGEN_COMMAND, MINISIGN_COMMAND, CONFIRM_COMMAND, AGE_PLUGIN],
+          launch()
+        )
       ]).catch((e) =>
         console.error(`couldn't bring the launchers up to date: ${(e as Error).message}`)
       )

@@ -24,6 +24,8 @@ import { keyLines, keyOf, SUDO_APP, type SudoStatus } from '@shared/sudo'
 import { NOSTR_APP } from '@shared/nostr'
 import { BrowsersCard } from './Browsers'
 import { Passwords } from './Passwords'
+import { Confirm } from './Confirm'
+import { ShowQr } from './ShowQr'
 import type { BunkerView } from './bunker-state'
 import { Qr } from './Qr'
 import {
@@ -127,6 +129,8 @@ export function Connections({
 
       <Sudo link={link} apps={apps} go={go} />
 
+      <Confirm link={link} apps={apps} go={go} />
+
       <NostrRemote apps={apps} go={go} bunker={bunker} />
 
       <OpenPgp link={link} apps={apps} go={go} />
@@ -136,6 +140,8 @@ export function Connections({
       <MacroPad link={link} apps={apps} go={go} />
 
       <Passwords link={link} apps={apps} go={go} />
+
+      <ShowQr link={link} apps={apps} go={go} />
 
       <Contacts link={link} apps={apps} go={go} />
 

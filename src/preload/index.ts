@@ -219,6 +219,17 @@ const api = {
     /** a save dialog for minisign.pub; where it went, or null */
     save: (text: string): Promise<string | null> => ipcRenderer.invoke('minisign:save', text)
   },
+  confirm: {
+    /** whether maki-confirm is on the PATH, starting this app */
+    status: (): Promise<import('../shared/commands').CommandStatus> =>
+      ipcRenderer.invoke('confirm:status'),
+    install: (): Promise<import('../shared/commands').CommandStatus> =>
+      ipcRenderer.invoke('confirm:install'),
+    /** who asks maki from here, as maki-confirm says it: this user, and this computer */
+    who: (): Promise<{ user: string; host: string }> => ipcRenderer.invoke('confirm:who'),
+    /** a save dialog for Confirm's key file; where it went, or null */
+    save: (text: string): Promise<string | null> => ipcRenderer.invoke('confirm:save', text)
+  },
   /** what the coins are worth in `currency` (CoinGecko), when the owner asks to see it */
   prices: async (
     currency: import('../shared/prices').Currency
