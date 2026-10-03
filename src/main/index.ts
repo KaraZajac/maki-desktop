@@ -43,6 +43,7 @@ import { writeAtomic } from './atomic'
 import { loadDescriptors, saveDescriptors, WalletFiles } from './wallet-files'
 import { loadPortfolio, savePortfolio } from './portfolio'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
+import { serveImports } from './imports'
 import {
   addCustomBrowser,
   browserStatus,
@@ -501,7 +502,7 @@ function ipc(): void {
   })
   ipcMain.handle('ssh:socket', () => agentSocketPath())
   // exports from other password managers, read for the Logins & passkeys page, never kept
-
+  serveImports(() => win, offscreen)
   ipcMain.handle('apps:open', async () => {
     const r = await dialog.showOpenDialog(win!, {
       title: 'Choose a maki app to install',

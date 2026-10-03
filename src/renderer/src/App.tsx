@@ -13,6 +13,7 @@ import { ContactsPage } from './Contacts'
 import { ErrorBoundary } from './ErrorBoundary'
 import { FlashcardsPage } from './Flashcards'
 import { KeysPage } from './Keys'
+import { LoginsPage } from './Logins'
 import { MacroPadPage } from './MacroPad'
 import { NostrPage } from './Nostr'
 import { NotesPage } from './Notes'
@@ -193,6 +194,7 @@ export default function App(): React.JSX.Element {
               {page === 'backups' && <Backups link={link} backup={backup} />}
               {page === 'portfolio' && <PortfolioPage link={link} apps={apps} go={go} />}
               {page === 'wallets' && <Wallets link={link} apps={apps} />}
+              {page === 'logins' && <LoginsPage link={link} go={go} />}
               {page === 'macropad' && <MacroPadPage link={link} apps={apps} go={go} />}
               {page === 'flashcards' && <FlashcardsPage link={link} apps={apps} go={go} />}
               {page === 'notes' && <NotesPage link={link} apps={apps} go={go} />}

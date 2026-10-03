@@ -15,8 +15,10 @@ import {
   type Status,
   type SyncReport,
   type Transport,
+  type VaultStatus,
   type WalletStatus
 } from './client'
+import { importSays, importSource, type ImportResult } from './import'
 import { readBundle } from './bundle'
 import { Ethereum, memoryStore, ProviderError, type EthState, type Rpc } from './ethereum'
 import { EthWallet } from './eth-wallet'
@@ -374,6 +376,50 @@ export class Link {
     } finally {
       this.backingUp = false
       this.emit()
+    }
+  }
+
+  /**
+   * What maki's vault holds: its logins, codes and passkeys, and how many of the passkeys were
+   * imported; null from firmware from before imports.
+   */
+  async vaultStatus(): Promise<VaultStatus | null> {
+    return this.linkedClient().vaultStatus()
+  }
+
+  /** whether an import is under way: maki takes one import's pieces at a time */
+  private importing = false
+
+  /**
+   * Hands maki an import from another password manager (`import.ts`'s bytes), once its owner says
+   * yes on maki's screen; what maki added, or why nothing was. Logs what it's from and what came
+   * of it, never what's in it; and backs maki up soon after, as after a login saved.
+   */
+  async importPut(
+    data: Uint8Array,
+    progress?: (sent: number, total: number) => void
+  ): Promise<ImportResult> {
+    const client = this.linkedClient()
+    if (this.importing) throw new Error('an import is already under way')
+    this.importing = true
+    const source = importSource(data) ?? 'another password manager'
+    this.note(`an import from ${source}: say yes on maki`)
+    try {
+      const r = await client.importPut(data, progress)
+      this.note(`import from ${source}: ${importSays(r)}`)
+      if (r.approval === 'approved' && r.logins + r.codes + r.passkeys > 0 && this.backups) {
+        if (this.backupSoon) clearTimeout(this.backupSoon)
+        this.backupSoon = setTimeout(
+          () => void this.backupNow({ quiet: true }),
+          BACKUP_AFTER_SAVE_MS
+        )
+      }
+      return r
+    } catch (e) {
+      this.note(`import from ${source} failed: ${(e as Error).message}`)
+      throw e
+    } finally {
+      this.importing = false
     }
   }
 

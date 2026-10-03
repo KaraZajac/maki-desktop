@@ -86,6 +86,24 @@ const api = {
     /** A file dialog for a .maki bundle; its path and bytes, or null if cancelled. */
     open: (): Promise<{ path: string; data: Uint8Array } | null> => ipcRenderer.invoke('apps:open')
   },
+  imports: {
+    /**
+     * An open dialog for exports from other password managers (several at once: some come as
+     * more than one file); each one's ID, name and size, and its bytes unless it's big (a zip
+     * with attachments, read a range at a time). Read, never written anywhere; null if cancelled.
+     */
+    open: (): Promise<
+      { id: number; name: string; size: number; data: Uint8Array | null }[] | null
+    > => ipcRenderer.invoke('imports:open'),
+    /** `length` bytes of a chosen export, from `offset` */
+    read: (id: number, offset: number, length: number): Promise<Uint8Array> =>
+      ipcRenderer.invoke('imports:read', id, offset, length),
+    /** moves chosen exports to the trash: the ones that couldn't be moved, and why */
+    trash: (ids: number[]): Promise<{ name: string; why: string }[]> =>
+      ipcRenderer.invoke('imports:trash', ids),
+    /** lets go of chosen exports: they can't be read or moved from here again */
+    forget: (ids: number[]): Promise<void> => ipcRenderer.invoke('imports:forget', ids)
+  },
   store: {
     /**
      * where the maki store is (MAKI_STORE: an address or a folder), its name for people, and

@@ -22,10 +22,14 @@ export const Kind = {
   GET_LOGIN: 0x10,
   GET_TOTP: 0x11,
   SAVE_LOGIN: 0x12,
+  /** how many logins, codes and passkeys maki's vault holds, and how many passkeys were imported */
+  VAULT_STATUS: 0x13,
   /** a piece of maki's backup, encrypted with a key from the recovery phrase */
   BACKUP_GET: 0x20,
   /** a piece of a backup to restore; the last is answered once the owner decides */
   BACKUP_PUT: 0x21,
+  /** a piece of an import from another password manager; the last is answered once the owner decides */
+  IMPORT_PUT: 0x22,
   /** the apps installed on maki, one per request */
   APP_LIST: 0x50,
   /** a piece of a .maki bundle to install; the last is answered once the owner decides */

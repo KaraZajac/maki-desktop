@@ -12,6 +12,7 @@ export type Page =
   | 'backups'
   | 'portfolio'
   | 'wallets'
+  | 'logins'
   | 'macropad'
   | 'flashcards'
   | 'notes'
@@ -55,6 +56,8 @@ export const SECTIONS: { title: string | null; pages: PageInfo[] }[] = [
   {
     title: 'on maki',
     pages: [
+      // the vault is built into maki: no app to wait for
+      { id: 'logins', title: 'Logins & passkeys', glyph: 'lock' },
       { id: 'macropad', title: 'Macro Pad', glyph: 'keyboard', app: MACROPAD_APP },
       { id: 'flashcards', title: 'Flashcards', glyph: 'cards', app: FLASHCARDS_APP },
       { id: 'notes', title: 'Notes', glyph: 'note', app: NOTES_APP },

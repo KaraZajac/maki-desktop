@@ -22,6 +22,7 @@ import {
   Writer,
   type Packet
 } from './protocol'
+import { IMPORT_PIECE, MAX_IMPORT, type ImportResult } from './import'
 
 /** A duplex byte pipe: Web Serial in the app, TCP to the fake maki in development and tests. */
 export interface Transport {
@@ -64,6 +65,19 @@ export interface Status {
  */
 export type WalletStatus =
   { kind: 'none'; fingerprint: null } | { kind: 'standard' | 'passphrase'; fingerprint: string }
+
+/**
+ * What maki's vault holds (VAULT_STATUS): its logins, codes (TOTP) and passkeys (resident FIDO
+ * credentials), and of the passkeys, how many were imported (given to maki, not made on it).
+ * 'approved' with the counts; 'locked' or 'no phrase' with none.
+ */
+export interface VaultStatus {
+  status: ApprovalValue
+  logins: number
+  codes: number
+  passkeys: number
+  imported: number
+}
 
 export interface Challenge {
   id: number
@@ -233,6 +247,12 @@ export class MakiClient {
   static readonly APPROVAL_TIMEOUT_MS = 90_000
   /** How long an install waits: maki gives the owner five minutes to go through an app. */
   static readonly INSTALL_TIMEOUT_MS = 330_000
+  /**
+   * How long an import's last piece waits: maki checks every record, asks its owner (a minute,
+   * with a second page when there are passkeys), then writes each new record into its encrypted
+   * database, which for a big import takes the badge a while more.
+   */
+  static readonly IMPORT_TIMEOUT_MS = 300_000
 
   /**
    * Ask maki for the login saved for `site`; the owner approves on maki's screen. A site maki
@@ -363,6 +383,68 @@ export class MakiClient {
       if (blob.length === 0) break
     }
     return { approval: 'unavailable', logins: 0, codes: 0, passkeys: 0 }
+  }
+
+  /**
+   * What maki's vault holds; null from firmware from before imports, which doesn't know the
+   * question (the host says nothing of the counts then). Nothing is asked of the owner.
+   */
+  async vaultStatus(): Promise<VaultStatus | null> {
+    let body: Uint8Array
+    try {
+      body = (await this.request(Kind.VAULT_STATUS)).body
+    } catch (e) {
+      if (e instanceof MakiError && ErrorCode[e.code] === 'unknown kind') return null
+      throw e
+    }
+    const r = new Reader(body)
+    const status = Approval[r.u8()] ?? 'unavailable'
+    const counts = { logins: r.u32(), codes: r.u32(), passkeys: r.u32(), imported: r.u32() }
+    r.end()
+    return status === 'approved'
+      ? { status, ...counts }
+      : { status, logins: 0, codes: 0, passkeys: 0, imported: 0 }
+  }
+
+  /**
+   * An import from another password manager (`import.ts`'s bytes), sent in pieces; maki reads the
+   * whole, checks every record and asks its owner once. `progress` hears how many bytes have gone
+   * as each piece goes: all of them means maki has the import and is asking. Its answer: what it
+   * added and what it already had, or why nothing was ('refused' with maki's reason). Firmware
+   * from before imports refuses the first piece (a MakiError, 'unknown kind').
+   */
+  async importPut(
+    data: Uint8Array,
+    progress?: (sent: number, total: number) => void
+  ): Promise<ImportResult> {
+    if (data.length === 0 || data.length > MAX_IMPORT)
+      throw new Error(`an import is 1 byte to ${MAX_IMPORT / 1024} KiB`)
+    for (let offset = 0; offset < data.length;) {
+      const piece = data.subarray(offset, offset + IMPORT_PIECE)
+      const last = offset + piece.length >= data.length
+      const body = new Writer().u32(data.length).u32(offset).bytes16(piece).finish()
+      progress?.(offset + piece.length, data.length)
+      const r = new Reader(
+        (await this.request(Kind.IMPORT_PUT, body, last ? MakiClient.IMPORT_TIMEOUT_MS : 10_000))
+          .body
+      )
+      body.fill(0)
+      const done = r.u8() === 1
+      const approval = Approval[r.u8()] ?? 'unavailable'
+      const result = {
+        approval,
+        logins: r.u16(),
+        codes: r.u16(),
+        passkeys: r.u16(),
+        skipped: r.u16(),
+        reason: r.str8()
+      }
+      r.end()
+      if (done) return result
+      offset += piece.length
+    }
+    // every piece taken, and maki never said it was done
+    return { approval: 'unavailable', logins: 0, codes: 0, passkeys: 0, skipped: 0, reason: '' }
   }
 
   /** The apps installed on maki, in order of ID; 'locked' (and none) until its PIN is in. */
