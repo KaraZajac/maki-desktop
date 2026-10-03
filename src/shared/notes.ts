@@ -12,16 +12,23 @@ export const NOTES_APP = 'com.leviathan.maki.notes'
 export const NOTE_TITLE = 40
 export const NOTE_TEXT = 8000
 
-/** The app's `A` message: a note to keep. Null if the app wouldn't take it. */
+/** Why the app wouldn't take this note, in words; null if it would. */
+export function noteProblem(title: string, text: string): string | null {
+  const t = title.trim()
+  if (t === '') return 'It needs a title: what maki lists it as.'
+  if ([...t].length > NOTE_TITLE) return `A title is ${NOTE_TITLE} characters at most.`
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(t)) return 'A title is one line.'
+  const size = new TextEncoder().encode(text).length
+  if (size > NOTE_TEXT)
+    return `A note is ${NOTE_TEXT.toLocaleString('en-US')} bytes at most, and this one is ${size.toLocaleString('en-US')}.`
+  return null
+}
+
+/** The app's `A` message: a note to keep, its title trimmed. Null if the app wouldn't take it. */
 export function noteMessage(title: string, text: string): Uint8Array | null {
-  const t = new TextEncoder().encode(title)
+  if (noteProblem(title, text) !== null) return null
+  const t = new TextEncoder().encode(title.trim())
   const x = new TextEncoder().encode(text)
-  const ok =
-    title.trim() !== '' &&
-    [...title].length <= NOTE_TITLE &&
-    !/[\u0000-\u001f\u007f]/.test(title) &&
-    x.length <= NOTE_TEXT
-  if (!ok) return null
   const m = new Uint8Array(2 + t.length + x.length)
   m[0] = 'A'.charCodeAt(0)
   m[1] = t.length

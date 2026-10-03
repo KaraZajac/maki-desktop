@@ -6,7 +6,7 @@ import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
-import { NOTES_APP, noteMessage, noteSays, noteTitles } from './notes'
+import { NOTES_APP, noteMessage, noteProblem, noteSays, noteTitles } from './notes'
 import {
   APP_FIXTURES,
   APP_FIXTURES_THERE,
@@ -23,6 +23,19 @@ describe('notes as the app takes them', () => {
     expect(noteMessage('a\ttab', 'x')).toBeNull()
     expect(noteMessage('x'.repeat(41), 'x')).toBeNull()
     expect(noteMessage('ok', 'x'.repeat(8001))).toBeNull()
+    // the title trimmed
+    expect(noteMessage(' PIN  ', '1')).toEqual(noteMessage('PIN', '1'))
+  })
+
+  it('says why it wouldn’t take a note', () => {
+    expect(noteProblem('Bank PIN', '1234')).toBeNull()
+    expect(noteProblem(' ', 'x')).toBe('It needs a title: what maki lists it as.')
+    expect(noteProblem('é'.repeat(40), 'x')).toBeNull()
+    expect(noteProblem('x'.repeat(41), 'x')).toBe('A title is 40 characters at most.')
+    expect(noteProblem('a\tb', 'x')).toBe('A title is one line.')
+    expect(noteProblem('ok', 'é'.repeat(4001))).toBe(
+      'A note is 8,000 bytes at most, and this one is 8,002.'
+    )
   })
 })
 

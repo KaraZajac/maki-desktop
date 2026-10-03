@@ -24,19 +24,36 @@ export interface Person {
 }
 
 const bytes = (s: string): Uint8Array => new TextEncoder().encode(s)
-const control = /[\u0000-\u001f\u007f]/
+/** What the app counts as a control character (Rust's `char::is_control`). */
+const control = /[\u0000-\u001f\u007f-\u009f]/
 
-/** The app's `C` message: your card from now on. Null if the app wouldn't take it. */
+/** Why the app wouldn't take this card, in words; null if it would. Lines left empty aren't sent. */
+export function cardProblem(name: string, lines: string[]): string | null {
+  const n = name.trim()
+  if (n === '') return 'Your card needs a name.'
+  if (bytes(n).length > CARD_NAME)
+    return `A name fits in ${CARD_NAME} bytes, and this one is ${bytes(n).length}: accents and other scripts take two or more each.`
+  if (control.test(n)) return 'A name is one line.'
+  const kept = lines.map((l) => l.trim())
+  if (kept.filter((l) => l !== '').length > CARD_LINES)
+    return `A card has ${CARD_LINES} lines at most.`
+  for (const [i, l] of kept.entries()) {
+    if (bytes(l).length > CARD_LINE)
+      return `Line ${i + 1} fits in ${CARD_LINE} bytes, and it’s ${bytes(l).length}.`
+    if (control.test(l)) return `Line ${i + 1} is one line.`
+  }
+  return null
+}
+
+/**
+ * The app's `C` message: your card from now on, its name and lines trimmed and the empty lines
+ * left out. Null if the app wouldn't take it.
+ */
 export function cardMessage(name: string, lines: string[]): Uint8Array | null {
+  if (cardProblem(name, lines) !== null) return null
+  const n = bytes(name.trim())
   const kept = lines.map((l) => l.trim()).filter((l) => l !== '')
-  const ok =
-    name.trim() !== '' &&
-    bytes(name).length <= CARD_NAME &&
-    !control.test(name) &&
-    kept.length <= CARD_LINES &&
-    kept.every((l) => bytes(l).length <= CARD_LINE && !control.test(l))
-  if (!ok) return null
-  const parts: number[] = ['C'.charCodeAt(0), 1, bytes(name).length, ...bytes(name), kept.length]
+  const parts: number[] = ['C'.charCodeAt(0), 1, n.length, ...n, kept.length]
   for (const l of kept) parts.push(bytes(l).length, ...bytes(l))
   return Uint8Array.from(parts)
 }
@@ -78,7 +95,7 @@ export function readPeople(a: Uint8Array): Person[] | null {
 
 /** vCard's escaping for a value. */
 const esc = (s: string): string =>
-  s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\;')
+  s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
 
 /** The people as vCards (3.0), their lines as an email, a phone number, a site, or a note. */
 export function vcards(people: Person[]): string {

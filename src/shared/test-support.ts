@@ -2,11 +2,11 @@
  * Helpers for tests that drive the firmware's real protocol logic through the fake maki
  * (libs/maki-proto/examples/fake_maki.rs in the firmware repo). Node only.
  */
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { connect, type Socket } from 'node:net'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { Transport } from './client'
 
 export const FAKE =
@@ -79,3 +79,28 @@ export const DEV_STORE_THERE = existsSync(DEV_STORE)
 /** The maki store as its repository publishes it (KaraZajac/maki-apps), cloned beside this one. */
 export const MAKI_STORE = resolve(__dirname, '../../../apps/store')
 export const MAKI_STORE_THERE = existsSync(MAKI_STORE)
+
+/**
+ * Macro Pad 1.0, which the maki store has, written into `dir` from the firmware's history (its
+ * fixture when it came out, unstamped: the fake maki installs it as sideloaded): its path, or null
+ * if the firmware's history isn't here. Version 2 lists its scripts; 1.0 only takes them.
+ */
+export function firstMacroPad(dir: string): string | null {
+  try {
+    const bundle = execFileSync(
+      'git',
+      [
+        '-C',
+        resolve(APP_FIXTURES, '../../../..'),
+        'show',
+        '35e43eb39:libs/maki-wasm/tests/fixtures/macropad.maki'
+      ],
+      { maxBuffer: 1 << 20, stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    const path = join(dir, 'macropad-1.0.maki')
+    writeFileSync(path, bundle)
+    return path
+  } catch {
+    return null
+  }
+}

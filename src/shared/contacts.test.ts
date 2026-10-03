@@ -6,7 +6,14 @@ import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
-import { cardMessage, CONTACTS_APP, contactsSays, readPeople, vcards } from './contacts'
+import {
+  cardMessage,
+  cardProblem,
+  CONTACTS_APP,
+  contactsSays,
+  readPeople,
+  vcards
+} from './contacts'
 import {
   APP_FIXTURES,
   APP_FIXTURES_THERE,
@@ -48,6 +55,20 @@ describe('cards and people as the app takes them', () => {
     expect(cardMessage('', [])).toBeNull()
     expect(cardMessage('Kara', ['a', 'b', 'c', 'd'])).toBeNull()
     expect(cardMessage('x'.repeat(33), [])).toBeNull()
+    // the name trimmed, as its lines are
+    expect(cardMessage('  Kara ', [])).toEqual(cardMessage('Kara', []))
+  })
+
+  it('says why it wouldn’t take a card', () => {
+    expect(cardProblem('Kara', ['k@x.org', '', 'example.org'])).toBeNull()
+    expect(cardProblem('  ', [])).toBe('Your card needs a name.')
+    expect(cardProblem('é'.repeat(17), [])).toBe(
+      'A name fits in 32 bytes, and this one is 34: accents and other scripts take two or more each.'
+    )
+    expect(cardProblem('Kara\tZ', [])).toBe('A name is one line.')
+    expect(cardProblem('Kara', ['a', 'b', 'c', 'd'])).toBe('A card has 3 lines at most.')
+    expect(cardProblem('Kara', ['', 'x'.repeat(49)])).toBe('Line 2 fits in 48 bytes, and it’s 49.')
+    expect(cardProblem('Kara', ['a\u0085b'])).toBe('Line 1 is one line.')
   })
 
   it('people as vCards, a line as what it looks like', () => {
@@ -68,6 +89,10 @@ describe('cards and people as the app takes them', () => {
       'NOTE:@alex@hackers.town\\nMet 2026-09-21\\, their card signed by their maki (key abababababababab). Saved from maki.\r\n'
     )
     expect(v).toContain(`X-MAKI-KEY:${'ab'.repeat(32)}\r\n`)
+    // vCard's own separators in a value are escaped, so a name stays one field
+    const semi = vcards([{ name: 'Kim; Lee, Jr.', lines: [], signed: false, key: null, met: 0 }])
+    expect(semi).toContain('FN:Kim\\; Lee\\, Jr.\r\n')
+    expect(semi).toContain('N:;Kim\\; Lee\\, Jr.;;;\r\n')
   })
 })
 
