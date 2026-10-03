@@ -73,3 +73,22 @@ export function AppNeeded({
     </Card>
   )
 }
+
+/**
+ * A card's way to an app maki hasn't: the Apps page, once maki is linked and unlocked and has said
+ * what it has. While maki is away or locked (which is why its apps aren't known), it says that
+ * instead of offering what maki may well have.
+ */
+export function GetIt({ apps, go }: { apps: Apps; go: (page: Page) => void }): React.JSX.Element {
+  if (apps.status === 'approved')
+    return (
+      <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
+        Get it
+      </Button>
+    )
+  return (
+    <span className="shrink-0 font-mono text-[0.68rem] text-overlay1">
+      {apps.status === 'locked' ? 'maki is locked' : 'maki isn’t here'}
+    </span>
+  )
+}

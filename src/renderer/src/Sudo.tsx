@@ -5,6 +5,7 @@ import type { Apps } from './apps-state'
 import { Confirm } from './Confirm'
 import type { Page } from './pages'
 import { Badge, Button, Card, Glyph, Label, PageHeader } from './ui'
+import { GetIt } from './AppNeeded'
 
 /** sudo and scripts asking maki first: a yes on maki's screen, signed, before they go ahead. */
 export function SudoPage({
@@ -93,9 +94,7 @@ function Sudo({
                 which shows it whole: nothing on this computer can say yes for you, even with your
                 password.
               </p>
-              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
-                Get it
-              </Button>
+              <GetIt apps={apps} go={go} />
             </div>
           ) : (
             <>

@@ -25,11 +25,13 @@ export function Sidebar({
         key={p.id}
         onClick={() => go(p.id)}
         aria-current={here ? 'page' : undefined}
-        className={`group relative flex items-center gap-3 rounded-lg px-3 py-2 text-[0.88rem] transition-colors ${
+        className={`group relative flex items-center gap-3 rounded-lg px-3 py-[0.4rem] text-[0.86rem] transition-colors ${
           here ? 'bg-peach/10 text-peach' : 'text-subtext0 hover:bg-surface0/50 hover:text-fg'
         }`}
       >
-        {here && <span className="absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-peach" />}
+        {here && (
+          <span className="absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full bg-peach" />
+        )}
         <Glyph name={p.glyph} className="h-[1.05rem] w-[1.05rem]" />
         <span className="flex-1 text-left font-medium">{p.title}</span>
         {p.id === 'apps' && updates > 0 && (
@@ -43,7 +45,7 @@ export function Sidebar({
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-surface0 bg-mantle/85">
-      <div className="flex items-center gap-3 px-5 pt-6 pb-5">
+      <div className="flex items-center gap-3 px-5 pt-5 pb-4">
         <MakiMark className="h-10 w-10 drop-shadow-[0_0_16px_rgba(255,122,89,0.35)]" />
         <div>
           <div className="font-mono text-[1.35rem] leading-none font-bold tracking-[-0.035em] text-fg">
@@ -55,7 +57,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="mx-4 mb-4 rounded-xl border border-surface0 bg-crust/50 px-3.5 py-3">
+      <div className="mx-4 mb-3 rounded-xl border border-surface0 bg-crust/50 px-3.5 py-2.5">
         <div className="flex items-center gap-2.5">
           <Dot on={s.linked} />
           <span
@@ -76,7 +78,7 @@ export function Sidebar({
           return (
             <div key={section.title ?? 'maki'} className="flex flex-col gap-0.5">
               {section.title && (
-                <div className="mt-4 mb-1 px-3 font-mono text-[0.6rem] tracking-[0.2em] text-overlay0 uppercase">
+                <div className="mt-3 mb-0.5 px-3 font-mono text-[0.6rem] tracking-[0.2em] text-overlay0 uppercase">
                   {section.title}
                 </div>
               )}
@@ -86,7 +88,7 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="border-t border-surface0 px-3 pt-2 pb-4">{item(ABOUT)}</div>
+      <div className="border-t border-surface0 px-3 pt-1.5 pb-3">{item(ABOUT)}</div>
     </aside>
   )
 }

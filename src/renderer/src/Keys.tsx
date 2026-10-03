@@ -15,6 +15,7 @@ import {
 import type { Apps } from './apps-state'
 import type { Page } from './pages'
 import { Badge, Button, Card, Field, Glyph, Label, PageHeader } from './ui'
+import { GetIt } from './AppNeeded'
 
 /** What ssh, git, gpg, age and minisign reach maki for: keys from the recovery phrase, each use asked. */
 export function KeysPage({
@@ -84,9 +85,7 @@ export function KeysPage({
                   With maki’s SSH app installed, maki desktop is an SSH agent: an SSH key from your
                   recovery phrase, and every sign-in and git signature waits for your yes on maki.
                 </p>
-                <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
-                  Get it
-                </Button>
+                <GetIt apps={apps} go={go} />
               </div>
             )}
           </div>
@@ -152,9 +151,7 @@ function Age({
                 With maki’s Age app installed, maki keeps an age key from your recovery phrase:
                 anyone encrypts files to it with age, and decrypting one asks you on maki.
               </p>
-              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
-                Get it
-              </Button>
+              <GetIt apps={apps} go={go} />
             </div>
           ) : (
             <>
@@ -300,9 +297,7 @@ function Minisign({
                 With maki’s Minisign app installed, maki keeps a minisign key from your recovery
                 phrase, for signing files and releases: each one waits for your yes on maki.
               </p>
-              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
-                Get it
-              </Button>
+              <GetIt apps={apps} go={go} />
             </div>
           ) : (
             <>
@@ -573,9 +568,7 @@ function OpenPgp({
                 phrase, for gpg and git: each commit shows its subject on maki before it’s signed,
                 and each message sent to you opens only once you say so there.
               </p>
-              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
-                Get it
-              </Button>
+              <GetIt apps={apps} go={go} />
             </div>
           ) : (
             <>

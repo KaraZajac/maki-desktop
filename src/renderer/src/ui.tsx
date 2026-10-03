@@ -366,10 +366,11 @@ const glyphs: Record<string, ReactNode> = {
       <path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z" />
     </>
   ),
+  // sudo & Confirm: a yes, signed: a check in a circle (Backups have the shield)
   badge: (
     <>
-      <path d="M12 3 5 6v5.5c0 4.3 3 7.6 7 9.5 4-1.9 7-5.2 7-9.5V6z" />
-      <path d="m9 12 2.2 2.2L15.5 10" />
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.2 2.4 2.4 4.6-5" />
     </>
   )
 }

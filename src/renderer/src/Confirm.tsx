@@ -16,6 +16,7 @@ import type { Link } from '@shared/link'
 import type { Apps } from './apps-state'
 import type { Page } from './pages'
 import { Badge, Button, Card, Glyph, Label } from './ui'
+import { GetIt } from './AppNeeded'
 
 /**
  * maki-confirm: scripts and programs asking maki before they go ahead. Confirm's key, to compare
@@ -121,9 +122,7 @@ export function Confirm({
                 ahead with what matters (a deploy, terraform apply, a force push), and go ahead only
                 on your yes there, which they can check is maki’s.
               </p>
-              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
-                Get it
-              </Button>
+              <GetIt apps={apps} go={go} />
             </div>
           ) : (
             <>

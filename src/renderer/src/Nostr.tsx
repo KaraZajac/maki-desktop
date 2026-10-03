@@ -5,6 +5,7 @@ import type { BunkerView } from './bunker-state'
 import type { Page } from './pages'
 import { Qr } from './Qr'
 import { Button, Card, Glyph, Label, PageHeader, Toggle } from './ui'
+import { GetIt } from './AppNeeded'
 
 /** Nostr apps signing with maki's Nostr key, through maki desktop as their bunker (NIP-46). */
 export function NostrPage({
@@ -70,9 +71,7 @@ function NostrRemote({
                 With maki’s Nostr app installed, Nostr apps on your phone or the web can sign with
                 your Nostr key through maki desktop (NIP-46), each event shown on maki first.
               </p>
-              <Button small kind="ghost" glyph="apps" onClick={() => go('apps')}>
-                Get it
-              </Button>
+              <GetIt apps={apps} go={go} />
             </div>
           ) : (
             <>
