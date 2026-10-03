@@ -10,6 +10,7 @@ export type Page =
   | 'overview'
   | 'apps'
   | 'backups'
+  | 'portfolio'
   | 'wallets'
   | 'macropad'
   | 'flashcards'
@@ -46,7 +47,10 @@ export const SECTIONS: { title: string | null; pages: PageInfo[] }[] = [
   },
   {
     title: 'money',
-    pages: [{ id: 'wallets', title: 'Wallets', glyph: 'wallet' }]
+    pages: [
+      { id: 'portfolio', title: 'Portfolio', glyph: 'pie' },
+      { id: 'wallets', title: 'Wallets', glyph: 'wallet' }
+    ]
   },
   {
     title: 'on maki',

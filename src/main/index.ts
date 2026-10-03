@@ -41,6 +41,7 @@ import { polite } from '../shared/polite'
 import { CURRENCIES, pricesUrl, readPrices, type Currency, type Prices } from '../shared/prices'
 import { writeAtomic } from './atomic'
 import { loadDescriptors, saveDescriptors, WalletFiles } from './wallet-files'
+import { loadPortfolio, savePortfolio } from './portfolio'
 import { backupInfo, latestBackup, saveBackup, showBackups } from './backups'
 import {
   addCustomBrowser,
@@ -499,6 +500,8 @@ function ipc(): void {
     return { path, data: new Uint8Array(await readFile(path)) }
   })
   ipcMain.handle('ssh:socket', () => agentSocketPath())
+  // exports from other password managers, read for the Logins & passkeys page, never kept
+
   ipcMain.handle('apps:open', async () => {
     const r = await dialog.showOpenDialog(win!, {
       title: 'Choose a maki app to install',
@@ -893,16 +896,26 @@ function ipc(): void {
     await writeAtomic(accountsFile(), text)
     return null
   })
+  // what the Portfolio last found the accounts hold, and when (portfolio.ts), for the wallet in use
+  ipcMain.handle('folio:load', () => loadPortfolio(wallets))
+  ipcMain.handle('folio:save', (_e, kept: unknown, wallet: unknown) =>
+    savePortfolio(wallets, kept, wallet)
+  )
   // what the coins are worth, if the owner asks to see it: CoinGecko, the same question for
-  // everyone (every coin and token maki knows), at most once a minute a currency
+  // everyone (every coin and token maki knows), at most once a minute a currency; MAKI_PRICES
+  // (tests) is a server answering CoinGecko's API to ask instead
   const priced = new Map<Currency, { at: number; prices: Prices }>()
+  const ownPrices = process.env['MAKI_PRICES']
   ipcMain.handle('prices:get', async (_e, currency: unknown) => {
     try {
       if (!CURRENCIES.includes(currency as Currency)) throw new Error('which currency?')
       const c = currency as Currency
       const kept = priced.get(c)
       if (kept && Date.now() - kept.at < 60_000) return { prices: kept.prices }
-      const res = await fetch(pricesUrl(c), { signal: AbortSignal.timeout(15_000) }).catch(() => {
+      const url = ownPrices
+        ? pricesUrl(c).replace('https://api.coingecko.com', ownPrices)
+        : pricesUrl(c)
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) }).catch(() => {
         throw new Error('CoinGecko can’t be reached')
       })
       if (!res.ok)

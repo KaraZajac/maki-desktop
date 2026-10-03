@@ -14,8 +14,11 @@ import { parseUnits, units, type Token } from '@shared/tokens'
 import { Qr } from './Qr'
 import { ago, Button, Field, Glyph, readable, Segmented } from './ui'
 
-/** What the account last held, so coming back to the page shows it straight away. */
-let kept: { address: string; holdings: NetworkHoldings[]; at: number } | null = null
+/**
+ * What the account last held, so coming back to the page shows it straight away (and the Portfolio
+ * needn't ask again).
+ */
+export let kept: { address: string; holdings: NetworkHoldings[]; at: number } | null = null
 const STALE_MS = 60_000
 
 /** An amount of a coin or a token, exactly, with its symbol. */

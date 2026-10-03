@@ -12,20 +12,23 @@ import { Qr } from './Qr'
 import { ago, Badge, Button, Card, Field, Glyph, Label, Segmented } from './ui'
 import { WalletAppNeeded } from './WalletAppNeeded'
 
-/** What each account last looked like, so coming back to the page shows it straight away. */
-const kept = new Map<string, { state: ChainState; at: number }>()
+/**
+ * What each account last looked like, so coming back to the page (or the Portfolio, which looks the
+ * same way) shows it straight away.
+ */
+export const kept = new Map<string, { state: ChainState; at: number }>()
 /** Older than this, it's looked up again. */
 const STALE_MS = 60_000
 
-const keyOf = (chain: AccountChain, a: SharedAccount): string =>
+export const keyOf = (chain: AccountChain, a: SharedAccount): string =>
   `${chain.id} ${a.network} ${a.address}`
-const fetcher =
+export const fetcher =
   (chain: AccountChain): CoinFetch =>
   (network, method, path, body, binary) =>
     window.maki.coins.fetch(chain.id, network, method, path, body, binary)
 
 /** What a token's called here: its symbol if it's known, else its ID, shortened. */
-const tokenName = (chain: AccountChain, network: 0 | 1, t: ChainToken | null): string =>
+export const tokenName = (chain: AccountChain, network: 0 | 1, t: ChainToken | null): string =>
   t === null
     ? chain.units[network]
     : (t.symbol ?? t.label ?? (t.id.length > 14 ? `${t.id.slice(0, 6)}…${t.id.slice(-4)}` : t.id))

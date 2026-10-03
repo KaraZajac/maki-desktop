@@ -257,6 +257,13 @@ const api = {
     /** a save dialog for Confirm's key file; where it went, or null */
     save: (text: string): Promise<string | null> => ipcRenderer.invoke('confirm:save', text)
   },
+  portfolio: {
+    /** what the Portfolio last found the accounts hold, for the wallet in use (portfolio.ts's JSON) */
+    load: (): Promise<unknown> => ipcRenderer.invoke('folio:load'),
+    /** kept for `wallet`, while it's the one in use */
+    save: (state: unknown, wallet: WalletId): Promise<void> =>
+      kept(ipcRenderer.invoke('folio:save', state, wallet))
+  },
   /** what the coins are worth in `currency` (CoinGecko), when the owner asks to see it */
   prices: async (
     currency: import('../shared/prices').Currency

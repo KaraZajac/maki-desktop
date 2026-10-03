@@ -32,10 +32,10 @@ export const ANOTHER_WALLET = 'maki has another wallet open now'
 
 /**
  * The files each wallet has of its own: the accounts maki's apps shared by coin, the sites connected
- * to its Ethereum and Solana accounts, its Monero view key and wallet, and each chain of Bitcoin's
- * kind's descriptors.
+ * to its Ethereum and Solana accounts, its Monero view key and wallet, what the Portfolio last
+ * found its accounts hold (portfolio.ts), and each chain of Bitcoin's kind's descriptors.
  */
-export type WalletFile = 'accounts' | 'ethereum' | 'solana' | 'monero' | BtcChain
+export type WalletFile = 'accounts' | 'ethereum' | 'solana' | 'monero' | 'portfolio' | BtcChain
 
 /**
  * The name of `file` for `wallet`: `accounts.json` for the phrase's own wallet, as it always was;

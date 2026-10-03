@@ -41,6 +41,13 @@ const glyphs: Record<string, ReactNode> = {
       <circle cx="16" cy="14" r="1.2" />
     </>
   ),
+  // the Portfolio: a pie, its slice a little apart
+  pie: (
+    <>
+      <path d="M11 4a8.5 8.5 0 1 0 8.5 8.5H11z" />
+      <path d="M14 2v7.5h7.5A7.5 7.5 0 0 0 14 2z" />
+    </>
+  ),
   plug: (
     <>
       <path d="M9 3v5M15 3v5" />

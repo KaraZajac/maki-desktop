@@ -2,6 +2,7 @@ import { iconPixels } from '@shared/bundle'
 import type { Link } from '@shared/link'
 import { TimeState } from '@shared/protocol'
 import type { Apps } from './apps-state'
+import { PortfolioGlance } from './Portfolio'
 import { StorageChart } from './StorageChart'
 import { ago, Badge, Button, bytes, Dot, Glyph, Label, MakiMark, PageHeader, Toggle } from './ui'
 import { Updates } from './Updates'
@@ -306,7 +307,7 @@ export function Overview({
         </div>
       </section>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Stat label="apps" go={() => go('apps')}>
           {apps.apps && apps.status === 'approved' ? (
             <>
@@ -380,6 +381,10 @@ export function Overview({
               No backup yet. maki desktop makes one when maki links, and after each login it saves.
             </p>
           )}
+        </Stat>
+
+        <Stat label="portfolio" go={() => go('portfolio')}>
+          <PortfolioGlance link={link} />
         </Stat>
       </div>
 

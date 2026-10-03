@@ -99,6 +99,30 @@ export interface Balance {
   pending: bigint
 }
 
+/**
+ * A wallet's balance as its state has it, with the chain at `chainHeight`: from what's kept alone,
+ * no keys or node needed (the Portfolio reads it so, and never scans).
+ */
+export function balanceOf(state: WalletState, chainHeight: number): Balance {
+  let total = 0n
+  let unlocked = 0n
+  let pending = 0n
+  for (const o of state.outputs) {
+    if (o.spent) continue
+    const amount = BigInt(o.amount)
+    total += amount
+    if (o.unlockHeight <= chainHeight) unlocked += amount
+    else pending += amount
+  }
+  // the change of a payment still waiting for a block: the wallet's, though no block has it yet
+  for (const s of state.sent) {
+    if (s.height !== undefined || state.outputs.some((o) => o.txid === s.txid)) continue
+    total += BigInt(s.change)
+    pending += BigInt(s.change)
+  }
+  return { total, unlocked, pending }
+}
+
 export class Wallet {
   private subs: Subaddresses
 
@@ -125,23 +149,7 @@ export class Wallet {
   }
 
   balance(chainHeight: number): Balance {
-    let total = 0n
-    let unlocked = 0n
-    let pending = 0n
-    for (const o of this.state.outputs) {
-      if (o.spent) continue
-      const amount = BigInt(o.amount)
-      total += amount
-      if (o.unlockHeight <= chainHeight) unlocked += amount
-      else pending += amount
-    }
-    // the change of a payment still waiting for a block: the wallet's, though no block has it yet
-    for (const s of this.state.sent) {
-      if (s.height !== undefined || this.state.outputs.some((o) => o.txid === s.txid)) continue
-      total += BigInt(s.change)
-      pending += BigInt(s.change)
-    }
-    return { total, unlocked, pending }
+    return balanceOf(this.state, chainHeight)
   }
 
   /** Outputs without key images yet: to ask maki for. */

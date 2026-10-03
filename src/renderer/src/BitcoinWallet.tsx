@@ -23,14 +23,15 @@ import { usePrices } from './prices-state'
 import { ago, Badge, Button, Field, Glyph, Segmented } from './ui'
 
 /**
- * What each account last looked like, so coming back to the page shows it straight away: by
- * network and descriptor (a test network's descriptor is Bitcoin's and Litecoin's both).
+ * What each account last looked like, so coming back to the page (or the Portfolio, which looks the
+ * same way) shows it straight away: by network and descriptor (a test network's descriptor is
+ * Bitcoin's and Litecoin's both).
  */
-const kept = new Map<string, { state: BtcWalletState; at: number }>()
+export const kept = new Map<string, { state: BtcWalletState; at: number }>()
 /** Each account's wallet, which remembers what it's seen of each address between looks. */
 const wallets = new Map<string, BtcWallet>()
-const keyOf = (info: BtcAccountInfo): string => `${info.network} ${info.descriptor}`
-const walletFor = (info: BtcAccountInfo): BtcWallet => {
+export const keyOf = (info: BtcAccountInfo): string => `${info.network} ${info.descriptor}`
+export const walletFor = (info: BtcAccountInfo): BtcWallet => {
   let w = wallets.get(keyOf(info))
   if (!w) wallets.set(keyOf(info), (w = new BtcWallet(info, window.maki.bitcoin.esplora)))
   return w

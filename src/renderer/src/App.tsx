@@ -19,6 +19,7 @@ import { NotesPage } from './Notes'
 import { Overview } from './Overview'
 import { PAGES, shown, type Page } from './pages'
 import { PasswordMakerPage } from './Passwords'
+import { PortfolioPage } from './Portfolio'
 import { ShowQrPage } from './ShowQr'
 import { Sidebar } from './Sidebar'
 import { SudoPage } from './Sudo'
@@ -190,6 +191,7 @@ export default function App(): React.JSX.Element {
                 />
               )}
               {page === 'backups' && <Backups link={link} backup={backup} />}
+              {page === 'portfolio' && <PortfolioPage link={link} apps={apps} go={go} />}
               {page === 'wallets' && <Wallets link={link} apps={apps} />}
               {page === 'macropad' && <MacroPadPage link={link} apps={apps} go={go} />}
               {page === 'flashcards' && <FlashcardsPage link={link} apps={apps} go={go} />}
