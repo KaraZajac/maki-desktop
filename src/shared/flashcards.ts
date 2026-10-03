@@ -1,8 +1,9 @@
 /**
  * maki's Flashcards app (sdk/examples/flashcards): decks studied on maki a card at a time, with
  * Leitner's boxes. maki desktop reads a deck from a CSV or tab-separated file, pasted text, or Anki's
- * plain text export; says what maki will make of it before it's sent; sends it in pieces; and lists
- * and removes the decks on maki.
+ * plain text export; says what maki will make of it before it's sent; sends it in pieces; lists the
+ * decks on maki; reads one back with how each card stands, for it to be changed and sent again in its
+ * place (each card keeping its progress by its front, as the app keeps it); and removes them.
  *
  * What maki draws: its fonts (libs/blitstr2, all five alike, as maki-wasm draws them) have printable
  * ASCII, Latin-1 (U+00A0 to U+00FF), Œ and œ, the quotes, daggers and bullet from U+2018 to U+2022,
@@ -23,12 +24,16 @@
  *
  * The app's messages, numbers little-endian, each starting with their version (1) and a letter:
  * `L` the decks; `U` a deck in pieces, in place of deck `target` or (0) as a new one: the target, the
- * deck's length (u32), where the piece goes (u32), then the piece, up to 4085 bytes; `D` a deck's ID,
+ * deck's length (u32), where the piece goes (u32), then the piece, up to 4085 bytes; `R` a deck's ID
+ * and where to read from (u32): a piece of the deck as `U` carries it, then each card's box and the
+ * day it's next due (a byte and a u16, both 0 while it's new), read from 0 and each next where the
+ * last ended (the app's 1.1 on: 1.0 refuses it as any message it doesn't take); `D` a deck's ID,
  * removed. A deck is its name (a byte's length, then UTF-8), how many cards (u16), then each card's
  * front and back, each a u16's length and UTF-8. Answers start with 0 done (for `U`'s last piece the
- * deck's ID, its cards and how many kept their progress follow; for `L`, the list), 4 not taken (why
- * follows), 5 no room (why follows), 6 a piece taken (how much of the deck the app has, u32), 7 no
- * such deck, 8 another deck has that name, 9 another version (the one it speaks).
+ * deck's ID, its cards and how many kept their progress follow; for `L`, the list; for `R`, how long
+ * all there is to read is (u32) and up to 4091 bytes of it), 4 not taken (why follows), 5 no room
+ * (why follows), 6 a piece taken (how much of the deck the app has, u32), 7 no such deck, 8 another
+ * deck has that name, 9 another version (the one it speaks), 10 a deck that doesn't read whole.
  *
  * No Node or DOM imports: this runs in the renderer and in tests.
  */
@@ -36,6 +41,8 @@
 export const FLASHCARDS_APP = 'com.leviathan.maki.flashcards'
 /** The version of the app's messages, which this speaks. */
 export const FLASHCARDS_VERSION = 1
+/** The first version of the app that reads a deck back (`R`): its 1.1. */
+export const READS_SINCE = 2
 
 /** The app's limits: decks, cards a deck, characters in a name, a front, a back. */
 export const MAX_DECKS = 8
@@ -48,6 +55,10 @@ export const ROOM = 64 * 1024
 /** A message's most bytes, and how many of them a piece's header takes. */
 const MESSAGE = 4096
 export const PIECE = MESSAGE - 11
+/** The most of a deck a read's answer holds: a message, less its status and the length. */
+export const READ_PIECE = MESSAGE - 5
+/** Leitner's boxes, as the app has them. */
+export const BOXES = 7
 /** maki's most for a stored value: a deck's cards are kept in values of up to this. */
 const VALUE = 16 * 1024
 
@@ -58,6 +69,7 @@ const MORE = 6
 const NOT_FOUND = 7
 const EXISTS = 8
 const OTHER_VERSION = 9
+const DAMAGED = 10
 
 /** A card: its front and back. */
 export interface Card {
@@ -824,6 +836,166 @@ export function removeMessage(id: number): Uint8Array {
   return Uint8Array.of(FLASHCARDS_VERSION, 'D'.charCodeAt(0), id)
 }
 
+/** `R`: deck `id` read from `offset`. */
+export function readMessage(id: number, offset: number): Uint8Array {
+  const m = new Uint8Array(7)
+  m.set([FLASHCARDS_VERSION, 'R'.charCodeAt(0), id])
+  new DataView(m.buffer).setUint32(3, offset, true)
+  return m
+}
+
+/**
+ * A card on maki and how it stands: its box, 1 to 7 (0 while it's new), and the day it's next due,
+ * in days since 1970 (0 while it's new).
+ */
+export interface CardOnMaki extends Card {
+  box: number
+  due: number
+}
+
+/** A deck as maki keeps it, read back. */
+export interface DeckRead {
+  name: string
+  cards: CardOnMaki[]
+}
+
+/** The most a read can be: the biggest deck the link carries, and three bytes for each card. */
+const MOST_READ = ROOM + 3 * MAX_CARDS
+
+/**
+ * All of what `R` reads, read strictly: the deck as `U` carries it (its name, how many cards, each
+ * card's front and back), then each card's box and the day it's next due. Null if it isn't that,
+ * and nothing more.
+ */
+export function parseRead(b: Uint8Array): DeckRead | null {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength)
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let at = 0
+  const text = (n: number): string | null => {
+    if (at + n > b.length) return null
+    try {
+      const s = decoder.decode(b.subarray(at, at + n))
+      at += n
+      return s
+    } catch {
+      return null
+    }
+  }
+  const short = (): number | null => {
+    if (at + 2 > b.length) return null
+    at += 2
+    return v.getUint16(at - 2, true)
+  }
+  if (b.length === 0) return null
+  at = 1
+  const name = text(b[0])
+  const n = short()
+  if (name === null || n === null || n < 1 || n > MAX_CARDS) return null
+  const sides: string[] = []
+  for (let i = 0; i < 2 * n; i++) {
+    const len = short()
+    const side = len === null ? null : text(len)
+    if (side === null) return null
+    sides.push(side)
+  }
+  if (b.length - at !== 3 * n) return null
+  const cards: CardOnMaki[] = []
+  for (let i = 0; i < n; i++, at += 3) {
+    const box = b[at]
+    const due = v.getUint16(at + 1, true)
+    if (box > BOXES || (box === 0 && due !== 0)) return null
+    cards.push({ front: sides[2 * i], back: sides[2 * i + 1], box, due })
+  }
+  return { name, cards }
+}
+
+/** How reading a deck back went: the deck, or why not (`update`: the app is 1.0, which can't). */
+export type ReadBack = { ok: true; deck: DeckRead } | { ok: false; why: string; update?: true }
+
+/** Whether the app answered as one before `R` does to it: version 1.0's, which doesn't take it. */
+function beforeReads(a: Uint8Array): boolean {
+  return a[0] === BAD && new TextDecoder().decode(a.subarray(1)) === 'not a message this app takes'
+}
+
+/**
+ * Deck `id` read back from maki's Flashcards app, a piece at a time from where the last ended, each
+ * answer checked; `progress` hears how much of it there is, of how much. A read refused part of the
+ * way (the deck was sent again meanwhile, or the app started afresh) is begun again, once.
+ */
+export async function readBack(
+  send: AppSend,
+  id: number,
+  progress?: (have: number, of: number) => void
+): Promise<ReadBack> {
+  const oddly = { ok: false, why: 'maki’s Flashcards app answered oddly' } as const
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const pieces: Uint8Array[] = []
+    let have = 0
+    let total: number | null = null
+    let again = false
+    while (total === null || have < total) {
+      const r = await send(readMessage(id, have))
+      if (r.status !== 'approved') return { ok: false, why: linkSays(r.status) }
+      const a = r.answer
+      if (a[0] !== OK) {
+        if (have === 0 && beforeReads(a))
+          return {
+            ok: false,
+            update: true,
+            why: 'maki’s Flashcards app is version 1.0, which can’t show a deck’s cards here: update it, on Apps'
+          }
+        if (have > 0 && a[0] === BAD) {
+          if (attempt > 0)
+            return { ok: false, why: 'the deck changed on maki while it was read: open it again' }
+          again = true
+          break
+        }
+        return { ok: false, why: flashcardsSays(a) ?? oddly.why }
+      }
+      if (a.length < 5) return oddly
+      const all = new DataView(a.buffer, a.byteOffset, a.byteLength).getUint32(1, true)
+      const piece = a.subarray(5)
+      if ((total !== null && all !== total) || all < 1 || all > MOST_READ) return oddly
+      if (piece.length !== Math.min(READ_PIECE, all - have)) return oddly
+      total = all
+      pieces.push(piece.slice())
+      have += piece.length
+      progress?.(have, total)
+    }
+    if (again) continue
+    const deck = parseRead(concat(pieces))
+    return deck ? { ok: true, deck } : oddly
+  }
+  return oddly
+}
+
+/** How many days a card in `box` waits before it's back: 2^(box-1), Leitner's boxes as the app has them. */
+export function wait(box: number): number {
+  return 2 ** (Math.min(Math.max(box, 1), BOXES) - 1)
+}
+
+/** When a card on maki is next due, in words, on `today` (days since 1970): "today", "in 3 days". */
+export function dueIn(card: CardOnMaki, today: number): string {
+  if (card.box === 0) return 'new'
+  const days = card.due - today
+  return days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`
+}
+
+/**
+ * Where each of `cards`, sent in place of `old`, takes its progress from, as the app carries it: a
+ * card keeps the progress of the first card of `old` with the same front that no card before it
+ * took; the rest start again, new. For each card, the index in `old`, or null.
+ */
+export function carried(old: Card[], cards: Card[]): (number | null)[] {
+  const byFront = new Map<string, number[]>()
+  old.forEach((c, i) => {
+    const same = byFront.get(c.front)
+    if (same) same.push(i)
+    else byFront.set(c.front, [i])
+  })
+  return cards.map((c) => byFront.get(c.front)?.shift() ?? null)
+}
+
 /** A deck on maki, as the app lists it. */
 export interface DeckOnMaki {
   id: number
@@ -910,6 +1082,8 @@ export function flashcardsSays(a: Uint8Array): string | null {
       return 'another deck on maki has that name'
     case OTHER_VERSION:
       return `maki’s Flashcards app speaks version ${a[1]} of its messages, and maki desktop ${FLASHCARDS_VERSION}: update them both`
+    case DAMAGED:
+      return 'that deck doesn’t read whole on maki: send it again, or remove it'
     default:
       return 'maki’s Flashcards app answered oddly'
   }

@@ -1,5 +1,5 @@
 /**
- * The Password Maker card, end to end: the real app, offscreen, linked to the fake maki running
+ * The Password Maker page, end to end: the real app, offscreen, linked to the fake maki running
  * maki's Password Maker (sdk/examples/passwords). It adds an entry and removes it, pressing what a
  * person would; the app itself, asked over the link, says what it keeps.
  *
@@ -15,7 +15,7 @@ import { listMessage, PASSWORDS_APP, readList, type PasswordEntry } from '../sha
 import { APP_FIXTURES, FAKE_BUILT, startFake, TcpTransport } from '../shared/test-support'
 import { build, drive as driveApp, E2E } from './drive'
 
-describe.skipIf(!E2E || !FAKE_BUILT)('the Password Maker card, end to end', () => {
+describe.skipIf(!E2E || !FAKE_BUILT)('the Password Maker page, end to end', () => {
   let fake: { port: number; proc: ChildProcess }
   let home = ''
 

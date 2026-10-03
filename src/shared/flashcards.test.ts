@@ -2,9 +2,10 @@
  * Flashcards as maki desktop sends it decks: what maki's fonts draw (held to the fonts themselves,
  * in the firmware repo), and the stand-ins for what they don't; decks read from CSV, tab-separated
  * text and Anki's plain text exports, as Anki writes them; a deck fitted to maki, with what was
- * changed and left out; and the app's messages, byte by byte. Then the real app on the fake maki
- * (maki's own app host): decks sent in pieces, listed, replaced and removed; what maki desktop works
- * out a deck takes of the app's room just what the app counts; and every deck it fits, taken.
+ * changed and left out; the app's messages, byte by byte; and where a changed deck's cards take
+ * their progress from. Then the real app on the fake maki (maki's own app host): decks sent in
+ * pieces, listed, read back, replaced and removed; what maki desktop works out a deck takes of the
+ * app's room just what the app counts; and every deck it fits, taken.
  */
 import type { ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -12,10 +13,12 @@ import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MakiClient } from './client'
 import {
+  carried,
   chars,
   decodeFile,
   deckBytes,
   drawable,
+  dueIn,
   FLASHCARDS_APP,
   flashcardsSays,
   kib,
@@ -23,15 +26,20 @@ import {
   listMessage,
   MAX_BACK,
   MAX_FRONT,
+  parseRead,
   PIECE,
   prepareDeck,
+  READ_PIECE,
+  readBack,
   readDeck,
   readList,
+  readMessage,
   removeMessage,
   sendDeck,
   standIn,
   storedSize,
   uploadMessages,
+  wait,
   type AppSend,
   type Card
 } from './flashcards'
@@ -456,6 +464,161 @@ describe('the app’s messages', () => {
   })
 })
 
+describe('a deck read back', () => {
+  /** What `R` reads: `deck` as `U` carries it, then each card's box and the day it's next due. */
+  const stream = (deck: Uint8Array, progress: [number, number][]): Uint8Array =>
+    Uint8Array.from([...deck, ...progress.flatMap(([box, due]) => [box, due & 0xff, due >> 8])])
+  const cards: Card[] = [
+    { front: 'hola', back: 'hello' },
+    { front: 'el perro', back: 'the dog\nand more' }
+  ]
+
+  it('asks for a piece of the deck from where the last ended', () => {
+    expect(hex(readMessage(3, 0))).toBe('015203' + '00000000')
+    expect(hex(readMessage(255, READ_PIECE))).toBe('0152ff' + 'fb0f0000')
+  })
+
+  it('reads the deck and each card’s box and the day it’s due, strictly', () => {
+    const deck = deckBytes('Español', cards)
+    expect(
+      parseRead(
+        stream(deck, [
+          [3, 20004],
+          [0, 0]
+        ])
+      )
+    ).toEqual({
+      name: 'Español',
+      cards: [
+        { ...cards[0], box: 3, due: 20004 },
+        { ...cards[1], box: 0, due: 0 }
+      ]
+    })
+    const whole = stream(deck, [
+      [3, 20004],
+      [0, 0]
+    ])
+    // cut short, or more after it; a box there isn't; a new card with a day; not UTF-8; no cards
+    expect(parseRead(whole.subarray(0, whole.length - 1))).toBeNull()
+    expect(parseRead(Uint8Array.from([...whole, 0]))).toBeNull()
+    expect(
+      parseRead(
+        stream(deck, [
+          [8, 20004],
+          [0, 0]
+        ])
+      )
+    ).toBeNull()
+    expect(
+      parseRead(
+        stream(deck, [
+          [3, 20004],
+          [0, 5]
+        ])
+      )
+    ).toBeNull()
+    const bad = Uint8Array.from(whole)
+    bad[1] = 0xff
+    expect(parseRead(bad)).toBeNull()
+    expect(parseRead(Uint8Array.of(1, 0x41, 0, 0))).toBeNull()
+    expect(parseRead(new Uint8Array())).toBeNull()
+  })
+
+  it('reads it a piece at a time, checking each answer', async () => {
+    // a deck longer than a message holds: two pieces
+    const many = Array.from({ length: 300 }, (_, i) => ({
+      front: `word ${i}`,
+      back: `meaning ${i}`
+    }))
+    const all = stream(
+      deckBytes('Many', many),
+      many.map(() => [1, 20001] as [number, number])
+    )
+    expect(all.length).toBeGreaterThan(READ_PIECE)
+    const answer = (from: number, total = all.length, to = from + READ_PIECE): Uint8Array => {
+      const a = new Uint8Array(5 + Math.min(to, all.length) - from)
+      a[0] = 0
+      new DataView(a.buffer).setUint32(1, total, true)
+      a.set(all.subarray(from, Math.min(to, all.length)), 5)
+      return a
+    }
+    const asked: number[] = []
+    const answering =
+      (answers: Uint8Array[]): AppSend =>
+      async (m) => {
+        asked.push(new DataView(m.buffer, m.byteOffset).getUint32(3, true))
+        return { status: 'approved', answer: answers.shift()! }
+      }
+    const heard: number[] = []
+    const got = await readBack(answering([answer(0), answer(READ_PIECE)]), 4, (n) => heard.push(n))
+    expect(got).toEqual({ ok: true, deck: parseRead(all) })
+    expect(asked).toEqual([0, READ_PIECE])
+    expect(heard).toEqual([READ_PIECE, all.length])
+    // refused part of the way (the deck was sent again): begun again, once
+    asked.length = 0
+    const order = Uint8Array.of(4, ...new TextEncoder().encode('a read out of order'))
+    const again = await readBack(answering([answer(0), order, answer(0), answer(READ_PIECE)]), 4)
+    expect(again.ok).toBe(true)
+    expect(asked).toEqual([0, READ_PIECE, 0, READ_PIECE])
+    expect(await readBack(answering([answer(0), order, answer(0), order]), 4)).toEqual({
+      ok: false,
+      why: 'the deck changed on maki while it was read: open it again'
+    })
+    // version 1.0 of the app, which doesn't read decks back
+    const old = Uint8Array.of(4, ...new TextEncoder().encode('not a message this app takes'))
+    expect(await readBack(answering([old]), 4)).toMatchObject({ ok: false, update: true })
+    // answers that aren't what was asked: another length, a short piece, a long one
+    for (const odd of [
+      [answer(0), answer(READ_PIECE, all.length + 1)],
+      [answer(0, all.length, 100)],
+      [Uint8Array.from([...answer(0), 0])],
+      [answer(0, 0)]
+    ])
+      expect(await readBack(answering(odd), 4)).toEqual({
+        ok: false,
+        why: 'maki’s Flashcards app answered oddly'
+      })
+    // no such deck; one that doesn't read whole; the link saying no
+    expect(await readBack(answering([Uint8Array.of(7)]), 4)).toEqual({
+      ok: false,
+      why: 'that deck isn’t on maki any more'
+    })
+    expect(await readBack(answering([Uint8Array.of(10)]), 4)).toEqual({
+      ok: false,
+      why: 'that deck doesn’t read whole on maki: send it again, or remove it'
+    })
+    expect(await readBack(async () => ({ status: 'locked', answer: new Uint8Array() }), 4)).toEqual(
+      { ok: false, why: 'maki is locked' }
+    )
+  })
+
+  it('says when each card is due, and how long its box waits', () => {
+    const at = (box: number, due: number) => ({ front: 'a', back: 'b', box, due })
+    expect(dueIn(at(0, 0), 20000)).toBe('new')
+    expect(dueIn(at(2, 19990), 20000)).toBe('today')
+    expect(dueIn(at(2, 20000), 20000)).toBe('today')
+    expect(dueIn(at(2, 20001), 20000)).toBe('tomorrow')
+    expect(dueIn(at(7, 20064), 20000)).toBe('in 64 days')
+    expect([1, 2, 3, 4, 5, 6, 7].map(wait)).toEqual([1, 2, 4, 8, 16, 32, 64])
+  })
+
+  it('says where each card of a changed deck takes its progress from, as the app does', () => {
+    const c = (front: string): Card => ({ front, back: 'x' })
+    const old = [c('one'), c('two'), c('three'), c('two'), c('four')]
+    // three, a new five, the first two, one, the second two, a third two that's new
+    expect(carried(old, [c('three'), c('five'), c('two'), c('one'), c('two'), c('two')])).toEqual([
+      2,
+      null,
+      1,
+      0,
+      3,
+      null
+    ])
+    // a front changed, even by a letter, starts again
+    expect(carried(old, [c('One'), c('one')])).toEqual([null, 0])
+  })
+})
+
 describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)(
   'maki’s Flashcards app on the fake maki',
   () => {
@@ -522,6 +685,45 @@ describe.skipIf(!FAKE_BUILT || !APP_FIXTURES_THERE)(
         'that deck isn’t on maki any more'
       )
       expect(await list()).toEqual({ ...start, today: expect.any(Number), known: true })
+    }, 60_000)
+
+    it('reads a deck back as it was sent, and as it was changed', async () => {
+      const cards: Card[] = Array.from({ length: 400 }, (_, i) => ({
+        front: `palabra ${i}`,
+        back: `the word ${i}, in Spanish\nwith a second line`
+      }))
+      const p = prepareDeck('Palabras', cards)
+      const sent = await sendDeck(send, 0, deckBytes(p.name, p.cards))
+      expect(sent.ok).toBe(true)
+      if (!sent.ok) return
+      const heard: number[] = []
+      const got = await readBack(send, sent.id, (n) => heard.push(n))
+      expect(got).toEqual({
+        ok: true,
+        deck: { name: 'Palabras', cards: p.cards.map((c) => ({ ...c, box: 0, due: 0 })) }
+      })
+      expect(heard.length).toBeGreaterThan(2)
+      // changed here: a card's back, one removed, one added, the deck renamed
+      const read = got.ok ? got.deck.cards : []
+      const changed = [
+        { ...read[0], back: 'hello' },
+        ...read.slice(2),
+        { front: 'nueva', back: 'new' }
+      ]
+      const q = prepareDeck('Palabras nuevas', changed)
+      expect(carried(read, q.cards).filter((i) => i === null)).toHaveLength(1)
+      const again = await sendDeck(send, sent.id, deckBytes(q.name, q.cards))
+      expect(again).toEqual({ ok: true, id: sent.id, cards: 400, kept: 0 })
+      const after = await readBack(send, sent.id)
+      expect(after.ok && after.deck.name).toBe('Palabras nuevas')
+      expect(after.ok && after.deck.cards.map((c) => [c.front, c.back])).toEqual(
+        q.cards.map((c) => [c.front, c.back])
+      )
+      expect(await readBack(send, 255)).toEqual({
+        ok: false,
+        why: 'that deck isn’t on maki any more'
+      })
+      expect(flashcardsSays((await send(removeMessage(sent.id))).answer)).toBeNull()
     }, 60_000)
 
     it('takes every deck maki desktop fits, and keeps what it says', async () => {

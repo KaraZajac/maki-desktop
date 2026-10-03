@@ -1,6 +1,6 @@
 /** Sizes and times as the window shows them. */
 import { describe, expect, it } from 'vitest'
-import { ago, bytes, readable } from './format'
+import { ago, bytes, readable, sentence } from './format'
 
 describe('sizes', () => {
   it('are in KiB and MiB, as maki says them, without trailing zeros', () => {
@@ -33,5 +33,15 @@ describe('amounts', () => {
     expect(readable(123_456_789n, 8)).toBe('1.234567…')
     expect(readable(1_234_567n, 18)).toBe('0.000000000001234…')
     expect(readable(0n, 18)).toBe('0')
+  })
+})
+
+describe('reasons', () => {
+  it('read as sentences, maki’s name lower case at their start too', () => {
+    expect(sentence('another deck on maki is called Spanish')).toBe(
+      'Another deck on maki is called Spanish.'
+    )
+    expect(sentence('maki is locked')).toBe('maki is locked.')
+    expect(sentence('')).toBe('')
   })
 })

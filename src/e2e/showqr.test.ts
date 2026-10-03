@@ -1,7 +1,7 @@
 /**
  * Show QR, end to end: the real app, offscreen, linked to the fake maki running maki's Show QR
- * app. On the Connections page a text too long for maki's screen is turned down before it's sent,
- * with why; a link goes, and maki's app says it's what it's showing.
+ * app. On its page a text too long for maki's screen is turned down before it's sent, with why; a
+ * link goes, maki's app says it's what it's showing, and the page shows it as what's on maki now.
  *
  *     MAKI_E2E=1 npx vitest run src/e2e
  */
@@ -43,9 +43,13 @@ describe.skipIf(!E2E || !FAKE_BUILT || !APP_FIXTURES_THERE)('Show QR, end to end
       ...['--click', 'Show QR', '--until', 'it keeps the last five'],
       ...['--fill', `${FIELD}=${'a'.repeat(300)}`, '--until', '300 bytes, where it holds 192'],
       ...['--fill', `${FIELD}=${link}`, '--until', 'a version 3 QR code, 3 pixels a module'],
-      ...['--click', 'show qr › Show on maki', '--until', 'On maki now, in Show QR']
+      ...['--until', 'Nothing yet: what you send shows here too.'],
+      ...['--click', 'Show on maki', '--until', 'On maki now, in Show QR']
     ])
     expect(said).toContain('On maki now, in Show QR')
+    // and as what's on maki now
+    expect(said).not.toContain('Nothing yet')
+    expect(said).toMatch(/ON MAKI NOW\s+Look again\s+https:\/\/maki\.netslum\.io\/docs\/showqr/)
     // what maki's app is showing
     const t = await TcpTransport.open(fake.port)
     try {

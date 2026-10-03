@@ -41,3 +41,12 @@ export function readable(amount: bigint, decimals: number): string {
   const places = Math.max(6, zeros + 4)
   return frac ? `${grouped}.${frac.slice(0, places)}${frac.length > places ? '…' : ''}` : grouped
 }
+
+/**
+ * Words that start lower case as a sentence, as an answer's reason is shown: its first letter a
+ * capital (but maki's name, which is always lower case), a full stop after it.
+ */
+export function sentence(s: string): string {
+  if (s === '') return s
+  return `${s.startsWith('maki') ? 'm' : s[0].toUpperCase()}${s.slice(1)}.`
+}
